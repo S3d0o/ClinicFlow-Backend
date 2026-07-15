@@ -4,7 +4,7 @@
 
 ClinicFlow solves real clinic problems: doctors register and wait for admin approval before appearing in search, patients browse live slots and book appointments with optimistic concurrency preventing double-bookings under load, a background service sends automated reminders the day before, and JWT authentication uses refresh token rotation with theft detection.
 
-**→ [Frontend Repository](https://github.com/S3d0o/ClinicFlow-Frontend) · [Live API Docs](https://registry.scalar.com/@default-team-2gu37/apis/clinicflow-v1@1.0.0) · [Live Demo on LinkedIn](https://www.linkedin.com/in/saad-mohamed-li/)** *(video walkthrough)*
+**→ [Frontend Repository](https://github.com/S3d0o/ClinicFlow-Frontend) · [Live API Docs](https://registry.scalar.com/@default-team-2gu37/apis/clinicflow-v1@1.0.0) · [Live Demo on LinkedIn](https://www.linkedin.com/posts/saad-mohamed-li_dotnet-csharp-react-ugcPost-7483058574588379136-R35x/?utm_source=social_share_send&utm_medium=member_desktop_web&rcm=ACoAAFtidxABr0vs0HxJVu7Xnwvp_d1T8J8FNdM)** *(video walkthrough)*
 ---
 
 ## 📸 Screenshots
