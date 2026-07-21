@@ -23,6 +23,7 @@ namespace Services.Extensions
             services.AddScoped<INotificationService, NotificationService>();
             services.AddScoped<IAdminService, AdminService>();
             services.AddScoped<IProfileService, ProfileService>();
+            services.AddSingleton<IDateTimeProvider, DateTimeProvider>();
 
             services.Configure<EmailSettings>(config.GetSection("EmailSettings"));
 

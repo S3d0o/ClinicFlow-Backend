@@ -1,7 +1,6 @@
 ﻿using ClinicFlow.Domain.Enums;
 using Domain.Enums;
 using Domain.Parameters;
-using Services.MappingProfiles;
 using Shared.DTOs.Appointment;
 using Shared.DTOs.Notification;
 
@@ -12,7 +11,8 @@ namespace Services.Implementations
         IMapper mapper,
         ILogger<AppointmentService> logger,
         INotificationService notificationService,
-        IEmailService emailService) : IAppointmentService
+        IEmailService emailService,
+        IDateTimeProvider dateTimeProvider) : IAppointmentService
     {
         public async Task<Result<AppointmentResponse>> BookAppointmentAsync(Guid patientUserId, BookAppointmentRequest request, CancellationToken ct)
         {
@@ -34,8 +34,8 @@ namespace Services.Implementations
                 logger.LogWarning("Appointment slot is not available for booking. Slot ID: {SlotId}, Status: {Status}", request.SlotId, slot.Status);
                 return AppointmentErrors.SlotNotAvailable;
             }
-            if (slot.Date < DateOnly.FromDateTime(DateTime.UtcNow)
-                || (slot.Date == DateOnly.FromDateTime(DateTime.UtcNow) && slot.StartTime < TimeOnly.FromDateTime(DateTime.UtcNow)))
+            if (slot.Date < DateOnly.FromDateTime(dateTimeProvider.UtcNow)
+                || (slot.Date == DateOnly.FromDateTime(dateTimeProvider.UtcNow) && slot.StartTime < TimeOnly.FromDateTime(dateTimeProvider.UtcNow)))
             {
                 logger.LogWarning("Appointment slot is in the past and cannot be booked. Slot ID: {SlotId}, Date: {Date}, StartTime: {StartTime}", request.SlotId, slot.Date, slot.StartTime);
                 return AppointmentErrors.SlotInPast;
@@ -144,7 +144,7 @@ namespace Services.Implementations
 
             var slotDateTime = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
 
-            if (DateTime.UtcNow > slotDateTime.AddHours(-2))
+            if (dateTimeProvider.UtcNow > slotDateTime.AddHours(-2))
             {
                 logger.LogWarning("Appointment ID: {AppointmentId} cannot be cancelled within 2 hours of the scheduled time.", appointmentId);
                 return AppointmentErrors.CancellationWindowExpired;
