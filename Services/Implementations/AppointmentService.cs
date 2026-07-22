@@ -118,7 +118,7 @@ namespace Services.Implementations
             if (patientProfile == null)
             {
                 logger.LogWarning("Patient not found for user ID: {UserId}", patientUserId);
-                return DoctorErrors.ProfileNotFound(patientUserId);
+                return PatientErrors.ProfileNotFound(patientUserId);
             }
             var appointment = await uow.Appointments.GetByIdAsync(appointmentId, ct);
             if (appointment == null)
