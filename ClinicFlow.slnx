@@ -11,5 +11,6 @@
     <Project Path="ClinicFlow/ClinicFlow.csproj" />
     <Project Path="Presentation/Presentation.csproj" />
   </Folder>
+  <Project Path="ClinicFlow.Tests/ClinicFlow.Tests.csproj" Id="1ed2b936-0477-48b5-8f18-eabfe81c1616" />
   <Project Path="Shared/Shared.csproj" />
 </Solution>
