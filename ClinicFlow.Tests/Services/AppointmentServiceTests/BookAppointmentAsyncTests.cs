@@ -1,64 +1,99 @@
-﻿using AutoMapper;
-using ClinicFlow.Domain.Enums;
-using Domain.Entities.AppModule;
-using Domain.Interfaces;
+﻿using Domain.Entities.AppModule;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.Logging;
 using NSubstitute;
-using Services.Abstraction.Contracts;
-using Services.Implementations;
+using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Appointment;
+using Shared.DTOs.Notification;
 using Shared.Errors;
+using ClinicFlow.Domain.Enums;
 
 namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 {
     public class BookAppointmentAsyncTests : AppointmentServiceTestsBase
     {
-        
+        // Shared constants
+        private readonly Guid _patientUserId = Guid.NewGuid();
+        private readonly CancellationToken _ct = CancellationToken.None;
+        private const int SlotId = 1;
+        private readonly DateTime _now = new DateTime(2026, 6, 15, 10, 0, 0);
+        private readonly BookAppointmentRequest _request = new(SlotId, "no reason");
+
+        // Happy path helper — call this then add your one difference on top
+        private (IDbContextTransaction transaction, AppointmentResponse response) SetupHappyPath()
+        {
+            var dateTime = _now.AddDays(1).AddHours(1);
+
+            _uow.Patients
+                .GetPatientByUserIdAsync(_patientUserId, _ct)
+                .Returns(new PatientProfile());
+
+            _dateTimeProvider.UtcNow.Returns(_now);
+
+            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
+            {
+                Id = SlotId,
+                Status = SlotStatus.Available,
+                Date = DateOnly.FromDateTime(dateTime),
+                StartTime = TimeOnly.FromDateTime(dateTime),
+            });
+
+            var transaction = Substitute.For<IDbContextTransaction>();
+            _uow.BeginTransactionAsync().Returns(transaction);
+            _uow.Slots.SetStatusFromAvailableToBookedAsync(SlotId, _ct).Returns(1);
+
+            var appointmentResponse = new AppointmentResponse
+            {
+                SlotId = SlotId,
+                AppointmentDate = DateOnly.FromDateTime(dateTime),
+                StartTime = TimeOnly.FromDateTime(dateTime)
+            };
+            _mapper.Map<AppointmentResponse>(Arg.Any<Appointment>())
+                   .Returns(appointmentResponse);
+
+            return (transaction, appointmentResponse);
+        }
 
         [Fact]
         public async Task BookAppointmentAsync_WhenPatientProfileNotFound_ReturnsProfileNotFoundError()
         {
             // Arrange
-            var patientUserId = Guid.NewGuid();
-            var ct = CancellationToken.None;
-            var request = new BookAppointmentRequest(3, "no reason");
-            _uow.Patients.GetPatientByUserIdAsync(patientUserId, ct).Returns((PatientProfile?)null);
-            var error = PatientErrors.ProfileNotFound(patientUserId);
+            _uow.Patients
+                .GetPatientByUserIdAsync(_patientUserId, _ct)
+                .Returns((PatientProfile?)null);
 
+            var error = PatientErrors.ProfileNotFound(_patientUserId);
 
             // Act
-            var result = await _sut.BookAppointmentAsync(patientUserId, request, ct);
-
+            var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
 
             // Assert
-            Assert.NotNull(result);
             Assert.True(result.IsFailure);
             Assert.Contains(error, result.Errors);
-            await _uow.Slots.DidNotReceive().GetByIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+            await _uow.Slots.DidNotReceive()
+                      .GetByIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
         public async Task BookAppointmentAsync_WhenSlotNotFound_ReturnsNotFoundError()
         {
-            //Arrange
+            // Arrange
+            _uow.Patients
+                .GetPatientByUserIdAsync(_patientUserId, _ct)
+                .Returns(new PatientProfile());
 
-            var patientUserId = Guid.NewGuid();
-            var ct = CancellationToken.None;
-            int slotId = 1;
-            _uow.Patients.GetPatientByUserIdAsync(patientUserId, ct).Returns(new PatientProfile());
-            _uow.Slots.GetByIdAsync(slotId, ct).Returns((AppointmentSlot?)null);
-            var request = new BookAppointmentRequest(slotId, "no reason");
-            var error = AppointmentErrors.NotFound(slotId);
+            _uow.Slots.GetByIdAsync(SlotId, _ct)
+                .Returns((AppointmentSlot?)null);
 
-            //Act
-            var result = await _sut.BookAppointmentAsync(patientUserId, request, ct);
+            var error = AppointmentErrors.NotFound(SlotId);
 
-            //Assert
+            // Act
+            var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
+
+            // Assert
             Assert.True(result.IsFailure);
             Assert.Contains(error, result.Errors);
-            await _uow.Slots.DidNotReceive().SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
-
+            await _uow.Slots.DidNotReceive()
+                      .SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
 
         [Theory]
@@ -66,152 +101,132 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         [InlineData(SlotStatus.Blocked)]
         public async Task BookAppointmentAsync_WhenSlotIsNotAvailable_ReturnsSlotNotAvailableError(SlotStatus status)
         {
-            //Arrange
-            var patientUserId = Guid.NewGuid();
-            var ct = CancellationToken.None;
-            int slotId = 1;
-            _uow.Patients.GetPatientByUserIdAsync(patientUserId, ct).Returns(new PatientProfile());
-            _uow.Slots.GetByIdAsync(slotId, ct).Returns(new AppointmentSlot
+            // Arrange
+            _uow.Patients
+                .GetPatientByUserIdAsync(_patientUserId, _ct)
+                .Returns(new PatientProfile());
+
+            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
             {
                 Status = status
             });
-            var error = AppointmentErrors.SlotNotAvailable;
 
-            var request = new BookAppointmentRequest(slotId, "no reason");
+            // Act
+            var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
 
-            //Act
-            var result = await _sut.BookAppointmentAsync(patientUserId, request, ct);
-
-            //Assert
+            // Assert
             Assert.True(result.IsFailure);
-            Assert.Contains(error, result.Errors);
-            await _uow.Slots.DidNotReceive().SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+            Assert.Contains(AppointmentErrors.SlotNotAvailable, result.Errors);
+            await _uow.Slots.DidNotReceive()
+                      .SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
 
         [Theory]
         [InlineData(-1, 0)]   // yesterday, same time
         [InlineData(0, -1)]   // today, 1 hour ago
-        public async Task BookAppointmentAsync_WhenSlotIsInPast_ReturnsSlotInPastError(int daysOffset, int hoursOffset)
+        public async Task BookAppointmentAsync_WhenSlotIsInPast_ReturnsSlotInPastError(
+            int daysOffset, int hoursOffset)
         {
-            //Arrange
-            var patientUserId = Guid.NewGuid();
-            var ct = CancellationToken.None;
-            int slotId = 1;
-            _uow.Patients.GetPatientByUserIdAsync(patientUserId, ct).Returns(new PatientProfile());
+            // Arrange
+            _uow.Patients
+                .GetPatientByUserIdAsync(_patientUserId, _ct)
+                .Returns(new PatientProfile());
 
-            var now = new DateTime(2026, 6, 15, 10, 0, 0);
-            _dateTimeProvider.UtcNow.Returns(now);
+            _dateTimeProvider.UtcNow.Returns(_now);
 
-            // Slot is built RELATIVE to now — immediately obvious it's in the past
-            var slotDateTime = now.AddDays(daysOffset).AddHours(hoursOffset);
-
-            _uow.Slots.GetByIdAsync(slotId, ct).Returns(new AppointmentSlot
+            var slotDateTime = _now.AddDays(daysOffset).AddHours(hoursOffset);
+            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
             {
                 Status = SlotStatus.Available,
                 Date = DateOnly.FromDateTime(slotDateTime),
                 StartTime = TimeOnly.FromDateTime(slotDateTime),
             });
-            var request = new BookAppointmentRequest(slotId, "no reason");
-            var error = AppointmentErrors.SlotInPast;
 
-            //Act
+            // Act
+            var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
 
-            var result = await _sut.BookAppointmentAsync(patientUserId, request, ct);
-
-            //Assert
+            // Assert
             Assert.True(result.IsFailure);
-            Assert.Contains(error, result.Errors);
-            await _uow.Slots.DidNotReceive().SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
-
+            Assert.Contains(AppointmentErrors.SlotInPast, result.Errors);
+            await _uow.Slots.DidNotReceive()
+                      .SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
-        public async Task BookAppointmentAsync_WhenSlotIsAlreadyBooked_ReturnsSlotAlreadyBookedError()
+        public async Task BookAppointmentAsync_WhenConcurrencyConflict_ReturnsSlotAlreadyBookedError()
         {
-            //Arrange
-            var patientUserId = Guid.NewGuid();
-            var ct = CancellationToken.None;
-            int slotId = 1;
-            _uow.Patients.GetPatientByUserIdAsync(patientUserId, ct).Returns(new PatientProfile());
+            // Arrange
+            _uow.Patients
+                .GetPatientByUserIdAsync(_patientUserId, _ct)
+                .Returns(new PatientProfile());
 
-            var now = new DateTime(2026, 6, 15, 10, 0, 0);
-            _dateTimeProvider.UtcNow.Returns(now);
+            _dateTimeProvider.UtcNow.Returns(_now);
 
-            var dateTime = now.AddDays(1).AddHours(1);
-
-            _uow.Slots.GetByIdAsync(slotId, ct).Returns(new AppointmentSlot
+            var dateTime = _now.AddDays(1).AddHours(1);
+            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
             {
                 Status = SlotStatus.Available,
                 Date = DateOnly.FromDateTime(dateTime),
                 StartTime = TimeOnly.FromDateTime(dateTime),
             });
-            var request = new BookAppointmentRequest(slotId, "no reason");
-            var error = AppointmentErrors.SlotAlreadyBooked;
+
             var transaction = Substitute.For<IDbContextTransaction>();
             _uow.BeginTransactionAsync().Returns(transaction);
-            _uow.Slots.SetStatusFromAvailableToBookedAsync(slotId, ct).Returns(0);
+            _uow.Slots.SetStatusFromAvailableToBookedAsync(SlotId, _ct).Returns(0);
 
-            //Act
+            // Act
+            var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
 
-            var result = await _sut.BookAppointmentAsync(patientUserId, request, ct);
-
-            //Assert
+            // Assert
             Assert.True(result.IsFailure);
-            Assert.Contains(error, result.Errors);
+            Assert.Contains(AppointmentErrors.SlotAlreadyBooked, result.Errors);
             await _uow.Received(1).BeginTransactionAsync();
-            await _uow.Appointments.DidNotReceive().AddAsync(Arg.Any<Appointment>(), Arg.Any<CancellationToken>());
-
+            await _uow.Appointments.DidNotReceive()
+                      .AddAsync(Arg.Any<Appointment>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
         public async Task BookAppointmentAsync_WhenAllInputsAreValid_ReturnsSuccess()
         {
-            //Arrange
-            var patientUserId = Guid.NewGuid();
-            var ct = CancellationToken.None;
-            int slotId = 1;
-            _uow.Patients.GetPatientByUserIdAsync(patientUserId, ct).Returns(new PatientProfile());
+            // Arrange
+            var (transaction, appointmentResponse) = SetupHappyPath();
 
-            var now = new DateTime(2026, 6, 15, 10, 0, 0);
-            _dateTimeProvider.UtcNow.Returns(now);
+            // Act
+            var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
 
-            var dateTime = now.AddDays(1).AddHours(1);
-
-            _uow.Slots.GetByIdAsync(slotId, ct).Returns(new AppointmentSlot
-            {
-                Id = slotId,
-                Status = SlotStatus.Available,
-                Date = DateOnly.FromDateTime(dateTime),
-                StartTime = TimeOnly.FromDateTime(dateTime),
-            });
-            var request = new BookAppointmentRequest(slotId, "no reason");
-            var transaction = Substitute.For<IDbContextTransaction>();
-            _uow.BeginTransactionAsync().Returns(transaction);
-            _uow.Slots.SetStatusFromAvailableToBookedAsync(slotId, ct).Returns(1);
-
-            var appointmentResponse = new AppointmentResponse
-            {
-                SlotId = slotId,
-                AppointmentDate = DateOnly.FromDateTime(dateTime),
-                StartTime = TimeOnly.FromDateTime(dateTime)
-            };
-            _mapper.Map<AppointmentResponse>(Arg.Any<Appointment>()).Returns(appointmentResponse);
-
-            //Act
-
-            var result = await _sut.BookAppointmentAsync(patientUserId, request, ct);
-
-            //Assert
-            await _uow.Received(1).BeginTransactionAsync();
-            await _uow.Slots.Received(1).SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
-            await _uow.Appointments.Received(1).AddAsync(Arg.Any<Appointment>(), Arg.Any<CancellationToken>());
-            await _uow.Received(1).SaveChangesAsync();
-            await transaction.Received(1).CommitAsync(Arg.Any<CancellationToken>());
-            await transaction.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
+            // Assert
             Assert.True(result.IsSuccess);
             Assert.NotNull(result.Value);
             Assert.Equal(appointmentResponse, result.Value);
+            await _uow.Received(1).BeginTransactionAsync();
+            await _uow.Slots.Received(1)
+                      .SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+            await _uow.Appointments.Received(1)
+                      .AddAsync(Arg.Any<Appointment>(), Arg.Any<CancellationToken>());
+            await _uow.Received(1).SaveChangesAsync();
+            await transaction.Received(1).CommitAsync(Arg.Any<CancellationToken>());
+            await transaction.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
+        }
 
+        [Fact]
+        public async Task BookAppointmentAsync_WhenNotificationFails_StillReturnsSuccess()
+        {
+            // Arrange
+            var (transaction, _) = SetupHappyPath();
+
+            _notificationService
+                .CreateRangeAsync(
+                    Arg.Any<IEnumerable<CreateNotificationRequest>>(),
+                    Arg.Any<CancellationToken>())
+                .Throws<Exception>();
+
+            // Act
+            var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
+
+            // Assert
+            Assert.True(result.IsSuccess);
+            await transaction.Received(1).CommitAsync(Arg.Any<CancellationToken>());
+            await transaction.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
         }
     }
 }
