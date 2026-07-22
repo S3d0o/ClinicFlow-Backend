@@ -159,9 +159,11 @@ namespace Services.Implementations
 
             logger.LogInformation("Appointment ID: {AppointmentId} cancelled by patient ID: {PatientId}.", appointmentId, patientProfile.Id);
 
-            // Create AppointmentCancelled event and send notification to doctor and patient about the cancelled appointment
-            await notificationService.CreateRangeAsync([
-                new CreateNotificationRequest(
+            try
+            {
+                // Create AppointmentCancelled event and send notification to doctor and patient about the cancelled appointment
+                await notificationService.CreateRangeAsync([
+                    new CreateNotificationRequest(
                     UserId:          patientUserId,
                     Title:           "Appointment Cancelled",
                     Message:         $"Your appointment on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm} has been cancelled.",
@@ -173,6 +175,12 @@ namespace Services.Implementations
                     Message:         $"Your appointment with {appointment.Patient.User.FirstName} {appointment.Patient.User.LastName} on {appointment.Slot.Date} on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm} has been cancelled.",
                     Type:            NotificationType.AppointmentCancelled,
                     RelatedEntityId: appointment.Id) ], ct);
+            }
+            catch (Exception ex)
+            {
+                // notification failure should not fail the Cancellation
+                logger.LogError(ex, "Failed to send cancellation notification for appointment {AppointmentId}", appointment.Id);
+            }
 
             return Result.Ok();
         }
