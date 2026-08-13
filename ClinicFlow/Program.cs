@@ -94,3 +94,6 @@ finally
     // Ensures all logs are flushed
     Log.CloseAndFlush();
 }
+
+
+public partial class Program() { }
