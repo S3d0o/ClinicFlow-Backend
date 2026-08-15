@@ -69,7 +69,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         }
 
         [Fact]
-        public async Task CancelAppointment_AlreadyCancelled_Returns400()
+        public async Task CancelAppointment_AlreadyCancelled_Returns403()
         {
 
             // Arrange

@@ -17,7 +17,6 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         private const string BaseUrl = "/api/appointments";
 
         private Guid _patientUserId;
-        private int _appointmentId;
         private int _slotId;
 
         private readonly ClinicFlowApiFactory _factory;

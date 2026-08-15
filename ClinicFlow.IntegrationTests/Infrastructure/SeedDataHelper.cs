@@ -112,5 +112,35 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
             return (patientUser.Id, doctorUser.Id, slot.Id, appointment.Id);
         }
+
+        // SeedDataHelper.cs — add this method
+        public static async Task<Guid> SeedPatientOnlyAsync(ClinicDbContext db, string suffix = "noapp")
+        {
+            var hasher = new PasswordHasher<ApplicationUser>();
+
+            var patientUser = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                FirstName = "Test",
+                LastName = "Patient",
+                UserName = $"patient{suffix}@test.com",
+                NormalizedUserName = $"PATIENT{suffix}@TEST.COM",
+                Email = $"patient{suffix}@test.com",
+                NormalizedEmail = $"PATIENT{suffix}@TEST.COM",
+                EmailConfirmed = true,
+                Gender = Gender.Female,
+                SecurityStamp = Guid.NewGuid().ToString(),
+                IsActive = true
+            };
+            patientUser.PasswordHash = hasher.HashPassword(patientUser, "Test@1234!");
+            db.Users.Add(patientUser);
+            await db.SaveChangesAsync();
+
+            var patientProfile = new PatientProfile { UserId = patientUser.Id };
+            db.PatientProfiles.Add(patientProfile);
+            await db.SaveChangesAsync();
+
+            return patientUser.Id;
+        }
     }
 }
