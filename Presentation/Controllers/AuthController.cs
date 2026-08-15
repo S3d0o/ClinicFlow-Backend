@@ -44,7 +44,7 @@ public class AuthController(IAuthService service) : ApiController
     public async Task<ActionResult<LoginResponse>> Login(
         [FromBody] LoginRequest request, CancellationToken ct)
     {
-        var ip = HttpContext.GetClientIpAddress();
+        var ip = HttpContext.GetClientIpAddress() ?? string.Empty; 
         var result = await service.LoginAsync(request, ip, ct);
         return HandleResult(result);
     }

@@ -142,5 +142,62 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
             return patientUser.Id;
         }
+
+        // used for authentication tests, returns the password as well
+        public static async Task<(Guid userId, string email, string password)>
+           SeedPatientUserAsync(ClinicDbContext db, string suffix = "auth")
+        {
+            const string plainPassword = "Test@1234!";
+            var hasher = new PasswordHasher<ApplicationUser>();
+
+            var user = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                FirstName = "Test",
+                LastName = "Patient",
+                UserName = $"authpatient{suffix}@test.com",
+                NormalizedUserName = $"AUTHPATIENT{suffix}@TEST.COM",
+                Email = $"authpatient{suffix}@test.com",
+                NormalizedEmail = $"AUTHPATIENT{suffix}@TEST.COM",
+                EmailConfirmed = true,
+                Gender = Gender.Female,
+                SecurityStamp = Guid.NewGuid().ToString(),
+                IsActive = true
+            };
+            user.PasswordHash = hasher.HashPassword(user, plainPassword);
+            db.Users.Add(user);
+
+            var patientProfile = new PatientProfile { UserId = user.Id };
+            db.PatientProfiles.Add(patientProfile);
+
+            await db.SaveChangesAsync();
+            // At the bottom of SeedPatientUserAsync — after SaveChangesAsync
+            // Ensure the Patient role exists
+            var roleId = Guid.NewGuid().ToString();
+            var existingRole = db.Roles.FirstOrDefault(r => r.Name == "Patient");
+
+            if (existingRole == null)
+            {
+                db.Roles.Add(new IdentityRole<Guid>
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Patient",
+                    NormalizedName = "PATIENT",
+                    ConcurrencyStamp = Guid.NewGuid().ToString()
+                });
+                await db.SaveChangesAsync();
+            }
+
+            var role = db.Roles.First(r => r.Name == "Patient");
+
+            db.UserRoles.Add(new IdentityUserRole<Guid>
+            {
+                UserId = user.Id,
+                RoleId = role.Id
+            });
+            await db.SaveChangesAsync();
+
+            return (user.Id, user.Email!, plainPassword);
+        }
     }
 }
