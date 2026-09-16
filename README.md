@@ -9,8 +9,6 @@ ClinicFlow solves real clinic problems: doctors register and wait for admin appr
 
 ## 📸 Screenshots
 
-> **How to add screenshots:** Take these screenshots from your running frontend, save them in a `/docs/screenshots/` folder in the repo root, then they'll display here automatically.
-
 ### Doctor Search & Booking
 ![Doctor Search](docs/screenshots/doctor-search.png)
 *Browse doctors by specialty and city, view ratings and consultation fees*
