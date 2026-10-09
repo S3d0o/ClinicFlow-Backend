@@ -23,6 +23,7 @@ namespace Persistence.Repositories
         public async Task<(IReadOnlyList<DoctorProfile> Doctors, int TotalCount)> GetApprovedPagedAsync(DoctorFilterParams filters, CancellationToken ct)
         {
             var query = context.DoctorProfiles
+                .AsNoTracking() // read-only list
                 .Include(d => d.Specialty)
                 .Include(d => d.User)
                 .Where(d => d.IsApprovedByAdmin && d.User.IsActive) // only show approved doctors with active accounts
@@ -42,6 +43,7 @@ namespace Persistence.Repositories
         public async Task<IReadOnlyList<DoctorProfile>> GetPendingApprovalsAsync(CancellationToken ct) // this is for admin dashboard to show doctors waiting for approval
         {
             var doctors = await context.DoctorProfiles
+                .AsNoTracking()
                 .Include(d => d.Specialty)
                 .Include(d => d.User)
                 .Where(d => !d.IsApprovedByAdmin && d.User.IsActive)
@@ -55,6 +57,7 @@ namespace Persistence.Repositories
 
         public async Task<IReadOnlyList<DoctorSchedule>> GetSchedulesAsync(int doctorProfileId, CancellationToken ct)
             => await context.DoctorSchedules
+                .AsNoTracking()
                 .Where(s => s.DoctorProfileId == doctorProfileId)
                 .OrderBy(s => s.DayOfWeek)
                 .ToListAsync(ct);
@@ -110,19 +113,19 @@ namespace Persistence.Repositories
                 query = query.Where(d => d.SpecialtyId == filters.SpecialtyId.Value);
 
             if (!string.IsNullOrEmpty(filters.City))
-                query = query.Where(d => d.ClinicCity!.ToLower().Contains(filters.City.ToLower()));
+                query = query.Where(d => d.ClinicCity!.Contains(filters.City)); // SQL Server collation is case-insensitive
 
             if (!string.IsNullOrEmpty(filters.Name))
                 query = query.Where(x =>
-                        (x.User.FirstName + " " + x.User.LastName).ToLower()
-                        .Contains(filters.Name.ToLower()));
+                        (x.User.FirstName + " " + x.User.LastName)
+                        .Contains(filters.Name));
 
             query = filters.SortBy switch
             {
-                DoctorSortBy.Rating => query.OrderByDescending(d => d.AverageRating),
-                DoctorSortBy.Fee => query.OrderBy(d => d.ConsultationFee),
-                DoctorSortBy.Experience => query.OrderByDescending(d => d.YearsOfExperience),
-                _ => query.OrderByDescending(d => d.AverageRating)
+                DoctorSortBy.Rating => query.OrderByDescending(d => d.AverageRating).ThenBy(d => d.Id),
+                DoctorSortBy.Fee => query.OrderBy(d => d.ConsultationFee).ThenBy(d => d.Id),
+                DoctorSortBy.Experience => query.OrderByDescending(d => d.YearsOfExperience).ThenBy(d => d.Id),
+                _ => query.OrderByDescending(d => d.AverageRating).ThenBy(d => d.Id) // unique tie-breaker keeps paging stable
             };
 
             return query;

@@ -95,6 +95,16 @@ namespace Services.Implementations
                 return DoctorErrors.ScheduleNotFound(scheduleId);
             }
             var updatedSchedule = mapper.Map(request, existing);
+
+            // The validator only compares the times when both are sent; check the merged result
+            if (updatedSchedule.EndTime <= updatedSchedule.StartTime
+                || (updatedSchedule.EndTime - updatedSchedule.StartTime).TotalMinutes < updatedSchedule.SlotDurationMinutes)
+            {
+                logger.LogWarning("Schedule {ScheduleId} update rejected: {StartTime}-{EndTime} cannot fit a {Duration}-minute slot",
+                    scheduleId, updatedSchedule.StartTime, updatedSchedule.EndTime, updatedSchedule.SlotDurationMinutes);
+                return DoctorErrors.InvalidScheduleTime;
+            }
+
             await uow.SaveChangesAsync(ct);
             logger.LogInformation("Updated schedule with ID: {ScheduleId} for doctor ID: {UserId}", scheduleId, userId);
 
@@ -142,30 +152,38 @@ namespace Services.Implementations
 
         private async Task GenerateSlotsAsync(DoctorSchedule schedule, CancellationToken ct)
         {
-            var slots = new List<AppointmentSlot>();
-            var Today = DateOnly.FromDateTime(DateTime.UtcNow);
+            // Inactive schedules publish no bookable slots
+            if (!schedule.IsActive || schedule.SlotDurationMinutes <= 0)
+                return;
 
-            for (int DayOfSet = 0; DayOfSet < 14; DayOfSet++)
+            var slots = new List<AppointmentSlot>();
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+            // Work in minutes since midnight: TimeOnly.AddMinutes wraps at midnight, which made
+            // a late-evening schedule loop forever. Only whole slots that end by EndTime are created.
+            var duration = schedule.SlotDurationMinutes;
+            var startMinutes = (int)schedule.StartTime.ToTimeSpan().TotalMinutes;
+            var endMinutes = (int)schedule.EndTime.ToTimeSpan().TotalMinutes;
+
+            for (int dayOffset = 0; dayOffset < 14; dayOffset++)
             {
-                var date = Today.AddDays(DayOfSet);
+                var date = today.AddDays(dayOffset);
 
                 // Only generate for the matching day of week
                 if (date.DayOfWeek != schedule.DayOfWeek) continue;
 
-                var currentTime = schedule.StartTime;
-                while (currentTime < schedule.EndTime)
+                for (var minute = startMinutes; minute + duration <= endMinutes; minute += duration)
                 {
+                    var slotStart = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(minute));
                     slots.Add(new AppointmentSlot
                     {
-                        StartTime = currentTime,
-                        EndTime = currentTime.AddMinutes(schedule.SlotDurationMinutes),
+                        StartTime = slotStart,
+                        EndTime = slotStart.AddMinutes(duration),
                         DoctorScheduleId = schedule.Id,
                         DoctorProfileId = schedule.DoctorProfileId,
                         Status = SlotStatus.Available,
                         Date = date
-                        
                     });
-                    currentTime = currentTime.AddMinutes(schedule.SlotDurationMinutes);
                 }
             }
             await uow.Slots.AddRangeAsync(slots, ct);

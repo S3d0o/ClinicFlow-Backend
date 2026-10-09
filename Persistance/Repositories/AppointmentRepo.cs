@@ -29,6 +29,7 @@ namespace Persistence.Repositories
             var query = context.Appointments
                 .AsNoTracking()
                 .Include(x => x.Doctor)
+                    .ThenInclude(d => d.User) // needed for DoctorName in the response
                 .Include(x => x.Patient)
                     .ThenInclude(p => p.User) // needed to get patient name and email
                 .Include(x => x.Slot) // needed to get appointment date and time
@@ -60,6 +61,8 @@ namespace Persistence.Repositories
                     .ThenInclude(d => d.User) // needed to get doctor name and email
                 .Include(x => x.Doctor)
                     .ThenInclude(d => d.Specialty) // EF Core merges these correctly
+                .Include(x => x.Patient)
+                    .ThenInclude(p => p.User) // needed for PatientName in the response
                 .Include(x => x.Review) // needed to get review details if exists
                 .Include(x => x.Slot) // needed to get appointment date and time
                 .Where(x => x.Patient.UserId == userId);
@@ -114,13 +117,16 @@ namespace Persistence.Repositories
         }
         public async Task<(int Pending, int Confirmed, int Completed, int Cancelled, int NoShow)> GetStatsAsync(CancellationToken ct)
         { 
-            var pendingAppointments = await context.Appointments.CountAsync(a => a.Status == AppointmentStatus.Pending, ct);
-            var confirmedAppointments = await context.Appointments.CountAsync(a => a.Status == AppointmentStatus.Confirmed, ct);
-            var completedAppointments = await context.Appointments.CountAsync(a => a.Status == AppointmentStatus.Completed, ct);
-            var cancelledAppointments = await context.Appointments.CountAsync(a => a.Status == AppointmentStatus.Cancelled, ct);
-            var noShowAppointments = await context.Appointments.CountAsync(a => a.Status == AppointmentStatus.NoShow, ct);
+            // One round trip instead of one COUNT per status
+            var counts = await context.Appointments
+                .GroupBy(a => a.Status)
+                .Select(g => new { Status = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.Status, x => x.Count, ct);
 
-            return (pendingAppointments, confirmedAppointments, completedAppointments, cancelledAppointments, noShowAppointments);
+            int CountOf(AppointmentStatus status) => counts.TryGetValue(status, out var count) ? count : 0;
+
+            return (CountOf(AppointmentStatus.Pending), CountOf(AppointmentStatus.Confirmed), CountOf(AppointmentStatus.Completed),
+                    CountOf(AppointmentStatus.Cancelled), CountOf(AppointmentStatus.NoShow));
         }
 
 

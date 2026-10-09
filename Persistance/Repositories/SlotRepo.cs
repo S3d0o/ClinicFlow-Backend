@@ -12,6 +12,7 @@ namespace Persistence.Repositories
 
         public async Task<IReadOnlyList<AppointmentSlot>> GetAvailableByDoctorAndDateAsync(int doctorProfileId, DateOnly date, CancellationToken ct)
             => await context.AppointmentSlots
+            .AsNoTracking()
             .Where(s => s.DoctorProfileId == doctorProfileId
                  && s.Date == date
                  && s.Status == SlotStatus.Available)

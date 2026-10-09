@@ -11,6 +11,7 @@ public class SpecialtyRepo(ClinicDbContext context) : ISpecialtyRepo
     public async Task<IReadOnlyCollection<Specialty>> GetAllAsync(
          CancellationToken ct = default, bool includeInactive = false)
         => await context.Specialties
+            .AsNoTracking()
             .Where(s => includeInactive || s.IsActive)
             .ToListAsync(ct);
 

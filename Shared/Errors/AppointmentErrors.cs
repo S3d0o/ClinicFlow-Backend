@@ -8,6 +8,10 @@ namespace Shared.Errors
             Error.NotFound("Appointment.NotFound",
                 $"Appointment with id {id} was not found");
 
+        public static Error SlotNotFound(int slotId) =>
+            Error.NotFound("Appointment.SlotNotFound",
+                $"Appointment slot with id {slotId} was not found");
+
         public static readonly Error SlotAlreadyBooked =
             Error.Conflict("Appointment.SlotAlreadyBooked",
                 "This appointment slot has already been booked");

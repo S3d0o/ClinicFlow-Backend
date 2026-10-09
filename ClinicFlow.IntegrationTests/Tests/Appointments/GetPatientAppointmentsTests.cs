@@ -75,6 +75,9 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
             body!.Should().NotBeEmpty();
             body!.Count.Should().Be(1);
 
+            // Doctor.User and Patient.User must be loaded for the names
+            body[0].DoctorName.Should().Be("Test Doctor");
+            body[0].PatientName.Should().Be("Test Patient");
         }
         [Fact]
         public async Task GetPatientAppointments_WrongRole_Returns403()

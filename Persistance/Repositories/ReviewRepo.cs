@@ -21,7 +21,8 @@ namespace Persistence.Repositories
                 .Include(r => r.Patient)
                     .ThenInclude(p => p.User)
                 .Where(r => r.DoctorProfileId == doctorProfileId && r.IsVisible)
-                .OrderByDescending(r => r.CreatedAt);
+                .OrderByDescending(r => r.CreatedAt)
+                .ThenByDescending(r => r.Id); // unique tie-breaker keeps paging stable
 
             var totalCount = await query.CountAsync(ct);
 

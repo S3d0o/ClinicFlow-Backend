@@ -1,4 +1,5 @@
-﻿using Domain.Enums;
+﻿using Microsoft.EntityFrameworkCore;
+using Domain.Enums;
 using Domain.Parameters;
 using Shared.DTOs.Review;
 
@@ -50,7 +51,20 @@ namespace Services.Implementations
                 return DoctorErrors.NotFound(appointment.DoctorProfileId);
 
             await uow.Reviews.AddAsync(review, ct);
-            await uow.SaveChangesAsync(ct);
+            try
+            {
+                await uow.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex)
+            {
+                // A concurrent request may have created the review between the check above and this insert
+                // (unique index on AppointmentId); anything else is a real failure
+                if (await uow.Reviews.GetByAppointmentIdAsync(request.AppointmentId, ct) is null)
+                    throw;
+
+                logger.LogWarning(ex, "Concurrent review submission for appointment {AppointmentId}", request.AppointmentId);
+                return AppointmentErrors.ReviewAlreadyExists;
+            }
             await RecalculateAvgRatingAndTotalReviewsForDoctor(doctor, ct);
 
             logger.LogInformation("Review submitted for appointment {AppointmentId} by user {UserId}", request.AppointmentId, patientUserId);

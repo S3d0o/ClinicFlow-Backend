@@ -84,7 +84,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             _uow.Slots.GetByIdAsync(SlotId, _ct)
                 .Returns((AppointmentSlot?)null);
 
-            var error = AppointmentErrors.NotFound(SlotId);
+            var error = AppointmentErrors.SlotNotFound(SlotId);
 
             // Act
             var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
