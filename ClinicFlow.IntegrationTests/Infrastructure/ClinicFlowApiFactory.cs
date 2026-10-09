@@ -12,8 +12,7 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 {
     public class ClinicFlowApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
-        private readonly MsSqlContainer _dbContainer = new MsSqlBuilder()
-            .WithImage("mcr.microsoft.com/mssql/server:2022-latest")
+        private readonly MsSqlContainer _dbContainer = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest")
             .WithPassword("Test@Password123!")
             .Build();
 
@@ -22,9 +21,11 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
             await _dbContainer.StartAsync();
         }
 
-        public async Task DisposeAsync()
+        // Explicit implementation: a public DisposeAsync() would hide WebApplicationFactory.DisposeAsync()
+        async Task IAsyncLifetime.DisposeAsync()
         {
-            await _dbContainer.StopAsync();
+            await _dbContainer.DisposeAsync();
+            await base.DisposeAsync();
         }
 
         // Override the ConfigureWebHost method to configure the test server

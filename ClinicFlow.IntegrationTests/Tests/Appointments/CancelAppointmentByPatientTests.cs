@@ -18,7 +18,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         private const string BaseUrl = "/api/appointments";
 
         private Guid _patientUserId;
-        private Guid _doctorUserId;
+        private Guid _otherPatientUserId; // owns the already-cancelled appointment
         private int _appointmentId;
         private int _cancelledAppointmentId; // already cancelled — for that specific test
         private int _slotId;
@@ -47,12 +47,12 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
                     await SeedDataHelper.SeedBaseAppointmentAsync(db);
 
                 // already cancelled appointment (second seed — different appointment, same DB)
-                (_, _, _, _cancelledAppointmentId) =
+                (_otherPatientUserId, _, _, _cancelledAppointmentId) =
                     await SeedDataHelper.SeedBaseAppointmentAsync(db, AppointmentStatus.Cancelled,"2");
             });
         }
         [Fact]
-        public async Task CancelAppointment_ValidRequest_Returns200()
+        public async Task CancelAppointment_ValidRequest_Returns204()
         {
 
             // Arrange
@@ -69,9 +69,25 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         }
 
         [Fact]
-        public async Task CancelAppointment_AlreadyCancelled_Returns403()
+        public async Task CancelAppointment_AlreadyCancelled_Returns409()
         {
 
+            // Arrange — the owner of the cancelled appointment tries to cancel it again
+            _client.DefaultRequestHeaders.Add(TestAuthHandler.UserIdHeader, _otherPatientUserId.ToString());
+            _client.DefaultRequestHeaders.Add(TestAuthHandler.UserRoleHeader, "Patient");
+
+            var request = new CancelAppointmentRequest("Patient is feeling better and no longer needs the appointment.");
+
+            // Act
+            var response = await _client.PostAsJsonAsync($"{BaseUrl}/{_cancelledAppointmentId}/cancel", request);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+
+        [Fact]
+        public async Task CancelAppointment_OtherPatientsAppointment_Returns403()
+        {
             // Arrange
             _client.DefaultRequestHeaders.Add(TestAuthHandler.UserIdHeader, _patientUserId.ToString());
             _client.DefaultRequestHeaders.Add(TestAuthHandler.UserRoleHeader, "Patient");
@@ -86,7 +102,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         }
 
         [Fact]
-        public async Task CancelAppoitment_NotFound_Returns404()
+        public async Task CancelAppointment_NotFound_Returns404()
         {
             // Arrange
             _client.DefaultRequestHeaders.Add(TestAuthHandler.UserIdHeader, _patientUserId.ToString());
@@ -99,7 +115,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         }
 
         [Fact]
-        public async Task CancelAppoitment_Unauthenticated_Returns401()
+        public async Task CancelAppointment_Unauthenticated_Returns401()
         {
             // Arrange
             var request = new CancelAppointmentRequest("Patient is feeling better and no longer needs the appointment.");
@@ -117,7 +133,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
             _client.DefaultRequestHeaders.Add(TestAuthHandler.UserRoleHeader, "NewRole");
             var request = new CancelAppointmentRequest("Patient is feeling better and no longer needs the appointment.");
             // Act
-            var response = await _client.PostAsJsonAsync($"{BaseUrl}/{1}/cancel", request);
+            var response = await _client.PostAsJsonAsync($"{BaseUrl}/{_appointmentId}/cancel", request);
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 

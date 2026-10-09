@@ -13,7 +13,7 @@ namespace Persistence.AppData.Migrations
 {
     [DbContext(typeof(ClinicDbContext))]
     [Migration("20260704194735_appointment status is string in the db")]
-    partial class appointmentstatusisstringinthedb
+    partial class AppointmentStatusIsStringInTheDb
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
