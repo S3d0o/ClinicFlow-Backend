@@ -415,14 +415,13 @@ HTTP request
 | `Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!)` is repeated in ~20 actions | All controllers | Low |
 
 **Status:** the `Guid.Parse(...)` row is ✅ fixed in `d3b6511` (`User.GetUserId()` in `Presentation/Extensions/HttpContextExtensions.cs`). The other rows are ⏸ open.
-n**Status:** the `Guid.Parse(...)` row is ✅ fixed in `d3b6511` (`User.GetUserId()` in `Presentation/Extensions/HttpContextExtensions.cs`). The other rows are ⏸ open.
 
 ### Dead code
 
 | What | Where | Fix risk |
 |---|---|---|
 | Unused repository methods: `DoctorRepo.GetDetailedByIdAsync`, `ExistsAsync`, `Update`, `UpdateSchedule`; `AppointmentRepo.GetDetailedByIdAsync`, `HasCompletedAppointmentAsync`, `Update`; `SlotRepo.IsAvailableAsync`, `Block`, `Update`; `PatientRepo.GetAllPatientsAsync`, `Update`, `Delete` | `Persistance/Repositories/*` and the matching interfaces | Low |
-| Unused errors: `DoctorErrors.NotApproved`, `CannotDeleteScheduleWithBookedSlots`, `InvalidScheduleTime`, `InvalidConsultationFee`; `ReviewErrors.AlreadyExists`, `NotAllowed`; `AppointmentErrors.CannotCancelCompleted`, `InvalidStatusTransition`; `Error.None` | `Shared/Errors/DoctorErrors.cs:10,22,25,28`; `ReviewErrors.cs:10,13`; `AppointmentErrors.cs:31,47`; `Error.cs:9` | Low |
+| Unused errors: `DoctorErrors.NotApproved`, `CannotDeleteScheduleWithBookedSlots`, `InvalidScheduleTime`, `InvalidConsultationFee`; `ReviewErrors.AlreadyExists`, `NotAllowed`; `AppointmentErrors.CannotCancelCompleted`, `InvalidStatusTransition`; `AdminErrors.DoctorNotFound`; `Error.None` | `Shared/Errors/DoctorErrors.cs:10,22,25,28`; `ReviewErrors.cs:10,13`; `AppointmentErrors.cs:31,47`; `Error.cs:9` | Low |
 | Unreachable checks in token refresh | `TokenService.cs:63-78` (see H7) | Medium |
 | `existing is null` can never be true (`ToListAsync` never returns null), so `ScheduleNotFoundForDate` is unreachable | `DoctorService.cs:131-135` | Low |
 | `AppointmentStatus.Pending` and `NoShow` are never set by application code. `Review.IsVisible` is never set to false. `Specialty.IsActive` can't be changed via the API | `Domain/Enums/AppointmentStatus.cs`; `Review.cs:14`; `Specialty.cs:8` | Medium (decide: implement or remove; removing enum values affects stored strings) |
@@ -436,8 +435,7 @@ n**Status:** the `Guid.Parse(...)` row is ✅ fixed in `d3b6511` (`User.GetUserI
 - the unused usings in `AuthService.cs` (`d3b6511`)
 - the unused test field (`9035a7d`)
 
-`DoctorErrors.InvalidScheduleTime` is now used (H5). The other rows are ⏸ open.
-n**Status:** ✅ fixed: the unreachable refresh checks (removed with H7, `d3b6511`), the unused usings in `AuthService.cs` (`d3b6511`) and the unused test field (`9035a7d`). `DoctorErrors.InvalidScheduleTime` is now used (H5), and `ITokenService` no longer has `GetActiveByUserIdAsync` callers (the method was replaced by `RevokeAllActiveAsync`). The other rows are ⏸ open.
+`DoctorErrors.InvalidScheduleTime` is now used (H5). `IRefreshTokenRepo.GetActiveByUserIdAsync` was replaced by `RevokeAllActiveAsync` (`d3b6511`). The other rows are ⏸ open.
 
 ### Unclear naming and misplaced types
 
@@ -547,7 +545,7 @@ The table lists 9 distinct warnings. The build summary reports 13 because some N
 **`dotnet list package --outdated`** (top-level packages)
 
 | Project | Package | Current | Latest |
-|---|---|---|---|---|
+|---|---|---|---|
 | `Persistence` | `Microsoft.EntityFrameworkCore`, `.Design`, `.SqlServer` | 10.0.7 | 10.0.12 |
 | `Domain` | `Microsoft.AspNetCore.Identity.EntityFrameworkCore` | 10.0.7 | 10.0.12 |
 | `Services` | `Microsoft.AspNetCore.Authentication.JwtBearer` | 10.0.8 | 10.0.12 |
