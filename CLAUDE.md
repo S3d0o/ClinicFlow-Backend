@@ -111,6 +111,7 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
 - `HandleResult(Result)` returns 204 by default. `HandleResult<T>(Result<T>)` returns 200, or 201 when given a location URI or a status code.
 - Get the user id with `User.GetUserId()` and the role with `User.GetRole()` (`Presentation/Extensions/HttpContextExtensions.cs`). Roles are `Admin`, `Doctor` and `Patient`. For anything that reads or changes a specific record, check ownership in the service (see `AppointmentService.GetAppointmentAsync` and `ReviewService.DeleteReviewAsync`), not just the role.
 - **Always add `[Authorize]` / `[Authorize(Roles = "...")]` explicitly.** There is no fallback authorization policy, so an action without one is anonymous.
+- **The API is a contract shared with the frontend repo.** Any change to a route, request or response field, status code, error code or auth rule must update `docs/API_CONTRACT.md` (the endpoint section, the error catalog and the §10 changelog) and regenerate `docs/openapi.json` in the same change. Follow the process in §11 of that file. Breaking changes are listed in §9 first.
 - Request bodies are validated automatically by the global async `ValidationFilter` (`ValidateAsync`, so `MustAsync` rules are fine). Add a `<Request>Validator` in `Presentation/Validators`; nothing else is needed.
 - Enums are serialized as strings (`JsonStringEnumConverter`), and several are stored as strings in the DB.
 

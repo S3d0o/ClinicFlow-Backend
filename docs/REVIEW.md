@@ -121,6 +121,8 @@ HTTP request
 
 ## 2. README: outdated, wrong, or missing
 
+**Status:** ✅ Fixed. `README.md` was rewritten to match the code (correct Docker command, Linux image, double-booking mechanism, routes, solution file, ports, project structure; the MIT claim was removed because there is no LICENSE file). The missing topics (tests, docker-compose and `.env`, configuration keys, demo logins, frontend URL, slot window, cancellation rule) now live in `docs/SETUP_AND_DEPLOYMENT.md`, `docs/PROJECT_OVERVIEW.md` and `docs/API_CONTRACT.md`. The tables below describe the old README.
+
 ### Wrong
 
 | README says | Reality |
