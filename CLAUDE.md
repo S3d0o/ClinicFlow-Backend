@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 .NET 10 solution (`ClinicFlow.slnx`). Run everything from the repo root.
 
-- Build: `dotnet build ClinicFlow.slnx`. Add `--no-incremental` to see every warning, because incremental builds hide warnings from projects that are already up to date.
+- Build: `dotnet build ClinicFlow.slnx`. Add `--no-incremental` to see every warning, because incremental builds hide warnings from projects that are already up to date. The build has 0 warnings, and `Directory.Build.props` makes nullable warnings errors.
 - Run the API: `dotnet run --project ClinicFlow/ClinicFlow.csproj`. Use `--launch-profile https` for https://localhost:7129; the default http profile is http://localhost:5143. Scalar docs are at `/scalar` in Development.
 - Unit tests: `dotnet test ClinicFlow.Tests`
 - Integration tests: `dotnet test ClinicFlow.IntegrationTests`. **Docker must be running**, because Testcontainers starts a SQL Server 2022 container.
@@ -23,8 +23,8 @@ No linter or CI workflow is configured.
 - Add: `dotnet ef migrations add <PascalCaseName> --project Persistance/Persistence.csproj --startup-project ClinicFlow --output-dir AppData/Migrations`
 - Apply manually: `dotnet ef database update --project Persistance/Persistence.csproj --startup-project ClinicFlow`
 - Remove the last unapplied migration: `dotnet ef migrations remove --project Persistance/Persistence.csproj --startup-project ClinicFlow`
-- On every startup, `DataSeeder.SeedAsync` (`ClinicFlow/Program.cs`) runs `Database.MigrateAsync()` and then seeds idempotent demo data, so `dotnet run` applies pending migrations by itself.
-- Name migrations in PascalCase without spaces. A name with spaces produced the all-lower-case class `appointmentstatusisstringinthedb` and warning CS8981.
+- On every startup, `DataSeeder.SeedAsync` (`ClinicFlow/Program.cs`) runs `Database.MigrateAsync()`, so `dotnet run` applies pending migrations by itself. It then seeds roles and specialties, an optional bootstrap admin, and (only when `Seeding:DemoData` is true) the demo dataset.
+- Name migrations in PascalCase without spaces. A name with spaces once produced an all-lower-case class and warning CS8981 (the class has since been renamed; the migration id is what EF uses).
 - `dotnet ef` builds and starts the host, so the configuration below must be present.
 
 ## Configuration and secrets
@@ -37,8 +37,11 @@ Nothing secret lives in `appsettings.json`, and nothing secret should be added t
 | Key | Required | Notes |
 |---|---|---|
 | `ConnectionStrings:DefaultConnection` | Yes | Startup throws without it (`InfraStructureServiceExtensions.cs`). Integration tests need it too, because `Program` registers services before the test factory swaps in the Testcontainers DbContext; any value works there |
-| `JwtSettings:Secret` | Yes | HMAC-SHA256 key, at least 32 bytes. Issuer, audience and token lifetimes are in `appsettings.json` |
+| `JwtSettings:Secret` | Yes | HMAC-SHA256 key, at least 32 bytes. **Validated at startup** (`ValidateOnStart`), along with issuer, audience and lifetimes, which live in `appsettings.json` |
 | `EmailSettings:Username`, `EmailSettings:Password`, `EmailSettings:FromAddress` | For email | SMTP (Gmail, port 587, StartTLS). Host, port and from-name are in `appsettings.json` |
+| `Frontend:BaseUrl` | No | Default `http://localhost:3000`. Used for the CORS origin and for links in emails |
+| `Seeding:DemoData` | No | Seeds the demo accounts with published passwords. Default: `true` in Development, `false` otherwise. Never enable in production |
+| `Seeding:AdminEmail`, `Seeding:AdminPassword` | No | When both are set, an admin with these credentials is created on startup if one doesn't exist |
 
 ```
 dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=localhost,1433;Database=ClinicFlow;User Id=sa;Password=<pwd>;TrustServerCertificate=True" --project ClinicFlow
@@ -48,10 +51,10 @@ dotnet user-secrets set "EmailSettings:Password" "<smtp app password>" --project
 dotnet user-secrets set "EmailSettings:FromAddress" "<from address>" --project ClinicFlow
 ```
 
-- `docker-compose.yml` reads `DB_PASSWORD`, `JWT_SECRET`, `EMAIL_USERNAME` and `EMAIL_PASSWORD` from `.env` (git-ignored) and runs with `ASPNETCORE_ENVIRONMENT=Production`.
+- `docker-compose.yml` reads `DB_PASSWORD`, `JWT_SECRET`, `EMAIL_USERNAME`, `EMAIL_PASSWORD` and optionally `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env` (git-ignored, also excluded from the Docker build context). It runs with `ASPNETCORE_ENVIRONMENT=Production`, so it creates no demo data. SQL Server is published on `127.0.0.1:1433` only.
 - Serilog writes to the console, `logs/log-.txt` and Seq at `http://localhost:5341`. Seq is optional; if it isn't running, that sink simply drops events.
-- CORS (`Program.cs`) and the links in emails (`EmailService.cs`) are hardcoded to `http://localhost:3000`.
-- Seeded demo logins are listed in the doc comment at the top of `Persistance/AppData/DataSeeder.cs`, e.g. `admin@clinicflow.com / Admin@1234`.
+- Client IPs come from `Connection.RemoteIpAddress`. `X-Forwarded-For` is applied by `UseForwardedHeaders`, which trusts loopback only; add the proxy to `ForwardedHeadersOptions.KnownProxies` (`WebApiExtensions.cs`) when deploying behind one.
+- Demo logins (Development, or `Seeding:DemoData=true`) are listed in the doc comment at the top of `Persistance/AppData/DataSeeder.cs`, e.g. `admin@clinicflow.com / Admin@1234`.
 
 ## Solution layout
 
@@ -96,7 +99,7 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
 - Services never throw for expected failures. They return `Result` / `Result<T>`. Return an `Error` or a value directly; implicit conversions do the wrapping. A `Result` can't mix `Validation` errors with other types; doing so throws.
 - In `Shared/Errors/<Feature>Errors.cs`, declare fixed errors as `public static readonly Error X = Error.Conflict("Feature.Reason", "...")` and parameterized ones as `public static Error NotFound(int id) => Error.NotFound(...)`. Codes are `Feature.Reason`.
 - Pick the `ErrorType` for the status code it produces: NotFound→404, Conflict→409, Forbidden→403, Validation→400, Unauthorized/InvalidCredentials→401, Failure→500. Use `Failure` only for unexpected server errors; some existing errors misuse it (see `docs/REVIEW.md` M3). Integration tests assert status codes, so changing a type changes the API.
-- Notification and email failures after the main write are logged and swallowed. They never fail the main operation.
+- Side effects after the main write (notifications, emails) are logged and swallowed, so they never fail the main operation. Follow the existing `TryNotifyAsync` helpers in `AppointmentService` and `AdminService`, and `TrySendConfirmationEmailAsync` in `AuthService`. Don't pass the request `ct` to emails for an already-committed change.
 - Use the injected `IDateTimeProvider` for "now" in business rules (the past-slot check, the 2-hour cancellation window). Unit tests stub it.
 
 ### Endpoints
@@ -106,9 +109,9 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
   - `CancellationToken ct` as the last parameter
   - a body of `return HandleResult(await service.XAsync(..., ct));`
 - `HandleResult(Result)` returns 204 by default. `HandleResult<T>(Result<T>)` returns 200, or 201 when given a location URI or a status code.
-- Get the user id with `Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!)` and the role from `ClaimTypes.Role`. Roles are `Admin`, `Doctor` and `Patient`.
+- Get the user id with `User.GetUserId()` and the role with `User.GetRole()` (`Presentation/Extensions/HttpContextExtensions.cs`). Roles are `Admin`, `Doctor` and `Patient`. For anything that reads or changes a specific record, check ownership in the service (see `AppointmentService.GetAppointmentAsync` and `ReviewService.DeleteReviewAsync`), not just the role.
 - **Always add `[Authorize]` / `[Authorize(Roles = "...")]` explicitly.** There is no fallback authorization policy, so an action without one is anonymous.
-- Request bodies are validated automatically by the global `ValidationFilter`. Add a `<Request>Validator` in `Presentation/Validators`; nothing else is needed.
+- Request bodies are validated automatically by the global async `ValidationFilter` (`ValidateAsync`, so `MustAsync` rules are fine). Add a `<Request>Validator` in `Presentation/Validators`; nothing else is needed.
 - Enums are serialized as strings (`JsonStringEnumConverter`), and several are stored as strings in the DB.
 
 ### Registering things (new feature checklist)

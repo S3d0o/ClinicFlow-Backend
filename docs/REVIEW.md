@@ -10,6 +10,40 @@ Reviewed: branch `unit-integration-tests` at `876bbde`, 2026-10-09. This review 
   - *High*: needs a migration, a product decision, or changes many call sites.
 - File references are `path:line` from the repo root.
 
+## Fix status (updated 2026-10-09)
+
+After the review, a fix pass was made on branch `docs/review-and-claude-md`. Its scope: safe fixes that change no API contract. Every finding below is kept as written. Each one now has a status: a **Status** line under the Critical, High and Medium items, and a **Status** column in the Low tables. The `path:line` references describe the code *before* the fixes.
+
+| Status | Meaning |
+|---|---|
+| ✅ Fixed | Resolved in the named commit |
+| 🟡 Partly fixed | The main problem is resolved; the status says what remains |
+| ⏸ Open | Not attempted, with the reason: a product decision, an API change the frontend would see, or a larger refactor |
+
+| Commit | Contents |
+|---|---|
+| `9035a7d` | Vulnerable and outdated `Microsoft.*` and Testcontainers packages, build warnings, misleading cancel tests |
+| `d3b6511` | Authorization, token, login and email security |
+| `3a2c391` | Schedules, appointments, data access |
+| `e5cc0db` | Startup, configuration, seeding, reminder job, Docker |
+
+**Verification after the fixes:**
+- `dotnet build --no-incremental`: 0 warnings. Nullable warnings are now errors.
+- Unit tests: 36 passed (17 before).
+- Integration tests: 31 passed (17 before).
+- `dotnet list package --vulnerable --include-transitive`: no vulnerable packages.
+
+**Totals:**
+- Critical: 4 of 4 fixed.
+- High: 5 of 8 fixed (H4, H6 and H8 are open).
+- Medium: 6 fixed, 1 partly fixed, 8 open.
+- .NET High/Medium: 4 fixed, 2 partly fixed, 1 open.
+
+**Left open on purpose:**
+- **Product decisions:** H4, H8, M1, M2, M14.
+- **API changes the frontend would see:** H6, M3, M5, M13, M15, L6, NM5, NL2, NL9, NL11.
+- **Larger work:** M12, NL14, NL21, §4.
+
 ---
 
 ## 1. Architecture
@@ -146,21 +180,25 @@ HTTP request
 ### Critical
 
 #### C1. Specialty create, update and delete are open to anonymous callers
+- **Status:** ✅ Fixed in `d3b6511`. `[Authorize(Roles = "Admin")]` is restored on create, update and delete. Covered by `AuthorizationTests` (anonymous → 401, patient → 403).
 - **Where:** `Presentation/Controllers/SpecialtyController.cs:37`, `:50`, `:63`. `[Authorize(Roles = "Admin")]` is commented out on all three. The controller has no class-level `[Authorize]`.
 - **Impact:** anyone on the internet can create, rename or delete specialties via `/api/Specialty`. Deletion is blocked only while doctors are assigned. The same operations already exist, correctly protected, under `AdminController` (`AdminController.cs:52-87`).
 - **Fix risk:** Low. Restore the attributes, or delete the write actions from `SpecialtyController`. First confirm whether the frontend calls `/api/Specialty` for writes.
 
 #### C2. Demo accounts with published passwords are created in every environment, including Production
+- **Status:** ✅ Fixed in `e5cc0db`. The demo dataset is seeded only when `Seeding:DemoData` is true (default: Development only). Roles and specialties are always seeded. A real admin can be bootstrapped from `Seeding:AdminEmail` / `Seeding:AdminPassword` (compose passes `ADMIN_EMAIL` / `ADMIN_PASSWORD`). **Databases that were already seeded still contain the demo accounts:** delete them or change their passwords.
 - **Where:** `ClinicFlow/Program.cs:55` calls `DataSeeder.SeedAsync` unconditionally. The accounts are listed in `Persistance/AppData/DataSeeder.cs:13-26`, and the admin is created at `:115-127` with password `Admin@1234`.
 - **Impact:** `docker-compose.yml` runs with `ASPNETCORE_ENVIRONMENT=Production`, and a fresh deployment gets `admin@clinicflow.com / Admin@1234`. Both are visible in the source.
 - **Fix risk:** Medium. Gate demo data behind `IsDevelopment()` or a config flag, and provide a separate bootstrap-admin path (env-provided credentials). Integration tests are unaffected, because they reset the DB per class.
 
 #### C3. Password-reset tokens are written to the logs
+- **Status:** ✅ Fixed in `d3b6511`. The log line is gone; only the user id is logged.
 - **Where:** `Services/Implementations/AuthService.cs:295-297`. It logs `"[DEV ONLY] Password reset token ..."` at Information level with no environment check.
 - **Impact:** logs go to Console, rolling files and Seq (`ClinicFlow/appsettings.json:10-24`). Anyone with log access can reset any user's password, including the admin's.
 - **Fix risk:** Low. Delete the statement.
 
 #### C4. Any authenticated user can read any appointment, including clinical notes
+- **Status:** ✅ Fixed in `d3b6511`. Only the owning patient, the owning doctor or an admin can read an appointment; anyone else gets 403. Covered by `GetAppointmentAsyncTests` and `AuthorizationTests`.
 - **Where:** `Presentation/Controllers/AppointmentController.cs:67-75` (`[Authorize]` only) → `Services/Implementations/AppointmentService.cs:358-367` (no ownership check).
 - **Impact:** appointment IDs are sequential ints. Any logged-in patient can enumerate `GET /api/appointments/{id}` and read other patients' names, reason for visit and `DoctorNotes` (`Shared/DTOs/Appointment/AppointmentResponse.cs:12-19`). This is a medical-data exposure (IDOR).
 - **Fix risk:** Low–Medium. Pass the caller's id and role, then allow only the owning patient, the owning doctor or an admin. Check what the frontend uses this endpoint for.
@@ -168,17 +206,20 @@ HTTP request
 ### High
 
 #### H1. A doctor can hang the server with a late-evening schedule
+- **Status:** ✅ Fixed in `3a2c391`. The loop counts minutes since midnight and creates only whole slots that end by `EndTime`, so it can no longer wrap past midnight or overrun the end time. Covered by `CreateScheduleAsyncTests`.
 - **Where:** `Services/Implementations/DoctorService.cs:155-169`. `while (currentTime < schedule.EndTime)` uses `TimeOnly.AddMinutes`, which **wraps at midnight**.
 - **Impact:** with `StartTime=22:30`, `EndTime=23:59`, `SlotDurationMinutes=60`, the loop goes 22:30 → 23:30 → 00:30 (still < 23:59) and never stops. It keeps allocating slots until the process runs out of memory. The validator allows these values (`Presentation/Validators/CreateScheduleRequestValidator.cs:16-28`). Any registered doctor can trigger it (see M1: approval isn't required).
 - **Related bug:** the same loop lets the last slot overrun `EndTime` (09:00–09:45 with 30-min slots produces a 09:30–10:00 slot). The seeder uses the correct condition (`DataSeeder.cs:539`).
 - **Fix risk:** Low. Loop while `current.AddMinutes(d) <= EndTime` and guard against wrap-around, for example by working in `TimeSpan` minutes.
 
 #### H2. Doctors (and admins) can delete any review
+- **Status:** ✅ Fixed in `d3b6511`. Only the review's author or an admin can delete it. Covered by `DeleteReviewAsyncTests`. Still open: whether admins should hide reviews (`IsVisible`) instead of deleting them.
 - **Where:** `Services/Implementations/ReviewService.cs:69` checks ownership only when `role == "Patient"`. `ReviewController.cs:57-68` allows any authenticated role.
 - **Impact:** a doctor can delete negative reviews of themselves or of competitors. The rating cache is then recalculated, so the doctor's average rating changes too.
 - **Fix risk:** Low. Allow the owning patient or an admin only. Decide whether admins should hide reviews (`IsVisible`) rather than delete them.
 
 #### H3. Suspending a user doesn't end their session; refresh ignores `IsActive`
+- **Status:** ✅ Fixed in `d3b6511`. Refresh rejects inactive users, and suspending a doctor revokes their active refresh tokens. The misleading comment is corrected. Access tokens stay valid until they expire (15 min). Covered by `AuthSecurityTests`.
 - **Where:**
   - `Services/Implementations/TokenService.cs:81-86` loads the user but never checks `IsActive`.
   - `AdminService.cs:68` only sets `IsActive=false`.
@@ -187,6 +228,7 @@ HTTP request
 - **Fix risk:** Low. Check `user.IsActive` in refresh, and revoke active refresh tokens on suspend.
 
 #### H4. Editing or deleting a schedule fails with 500 once it has bookings, and edits are left half-applied
+- **Status:** ⏸ Open. Needs a product decision about booked appointments.
 - **Where:**
   - `DoctorService.cs:97-102` (update).
   - `DoctorService.cs:115-116` (delete).
@@ -197,11 +239,13 @@ HTTP request
 - **Fix risk:** Medium. Needs a product decision on what happens to booked appointments (keep them? notify?). Wrap the operation in a transaction, skip times that already have a slot, and soft-delete via `IsActive`.
 
 #### H5. Partial schedule updates silently zero the fields you leave out
+- **Status:** ✅ Fixed in `3a2c391`. Each member is mapped explicitly with a `PreCondition`. The `ForAllMembers(Condition(...))` fix suggested below does **not** work for nullable value types; a unit test showed it still writes `default`. The merged times are validated (`InvalidScheduleTime`, 400), and `UpdateScheduleRequest` no longer defaults `SlotDurationMinutes` / `IsActive`. Covered by `UpdateScheduleAsyncTests`.
 - **Where:** `Services/MappingProfiles/DoctorProfile.cs:23-25` maps `UpdateScheduleRequest` (all-nullable, `Shared/DTOs/Doctor/UpdateScheduleRequest.cs:5-8`) without the `srcMember is not null` condition that the doctor- and patient-profile maps use.
 - **Impact:** sending only `{ "startTime": "10:00" }` sets `EndTime` to `00:00`, and the schedule then generates zero slots. The validator (`UpdateScheduleRequestValidator.cs:17-21`) only compares the two times when both are present.
 - **Fix risk:** Low. Add `.ForAllMembers(o => o.Condition(... is not null))`, then validate the merged values.
 
 #### H6. Patient appointment list returns nothing by default (and 500s on bad paging)
+- **Status:** ⏸ Open. The fix changes default paging results and adds new 400 responses (an API change), which this pass excluded.
 - **Where:**
   - `Shared/DTOs/Appointment/AppointmentFilterRequest.cs:8-9`: `PageNumber` and `PageSize` have no defaults, so both are 0.
   - There is no validator for `AppointmentFilterRequest`.
@@ -214,12 +258,14 @@ HTTP request
 - **Fix risk:** Low. Default to 1/10, add a validator like `ReviewFilterRequestValidator`, and clamp in one shared helper.
 
 #### H7. Refresh-token theft detection is unreachable, and token reuse isn't punished
+- **Status:** ✅ Fixed in `d3b6511`. If a rotated token is reused from the same IP within `TheftDetectionWindowMinutes`, it is treated as a client race and rejected with 401. Any other reuse revokes **all** of the user's active refresh tokens (every session, not just one token chain). The dead branch is removed. Both paths are covered by `AuthSecurityTests`.
 - **Where:** `Services/Implementations/TokenService.cs:60-78`.
 - **Why it can't run:** `LastUsed` is only ever set during rotation (`:89`), and rotation also sets `Revoked` (`:92`). Any token with `LastUsed != null` has therefore already failed the `IsActive` check at `:60`, so lines `:63-78` are dead.
 - **Impact:** replaying an old rotated token returns 401 but does **not** revoke the attacker's or the victim's newer tokens. The README claims family revocation.
 - **Fix risk:** Medium. This is security-sensitive logic. On reuse of a rotated token, follow `ReplacedByTokenHash` and revoke the chain. Add integration tests first.
 
 #### H8. Slots run out after two weeks
+- **Status:** ⏸ Open. Needs a slot roll-forward job and idempotent generation; best done together with H4.
 - **Where:** `DoctorService.cs:146-150` generates slots for days 0–13 only, and only when a schedule is created or updated. Nothing rolls the window forward.
 - **Impact:** a doctor who sets a schedule once has no bookable slots 14 days later. The seeder generates 21 days, which hides the problem in demos.
 - **Fix risk:** Medium. Add a daily background job that extends slots for active schedules, and make generation idempotent (skip existing times; see H4).
@@ -227,6 +273,7 @@ HTTP request
 ### Medium
 
 #### M1. Doctor approval and suspension aren't enforced where it matters
+- **Status:** ⏸ Open. Needs a decision on where the approval gate belongs.
 - **Login:** `AuthService.cs:210-249` lets unapproved doctors log in, despite the comment at `:78`.
 - **Schedules:** `DoctorService.cs:60-88` lets unapproved doctors create schedules and slots.
 - **Public profile:** `DoctorController.cs:27-34` → `DoctorRepo.GetByIdAsync` (`DoctorRepo.cs:17-18`) returns unapproved doctors. The approval-filtered `GetDetailedByIdAsync` (`:9-16`) is never used.
@@ -234,6 +281,7 @@ HTTP request
 - **Fix risk:** Low–Medium. Decide where the gate belongs (login vs. per action), then add checks and tests.
 
 #### M2. Slot times are local clinic time but are compared to UTC
+- **Status:** ⏸ Open. Needs a clinic time-zone decision.
 - **Where:**
   - `AppointmentService.cs:37-38` (booking a slot in the past).
   - `AppointmentService.cs:145-147` (2-hour cancellation window).
@@ -243,6 +291,7 @@ HTTP request
 - **Fix risk:** Medium–High. Define a clinic time zone (config, or per doctor), convert at the boundaries, and route all "now" reads through `IDateTimeProvider` (see §4).
 
 #### M3. Business errors return 500
+- **Status:** ⏸ Open. Changes status codes the frontend may rely on (an API change).
 - **Where:**
   - `Shared/Errors/AuthErrors.cs:16-17` (`EmailAlreadyExists`), `:22-26` (invalid confirmation/reset token), `:31-32` (`RegistrationFailed`, including Identity password-policy failures). All are `ErrorType.Failure`.
   - `DoctorErrors.cs:16` (`ScheduleDayAlreadyExists`; the controller documents 409).
@@ -252,17 +301,20 @@ HTTP request
 - **Fix risk:** Medium. A one-line change per error, but it alters API status codes the frontend may depend on.
 
 #### M4. Side effects after a commit can turn a success into a 500
+- **Status:** ✅ Fixed in `d3b6511` and `3a2c391`. Failures in post-commit notifications (cancel by doctor or admin, complete, approve, suspend) and in the registration email are now logged, not returned to the client. Note: there is no endpoint to resend a confirmation email, so a user whose email failed still can't confirm.
 - **Notifications:** `AppointmentService.cs:226-238` (cancel by doctor), `:265-277` (cancel by admin), `:316-321` (complete), and `AdminService.cs:41-46`, `:71-76`. These run *after* `SaveChangesAsync` without the try/catch used in `BookAppointmentAsync` and `CancelByPatientAsync`.
 - **Registration email:** `AuthService.cs:86-88` and `:167-169` send the email after `CommitAsync`, inside the outer `try`. An SMTP failure jumps to `catch`, which calls `RollbackAsync()` on an already-committed transaction (`:97-101`, `:177-181`).
 - **Impact:** the client gets an error and may retry. For registration, the user exists but got no email, and a retry returns "email already exists" (as a 500; see M3).
 - **Fix risk:** Low. Wrap the side effects, or move them after the response / onto an outbox.
 
 #### M5. No global exception handler
+- **Status:** ⏸ Open. Changes the 500 response body; it belongs with NL9 (API shape).
 - **Where:** `ClinicFlow/Program.cs:57-84`. There is no `UseExceptionHandler` or `AddProblemDetails`.
 - **Impact:** unhandled exceptions (H4, H6, the review race in L8) return a bare 500, or the developer exception page in Development. The `ProblemDetails` contract used everywhere else is lost.
 - **Fix risk:** Low.
 
 #### M6. No brute-force protection on login, and login leaks account state
+- **Status:** 🟡 Partly fixed in `d3b6511`. The password is checked before account state, and failures count toward Identity lockout (5 attempts, 15 minutes, `Auth.AccountLockedOut` → 401). Covered by `AuthSecurityTests`. Still open: request rate limiting.
 - **Where:**
   - `AuthService.cs:229` uses `CheckPasswordAsync`, which doesn't count failures toward Identity lockout. There is no rate limiter in `Program.cs`.
   - `AuthService.cs:219-228` returns "account not active" or "email not confirmed" **before** the password check.
@@ -270,16 +322,19 @@ HTTP request
 - **Fix risk:** Low–Medium. Use `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)` or ASP.NET rate limiting, and check the password first.
 
 #### M7. Client IP is taken from a spoofable header
+- **Status:** ✅ Fixed in `d3b6511`. The client IP comes from `RemoteIpAddress`. `UseForwardedHeaders` trusts loopback only; add the proxy to `KnownProxies` when deploying behind one.
 - **Where:** `Presentation/Extensions/HttpContextExtensions.cs:9-11` trusts `X-Forwarded-For` from any client.
 - **Impact:** the IPs recorded on refresh tokens, and the (currently dead) theft-detection logic, can be forged.
 - **Fix risk:** Low. Use `UseForwardedHeaders` with `KnownProxies`/`KnownNetworks` and read `Connection.RemoteIpAddress`.
 
 #### M8. Raw refresh tokens are logged on failure
+- **Status:** ✅ Fixed in `d3b6511`. The catch-all is removed (see NM1), so the raw token is no longer logged.
 - **Where:** `AuthService.cs:275` logs `{RefreshToken}`, and puts `ex.Message` in the template instead of passing the exception.
 - **Impact:** tokens in logs. Most failed tokens are already invalid, but concurrency or suspicious-activity failures can involve live ones.
 - **Fix risk:** Low.
 
 #### M9. Reminder job can lose reminders and scales badly
+- **Status:** ✅ Fixed in `e5cc0db`. The email is sent first, and `ReminderSentAt` is saved together with the notification. Candidates are filtered by date in SQL and loaded asynchronously. A lock is still needed if the app ever runs on more than one instance.
 - **Where:**
   - `ClinicFlow/BackgroundJobs/AppointmentReminderJob.cs:58-74`.
   - `NotificationService.cs:13` (its `SaveChangesAsync` flushes the job's tracked changes).
@@ -289,20 +344,24 @@ HTTP request
 - **Fix risk:** Low–Medium. Set `ReminderSentAt` after a successful send, filter by date in SQL, and add a lock if the app ever runs on more than one instance.
 
 #### M10. User-controlled names are injected into HTML emails
+- **Status:** ✅ Fixed in `d3b6511`. Names are passed through `HtmlEncoder.Default.Encode`.
 - **Where:** `Services/Implementations/EmailService.cs:95`, `:122`, `:259`.
 - **Impact:** `FirstName`/`LastName` can be set freely (`ProfileService.cs:48-49`) and are interpolated into the HTML unescaped. That allows links or markup in transactional emails, which is a phishing vector.
 - **Fix risk:** Low. Wrap values with `HtmlEncoder.Default.Encode`.
 
 #### M11. Frontend URL and CORS origin are hardcoded to `http://localhost:3000`
+- **Status:** ✅ Fixed in `d3b6511`. `Frontend:BaseUrl` (default `http://localhost:3000`) drives both CORS and the email links.
 - **Where:** `EmailService.cs:25`, `:56`; `Program.cs:46`.
 - **Impact:** email confirmation and password reset links are broken in any deployed environment.
 - **Fix risk:** Low. Move them to config.
 
 #### M12. Docker healthcheck always fails
+- **Status:** ⏸ Open. Needs a choice of probe (install `curl` in the image, or check health from compose).
 - **Where:** `Dockerfile:39-40` curls `/health`. No health endpoint is mapped, and `curl` isn't in the `aspnet` image.
 - **Fix risk:** Low. Add `AddHealthChecks()`/`MapHealthChecks("/health")` and a probe that exists in the image.
 
 #### M13. Missing or inconsistent input validation
+- **Status:** ⏸ Open. New validators would turn requests that are accepted today into 400s (an API change).
 - **No validator:**
   - `BookAppointmentRequest`: `ReasonForVisit` is unbounded.
   - `CancelAppointmentRequest`, `DoctorNotesRequest`, `LoginRequest`, `ResetPasswordRequest`, `AppointmentFilterRequest` (H6).
@@ -312,30 +371,32 @@ HTTP request
 - **Fix risk:** Low.
 
 #### M14. Appointment state rules are incomplete
+- **Status:** ⏸ Open. Needs the state-machine and product decisions (§4.3).
 - **Early completion:** a doctor can mark an appointment `Completed` before it happens (`AppointmentService.cs:302-312`, no time check), which unlocks a review for a visit that never took place.
 - **NoShow:** never set by any code path, but cancel and complete both accept it.
 - **Wrong error:** `CancelByAdminAsync` returns `AlreadyCancelled` for a *completed* appointment (`:251-255`).
 - **Fix risk:** Medium. Centralise allowed transitions (see §4).
 
 #### M15. Doctor-profile update forces a fee
+- **Status:** ⏸ Open. Changes the request contract (`decimal?`).
 - **Where:** `Shared/DTOs/Doctor/UpdateDoctorProfileRequest.cs:6` (non-nullable `decimal`) and `UpdateDoctorProfileRequestValidator.cs:11-13`.
 - **Impact:** a "partial" update without a fee is rejected (fee must be > 0). If the validator were relaxed, the fee would be overwritten with 0, because the null-check mapping condition never applies to value types.
 - **Fix risk:** Low. Make it `decimal?`.
 
 ### Low
 
-| ID | Problem | Where | Fix risk |
-|---|---|---|---|
-| L1 | Booking email says "Dr. Dr. Ahmed": the service passes `"Dr. X"` and the template prepends "Dr." | `AppointmentService.cs:92`; `EmailService.cs:91`, `:259` | Low |
-| L2 | Doctor-facing cancel message repeats "on {date} on {date}" | `AppointmentService.cs:175`, `:236`, `:275` | Low |
-| L3 | Booking email says cancel "24 hours in advance"; the rule is 2 hours | `EmailService.cs:101-102` vs `AppointmentService.cs:147` | Low |
-| L4 | Missing slot returns "Appointment with id X was not found" | `AppointmentService.cs:30` | Low |
-| L5 | Schedule `IsActive=false` still regenerates bookable slots | `DoctorService.cs:101-102`, `:143-173` | Low |
-| L6 | Inactive specialties can't be read, updated or reactivated (`GetByIdAsync` filters `IsActive`, and `SpecialtyRequest` has no `IsActive`) | `SpecialtyRepo.cs:17-19`; `Shared/DTOs/Specialty/SpecialtyRequest.cs` | Low |
-| L7 | Logout requires a valid access token (so you can't log out after 15 min) and doesn't check that the refresh token belongs to the caller | `AuthController.cs:67-77`; `TokenService.cs:135-150` | Low |
-| L8 | Two concurrent review submissions → unique-index violation → 500. Rating recalculation is a separate, non-atomic save | `ReviewService.cs:21-54`, `:108-117` | Low |
-| L9 | `AuthErrors.UserNotFound` says "No account found with this email" but is used for user-id lookups | `AuthErrors.cs:28-29`; `AuthService.cs:193`, `:308` | Low |
-| L10 | Seeder comment says appointment dates are "pinned to July 2026"; they are relative to today | `DataSeeder.cs:566` | Low |
+| ID | Problem | Where | Fix risk | Status |
+|---|---|---|---|---|
+| L1 | Booking email says "Dr. Dr. Ahmed": the service passes `"Dr. X"` and the template prepends "Dr." | `AppointmentService.cs:92`; `EmailService.cs:91`, `:259` | Low | ✅ `3a2c391` |
+| L2 | Doctor-facing cancel message repeats "on {date} on {date}" | `AppointmentService.cs:175`, `:236`, `:275` | Low | ✅ `3a2c391` |
+| L3 | Booking email says cancel "24 hours in advance"; the rule is 2 hours | `EmailService.cs:101-102` vs `AppointmentService.cs:147` | Low | ✅ `d3b6511` |
+| L4 | Missing slot returns "Appointment with id X was not found" | `AppointmentService.cs:30` | Low | ✅ `3a2c391` (new `AppointmentErrors.SlotNotFound`, still 404) |
+| L5 | Schedule `IsActive=false` still regenerates bookable slots | `DoctorService.cs:101-102`, `:143-173` | Low | ✅ `3a2c391` |
+| L6 | Inactive specialties can't be read, updated or reactivated (`GetByIdAsync` filters `IsActive`, and `SpecialtyRequest` has no `IsActive`) | `SpecialtyRepo.cs:17-19`; `Shared/DTOs/Specialty/SpecialtyRequest.cs` | Low | ⏸ Open (request contract change) |
+| L7 | Logout requires a valid access token (so you can't log out after 15 min) and doesn't check that the refresh token belongs to the caller | `AuthController.cs:67-77`; `TokenService.cs:135-150` | Low | 🟡 `d3b6511`: the token must belong to the caller; logout still requires a valid access token |
+| L8 | Two concurrent review submissions → unique-index violation → 500. Rating recalculation is a separate, non-atomic save | `ReviewService.cs:21-54`, `:108-117` | Low | 🟡 `3a2c391`: a duplicate now returns `ReviewAlreadyExists` (409); the rating recalculation is still a separate save |
+| L9 | `AuthErrors.UserNotFound` says "No account found with this email" but is used for user-id lookups | `AuthErrors.cs:28-29`; `AuthService.cs:193`, `:308` | Low | ✅ `d3b6511` |
+| L10 | Seeder comment says appointment dates are "pinned to July 2026"; they are relative to today | `DataSeeder.cs:566` | Low | ✅ `e5cc0db` |
 
 ### Duplicated logic
 
@@ -351,6 +412,9 @@ HTTP request
 | Password and phone rules are copied between validators (phone rules differ; see M13) | `Presentation/Validators/Register*Validator.cs`, `Update*ProfileRequestValidator.cs` | Low |
 | `Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!)` is repeated in ~20 actions | All controllers | Low |
 
+**Status:** the `Guid.Parse(...)` row is ✅ fixed in `d3b6511` (`User.GetUserId()` in `Presentation/Extensions/HttpContextExtensions.cs`). The other rows are ⏸ open.
+n**Status:** the `Guid.Parse(...)` row is ✅ fixed in `d3b6511` (`User.GetUserId()` in `Presentation/Extensions/HttpContextExtensions.cs`). The other rows are ⏸ open.
+
 ### Dead code
 
 | What | Where | Fix risk |
@@ -364,6 +428,14 @@ HTTP request
 | Empty placeholder folders declared in csproj files | `Domain.csproj:10`, `Persistence.csproj:23`, `Presentation.csproj:16-17`, `Shared.csproj:10` | Low |
 | Unused usings, including the internal EF API `Microsoft.EntityFrameworkCore.Query.Internal` and `Microsoft.AspNetCore.Rewrite` | `AuthService.cs:3-5`; `ScheduleResponse.cs:1`; `Review.cs:1`; `DoctorRepo.cs:2`; `ReviewController.cs:4,5,7` | Low |
 | Unused field in a test (build warning CS0169) | `CancelAppointmentByPatientTests.cs:21` | Low |
+
+**Status:** ✅ fixed:
+- the unreachable refresh checks (removed with H7, `d3b6511`)
+- the unused usings in `AuthService.cs` (`d3b6511`)
+- the unused test field (`9035a7d`)
+
+`DoctorErrors.InvalidScheduleTime` is now used (H5). The other rows are ⏸ open.
+n**Status:** ✅ fixed: the unreachable refresh checks (removed with H7, `d3b6511`), the unused usings in `AuthService.cs` (`d3b6511`) and the unused test field (`9035a7d`). `DoctorErrors.InvalidScheduleTime` is now used (H5), and `ITokenService` no longer has `GetActiveByUserIdAsync` callers (the method was replaced by `RevokeAllActiveAsync`). The other rows are ⏸ open.
 
 ### Unclear naming and misplaced types
 
@@ -398,6 +470,8 @@ What exists: unit tests for `AppointmentService.BookAppointmentAsync` and `Cance
 - Typos in test names: `CancelAppoitment_*`, `WhenWhenAllInputsAreValid`, `WhenCancellsWithIn2Hours`.
 
 **Fix risk:** Low. Adding tests can't break production. Write tests for H4/H6/H7 *before* fixing them.
+
+**Status:** 🟡 Partly addressed. Added unit tests: `GetAppointmentAsyncTests` (C4), `DeleteReviewAsyncTests` (H2), `CreateScheduleAsyncTests` (H1) and `UpdateScheduleAsyncTests` (H5, L5, using the real AutoMapper configuration). Added integration tests: `AuthorizationTests` (C1, C4), `AuthSecurityTests` (H3, H7, M6, L7) and a names assertion in `GetPatientAppointmentsTests` (NM4). The three wrong cancel tests are ✅ corrected in `9035a7d`: already-cancelled now asserts 409, a cross-patient 403 test was added, the names were fixed, and the hardcoded id was replaced. `AuthService` registration, `AdminService`, `NotificationService`, the reminder job and the validators are still untested.
 
 ---
 
@@ -459,6 +533,8 @@ Second pass, same branch and commit (`876bbde`), 2026-10-09, read-only. It cover
 
 The table lists 9 distinct warnings. The build summary reports 13 because some NU1903 warnings are repeated across restore and build. There are no nullable or analyzer warnings.
 
+**Status:** ✅ after `9035a7d`, `dotnet build --no-incremental` reports 0 warnings.
+
 **`dotnet list package --vulnerable --include-transitive`**
 
 | Project | Package (transitive) | Resolved | Severity | Advisory | Pulled in by |
@@ -469,7 +545,7 @@ The table lists 9 distinct warnings. The build summary reports 13 because some N
 **`dotnet list package --outdated`** (top-level packages)
 
 | Project | Package | Current | Latest |
-|---|---|---|---|
+|---|---|---|---|---|
 | `Persistence` | `Microsoft.EntityFrameworkCore`, `.Design`, `.SqlServer` | 10.0.7 | 10.0.12 |
 | `Domain` | `Microsoft.AspNetCore.Identity.EntityFrameworkCore` | 10.0.7 | 10.0.12 |
 | `Services` | `Microsoft.AspNetCore.Authentication.JwtBearer` | 10.0.8 | 10.0.12 |
@@ -489,9 +565,12 @@ The table lists 9 distinct warnings. The build summary reports 13 because some N
 
 The `Microsoft.*` 10.0.x packages are pinned at three different patch levels: 10.0.7, 10.0.8 and 10.0.10. There is no `Directory.Packages.props` (Central Package Management) to keep them aligned.
 
+**Status:** ✅ all `Microsoft.*` 10.0.x packages are on 10.0.12 and `Testcontainers.MsSql` is on 4.16.0 (`9035a7d`). Central Package Management was not added. The other outdated packages (AutoMapper, MailKit, Serilog, Scalar and the test tooling majors) were not updated.
+
 ### High
 
 #### NH1. Vulnerable `Microsoft.OpenApi` 2.0.0 ships in the production app
+- **Status:** ✅ Fixed in `9035a7d`. The `Microsoft.*` packages are aligned on 10.0.12, and `dotnet list package --vulnerable --include-transitive` reports none.
 - **Where:** `ClinicFlow/ClinicFlow.csproj:12` (`Microsoft.AspNetCore.OpenApi` 10.0.7) pulls in `Microsoft.OpenApi` 2.0.0 (GHSA-v5pm-xwqc-g5wc, High).
 - **Impact:** the package is published into the Docker image. The OpenAPI document and Scalar are mapped only in Development (`Program.cs:71-75`), which limits how it can be reached in Production. It is still a known-High dependency in a deployable artifact, and security scanners will flag the image.
 - **Fix risk:** Low. Update `Microsoft.AspNetCore.OpenApi` to 10.0.12 and re-run `dotnet list package --vulnerable`. If that doesn't resolve a patched `Microsoft.OpenApi`, add a direct `PackageReference` to the patched version.
@@ -499,6 +578,7 @@ The `Microsoft.*` 10.0.x packages are pinned at three different patch levels: 10
 ### Medium
 
 #### NM1. Token refresh and logout use exceptions for control flow, and a catch-all turns infrastructure failures into 401
+- **Status:** ✅ Fixed in `d3b6511`. `TokenService` returns `Result`; `AuthService` has no catch-all, so real failures surface as 5xx.
 - **Where:**
   - `Services/Implementations/TokenService.cs:57-78`, `:82`, `:86`, `:119` throw `SecurityTokenException`.
   - `:141` throws `KeyNotFoundException`.
@@ -507,6 +587,7 @@ The `Microsoft.*` 10.0.x packages are pinned at three different patch levels: 10
 - **Fix risk:** Low–Medium. Have `TokenService` return `Result<T>` with `AuthErrors`, and let unexpected exceptions propagate (to the handler from M5). Integration tests for refresh already exist (`RefreshTokenTests`).
 
 #### NM2. `CancellationToken` isn't passed through auth, transactions or email
+- **Status:** ✅ Fixed in `d3b6511`, `3a2c391` and `e5cc0db`. Two deliberate exceptions: post-commit emails in request paths don't get the request's `ct` (a client disconnect must not cancel the confirmation for a committed booking), and `ProfileService` has none because `UserManager` has no `ct` overloads.
 - **Where:**
   - `ITokenService`/`TokenService`: no method takes a `ct`, so `SaveChangesAsync()` at `:40`, `:113` and `:148` runs without one.
   - `IRefreshTokenRepo`/`RefreshTokenRepo.cs:5-16`: none of the three methods takes a `ct`.
@@ -518,6 +599,7 @@ The `Microsoft.*` 10.0.x packages are pinned at three different patch levels: 10
 - **Fix risk:** Low. The change is mechanical and signature-only. NSubstitute setups in `ClinicFlow.Tests` need `Arg.Any<CancellationToken>()` added.
 
 #### NM3. Email is sent inside the request, with no timeout and a new SMTP connection per message
+- **Status:** 🟡 Partly fixed in `d3b6511`. Added a 30 s SMTP timeout and cancellation. Still open: sending is still inline (no background queue or outbox).
 - **Where:** `EmailService.cs:297-309` creates a new `SmtpClient`, then connects, authenticates, sends and disconnects for every email. MailKit's default timeout is 2 minutes **per operation**, and no `ct` is passed. The callers are:
   - booking (`AppointmentService.cs:89`)
   - registration (`AuthService.cs:88`, `:169`)
@@ -527,45 +609,48 @@ The `Microsoft.*` 10.0.x packages are pinned at three different patch levels: 10
 - **Fix risk:** Low–Medium. Set `client.Timeout` and pass `ct` now. Later, move sending to a queued background sender (`Channel<T>` + `BackgroundService`, or an outbox), which also covers M4 and §4.4.
 
 #### NM4. Missing `Include`s make the appointment lists return blank names
+- **Status:** ✅ Fixed in `3a2c391`. Covered by an assertion in `GetPatientAppointmentsTests`.
 - **Where:** `Persistance/Repositories/AppointmentRepo.cs:29-35` includes `Doctor` but not `Doctor.User`, and `:57-65` doesn't include `Patient.User`. `Services/MappingProfiles/AppointmentProfile.cs:11-12` builds `DoctorName` and `PatientName` from those navigations.
 - **Impact:** `GET /api/appointments/doctor/my` returns an empty `DoctorName`, and `GET /api/appointments/my` returns an empty `PatientName`. There is no error, because AutoMapper null-guards the expression and the field is silently blank.
 - **Fix risk:** Low. Add `.ThenInclude(d => d.User)` and `.Include(x => x.Patient).ThenInclude(p => p.User)`, or better, use `ProjectTo<AppointmentResponse>` so EF selects only the needed columns.
 
 #### NM5. No authorization fallback policy, so endpoints are public by default
+- **Status:** ⏸ Open. A fallback policy changes which endpoints are anonymous (an API change).
 - **Where:** `ClinicFlow/Extensions/InfraStructureServiceExtensions.cs` registers authentication, but there is no `AddAuthorization(o => o.FallbackPolicy = ...)`. Only `AdminController`, `NotificationController` and `ProfileController` have class-level `[Authorize]`.
 - **Impact:** every action without an attribute is anonymous. C1 shows what happens: commenting out an attribute silently opens a write endpoint, and nothing fails. A new controller is public until someone remembers to protect it.
 - **Fix risk:** Medium. Set `FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build()`, then add `[AllowAnonymous]` to the auth endpoints and to the public doctor, specialty and review reads. The integration tests cover login and refresh anonymously, so they will catch a missed `[AllowAnonymous]`.
 
 #### NM6. Compose connects the app as `sa` and publishes SQL Server on every host interface
+- **Status:** 🟡 Partly fixed in `e5cc0db`. The port is bound to `127.0.0.1`. Still open: the app connects as `sa`, because a least-privilege login needs a DB init script.
 - **Where:** `docker-compose.yml:28` (`User Id=sa;Password=${DB_PASSWORD}`) and `:11` (`"1433:1433"`).
 - **Impact:** an SQL injection or app compromise gets full server-admin rights. The database is reachable from the network with the SA password, and the compose file runs with `ASPNETCORE_ENVIRONMENT=Production`.
 - **Fix risk:** Low. Create a least-privilege login for the app (it needs DDL only while startup migrations remain; see §4.9). Remove the port mapping, or bind it to `127.0.0.1:1433:1433`.
 
 ### Low
 
-| ID | Problem | Where | Fix risk |
-|---|---|---|---|
-| NL1 | Read-only queries are tracked (no `AsNoTracking`) on hot paths: public doctor search, doctor profile, pending approvals, schedules, available slots, specialties, `GetAppointmentAsync`, patient profile GET. That costs change-tracker work and memory per request | `DoctorRepo.cs:17-18`, `:25-29`, `:44-48`, `:57-60`; `SlotRepo.cs:14-19`; `SpecialtyRepo.cs:13-15`; `AppointmentRepo.cs:8-14`; `PatientRepo.cs:19` | Medium: `DoctorRepo.GetByIdAsync`, `AppointmentRepo.GetByIdAsync` and `PatientRepo.GetPatientByUserIdAsync` are shared with write paths, so split them into read and write methods |
-| NL2 | Unbounded result sets: every notification a user has ever had is returned on each call, and the pending-doctor list has no paging | `NotificationRepo.cs:7-13`; `DoctorRepo.cs:42-51` | Low (adds paging, changes the API shape; see §4.2) |
-| NL3 | The doctor search can't use an index: `ToLower().Contains(...)` on `FirstName + " " + LastName` and `ClinicCity` scans every row. The SQL Server default collation is already case-insensitive, so `ToLower` buys nothing | `DoctorRepo.cs:112-118` | Low |
-| NL4 | Paging order isn't deterministic: the sort keys (`AverageRating`, fee, experience, `CreatedAt`) have ties and no unique tie-breaker, so rows can repeat or disappear between pages | `DoctorRepo.cs:120-126`; `ReviewRepo.cs:24` | Low (`.ThenBy(x => x.Id)`) |
-| NL5 | The stats endpoints make 6 and 5 sequential `COUNT` round trips. One `GroupBy(a => a.Status)` query would cover the appointment stats | `AdminRepo.cs:7-12`; `AppointmentRepo.cs:117-121` | Low |
-| NL6 | The reminder job saves one notification per `SaveChangesAsync`, plus one SMTP session per email: 2N round trips per run | `AppointmentReminderJob.cs:58-74` → `NotificationService.cs:11-13` | Low (use `CreateRangeAsync` and one SMTP connection per batch) |
-| NL7 | Transactions are disposed synchronously (`using var` instead of `await using`). On early returns such as `SlotAlreadyBooked`, the implicit rollback blocks a thread-pool thread on I/O | `AppointmentService.cs:43`, `:50`; `TokenService.cs:53` | Low |
-| NL8 | `ValidationFilter` is a synchronous `IActionFilter` that calls `Validate()`. Adding any `MustAsync` rule later will throw `AsyncValidatorInvokedSynchronouslyException` (500). When two arguments fail, the last result overwrites the first | `Presentation/Filters/ValidationFilter.cs:8`, `:30`, `:50` | Low (`IAsyncActionFilter` + `ValidateAsync(..., ct)`) |
-| NL9 | 400 responses come in three shapes: the filter's bare `ValidationProblemDetails` (no `status`, `type` or `traceId`), `ValidationProblem()` from `ApiController`, and `[ApiController]`'s automatic 400 for binding errors. 401/403 from the auth middleware and 404 for unknown routes have empty bodies because `AddProblemDetails` isn't registered | `ValidationFilter.cs:50-51`; `ApiController.cs:86`; `Program.cs` | Low (`AddProblemDetails()` + `UseStatusCodePages()`, and build the filter's response with `ProblemDetailsFactory`) |
-| NL10 | The controller decides behaviour by role. It takes the *first* role claim and routes to one of three service methods, and `SpecialtyController` checks the role inline. Users with more than one role get whichever claim comes first | `AppointmentController.cs:94-103`; `SpecialtyController.cs:17` | Low (pass the `ClaimsPrincipal` or role to one service method, or use policies) |
-| NL11 | `[FromQuery] DateOnly date` is non-nullable, so a missing `date` silently becomes `0001-01-01` and returns `[]` instead of 400 | `DoctorController.cs:42` | Low (`DateOnly?` + validation, or `[BindRequired]`) |
-| NL12 | Options are not validated at startup. `JwtSettings` is read eagerly with `Get<JwtSettings>()!` (a missing section causes a `NullReferenceException`) and then bound a second time. Neither `JwtSettings` nor `EmailSettings` uses `ValidateDataAnnotations().ValidateOnStart()`, so a secret shorter than 32 bytes only fails at the first login (IDX10720 → 500), and missing SMTP credentials only fail at the first send | `InfraStructureServiceExtensions.cs:36`, `:60-61`; `CoreServiceExtensions.cs:28` | Low |
-| NL13 | A startup failure exits with code 0. The top-level `catch (Exception)` logs and swallows the error, so `restart: on-failure` and orchestrators see a clean exit. It also logs EF tooling's `HostAbortedException` as Fatal on every `dotnet ef` command | `ClinicFlow/Program.cs:85-91` | Low (filter `HostAbortedException`, `return 1`, use `await app.RunAsync()`) |
-| NL14 | No `EnableRetryOnFailure` on the SQL Server provider, so transient faults go straight to the user | `InfraStructureServiceExtensions.cs:21-24` | Medium (the manual `BeginTransactionAsync` calls must then run inside `Database.CreateExecutionStrategy().ExecuteAsync`) |
-| NL15 | EF SQL command logging is at Information in the **base** `appsettings.json`, so every SQL statement is written to file and Seq in Production. Parameter values are not logged, because `EnableSensitiveDataLogging` is off | `ClinicFlow/appsettings.json:7` | Low (move it to `appsettings.Development.json`) |
-| NL16 | `.env` isn't in `.dockerignore`, so `COPY . .` sends the JWT secret, SMTP password and DB password into the build context and the build-stage layers. The final runtime image is unaffected, because only `/app/publish` is copied | `.dockerignore`; `Dockerfile:19` | Low |
-| NL17 | Nullable hygiene. There are 20 `Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!)` calls, which throw `ArgumentNullException` (500) if the claim is ever missing. `specialtyDTO.Name!` uses `!` on a property that is already non-nullable. The `Email!` uses assume Identity always has an email. Nullable warnings aren't treated as errors, so new ones can slip in | `Presentation/Controllers/*`; `SpecialtyService.cs:13`, `:78`; `AuthService.cs:95`, `:175`, `:245`; `AppointmentReminderJob.cs:70` | Low (a `User.GetUserId()` extension, and `<WarningsAsErrors>nullable</WarningsAsErrors>` in a `Directory.Build.props`) |
-| NL18 | `MimeMessage` (which is `IDisposable`) is never disposed. `JwtSecurityTokenHandler` is the legacy handler; `JsonWebTokenHandler` is the faster replacement that the JwtBearer middleware already uses | `EmailService.cs:291`; `TokenService.cs:179` | Low |
-| NL19 | Vulnerable `SSH.NET` 2025.1.0 (2 High advisories) is pulled in by Testcontainers. It is test-only and never deployed, but it runs on developer machines | `ClinicFlow.IntegrationTests.csproj:16` | Low (update `Testcontainers.MsSql` to 4.16.0, then re-check) |
-| NL20 | The test factory's `public async Task DisposeAsync()` (for `IAsyncLifetime`) hides `WebApplicationFactory.DisposeAsync()` (CS0114). It also only calls `StopAsync` on the container and never disposes it, so cleanup is left to the Testcontainers reaper | `ClinicFlowApiFactory.cs:25-28` | Low (implement `IAsyncLifetime.DisposeAsync` explicitly, call `await _dbContainer.DisposeAsync()` and `await base.DisposeAsync()`) |
-| NL21 | `UnitOfWork` creates repositories itself (`new DoctorRepo(_context)`, …), so repositories can't be resolved, decorated (caching, logging) or replaced through DI. This is a deliberate pattern and works with the `IUnitOfWork` mocks in the tests; it is listed here only because the brief asked for classes that create their own dependencies | `Persistance/UnitOfWork.cs:26-47` | Medium (changes how every service gets its repositories; only worth doing if decoration is needed) |
+| ID | Problem | Where | Fix risk | Status |
+|---|---|---|---|---|
+| NL1 | Read-only queries are tracked (no `AsNoTracking`) on hot paths: public doctor search, doctor profile, pending approvals, schedules, available slots, specialties, `GetAppointmentAsync`, patient profile GET. That costs change-tracker work and memory per request | `DoctorRepo.cs:17-18`, `:25-29`, `:44-48`, `:57-60`; `SlotRepo.cs:14-19`; `SpecialtyRepo.cs:13-15`; `AppointmentRepo.cs:8-14`; `PatientRepo.cs:19` | Medium: `DoctorRepo.GetByIdAsync`, `AppointmentRepo.GetByIdAsync` and `PatientRepo.GetPatientByUserIdAsync` are shared with write paths, so split them into read and write methods | 🟡 `3a2c391`: pure-read queries only; methods shared with writes are not split yet |
+| NL2 | Unbounded result sets: every notification a user has ever had is returned on each call, and the pending-doctor list has no paging | `NotificationRepo.cs:7-13`; `DoctorRepo.cs:42-51` | Low (adds paging, changes the API shape; see §4.2) | ⏸ Open (paging changes the API shape) |
+| NL3 | The doctor search can't use an index: `ToLower().Contains(...)` on `FirstName + " " + LastName` and `ClinicCity` scans every row. The SQL Server default collation is already case-insensitive, so `ToLower` buys nothing | `DoctorRepo.cs:112-118` | Low | 🟡 `3a2c391`: `ToLower` removed; a leading-wildcard `LIKE` still scans (needs full-text search) |
+| NL4 | Paging order isn't deterministic: the sort keys (`AverageRating`, fee, experience, `CreatedAt`) have ties and no unique tie-breaker, so rows can repeat or disappear between pages | `DoctorRepo.cs:120-126`; `ReviewRepo.cs:24` | Low (`.ThenBy(x => x.Id)`) | ✅ `3a2c391` |
+| NL5 | The stats endpoints make 6 and 5 sequential `COUNT` round trips. One `GroupBy(a => a.Status)` query would cover the appointment stats | `AdminRepo.cs:7-12`; `AppointmentRepo.cs:117-121` | Low | 🟡 `3a2c391`: appointment stats run as one `GROUP BY`; the overview still runs 6 counts over different tables |
+| NL6 | The reminder job saves one notification per `SaveChangesAsync`, plus one SMTP session per email: 2N round trips per run | `AppointmentReminderJob.cs:58-74` → `NotificationService.cs:11-13` | Low (use `CreateRangeAsync` and one SMTP connection per batch) | ⏸ Open: per-item save kept on purpose, so each sent reminder is recorded at once (no duplicate emails) |
+| NL7 | Transactions are disposed synchronously (`using var` instead of `await using`). On early returns such as `SlotAlreadyBooked`, the implicit rollback blocks a thread-pool thread on I/O | `AppointmentService.cs:43`, `:50`; `TokenService.cs:53` | Low | ✅ `d3b6511`, `3a2c391` |
+| NL8 | `ValidationFilter` is a synchronous `IActionFilter` that calls `Validate()`. Adding any `MustAsync` rule later will throw `AsyncValidatorInvokedSynchronouslyException` (500). When two arguments fail, the last result overwrites the first | `Presentation/Filters/ValidationFilter.cs:8`, `:30`, `:50` | Low (`IAsyncActionFilter` + `ValidateAsync(..., ct)`) | ✅ `e5cc0db` (response shape unchanged) |
+| NL9 | 400 responses come in three shapes: the filter's bare `ValidationProblemDetails` (no `status`, `type` or `traceId`), `ValidationProblem()` from `ApiController`, and `[ApiController]`'s automatic 400 for binding errors. 401/403 from the auth middleware and 404 for unknown routes have empty bodies because `AddProblemDetails` isn't registered | `ValidationFilter.cs:50-51`; `ApiController.cs:86`; `Program.cs` | Low (`AddProblemDetails()` + `UseStatusCodePages()`, and build the filter's response with `ProblemDetailsFactory`) | ⏸ Open (API shape) |
+| NL10 | The controller decides behaviour by role. It takes the *first* role claim and routes to one of three service methods, and `SpecialtyController` checks the role inline. Users with more than one role get whichever claim comes first | `AppointmentController.cs:94-103`; `SpecialtyController.cs:17` | Low (pass the `ClaimsPrincipal` or role to one service method, or use policies) | ⏸ Open (refactor only) |
+| NL11 | `[FromQuery] DateOnly date` is non-nullable, so a missing `date` silently becomes `0001-01-01` and returns `[]` instead of 400 | `DoctorController.cs:42` | Low (`DateOnly?` + validation, or `[BindRequired]`) | ⏸ Open (missing `date` → 400 is an API change) |
+| NL12 | Options are not validated at startup. `JwtSettings` is read eagerly with `Get<JwtSettings>()!` (a missing section causes a `NullReferenceException`) and then bound a second time. Neither `JwtSettings` nor `EmailSettings` uses `ValidateDataAnnotations().ValidateOnStart()`, so a secret shorter than 32 bytes only fails at the first login (IDX10720 → 500), and missing SMTP credentials only fail at the first send | `InfraStructureServiceExtensions.cs:36`, `:60-61`; `CoreServiceExtensions.cs:28` | Low | 🟡 `e5cc0db`: `JwtSettings` is validated on start; `EmailSettings` is not, because that would stop startup wherever email isn't configured |
+| NL13 | A startup failure exits with code 0. The top-level `catch (Exception)` logs and swallows the error, so `restart: on-failure` and orchestrators see a clean exit. It also logs EF tooling's `HostAbortedException` as Fatal on every `dotnet ef` command | `ClinicFlow/Program.cs:85-91` | Low (filter `HostAbortedException`, `return 1`, use `await app.RunAsync()`) | ✅ `e5cc0db` |
+| NL14 | No `EnableRetryOnFailure` on the SQL Server provider, so transient faults go straight to the user | `InfraStructureServiceExtensions.cs:21-24` | Medium (the manual `BeginTransactionAsync` calls must then run inside `Database.CreateExecutionStrategy().ExecuteAsync`) | ⏸ Open (Medium fix risk) |
+| NL15 | EF SQL command logging is at Information in the **base** `appsettings.json`, so every SQL statement is written to file and Seq in Production. Parameter values are not logged, because `EnableSensitiveDataLogging` is off | `ClinicFlow/appsettings.json:7` | Low (move it to `appsettings.Development.json`) | ✅ `e5cc0db` |
+| NL16 | `.env` isn't in `.dockerignore`, so `COPY . .` sends the JWT secret, SMTP password and DB password into the build context and the build-stage layers. The final runtime image is unaffected, because only `/app/publish` is copied | `.dockerignore`; `Dockerfile:19` | Low | ✅ `e5cc0db` |
+| NL17 | Nullable hygiene. There are 20 `Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!)` calls, which throw `ArgumentNullException` (500) if the claim is ever missing. `specialtyDTO.Name!` uses `!` on a property that is already non-nullable. The `Email!` uses assume Identity always has an email. Nullable warnings aren't treated as errors, so new ones can slip in | `Presentation/Controllers/*`; `SpecialtyService.cs:13`, `:78`; `AuthService.cs:95`, `:175`, `:245`; `AppointmentReminderJob.cs:70` | Low (a `User.GetUserId()` extension, and `<WarningsAsErrors>nullable</WarningsAsErrors>` in a `Directory.Build.props`) | 🟡 `d3b6511`, `e5cc0db`: `User.GetUserId()` added and nullable warnings are now errors (`Directory.Build.props`); the `Email!` and `Name!` uses remain |
+| NL18 | `MimeMessage` (which is `IDisposable`) is never disposed. `JwtSecurityTokenHandler` is the legacy handler; `JsonWebTokenHandler` is the faster replacement that the JwtBearer middleware already uses | `EmailService.cs:291`; `TokenService.cs:179` | Low | 🟡 `d3b6511`: `MimeMessage` is disposed; `JwtSecurityTokenHandler` is kept, because switching changes the claim names in the token payload, which the frontend may read |
+| NL19 | Vulnerable `SSH.NET` 2025.1.0 (2 High advisories) is pulled in by Testcontainers. It is test-only and never deployed, but it runs on developer machines | `ClinicFlow.IntegrationTests.csproj:16` | Low (update `Testcontainers.MsSql` to 4.16.0, then re-check) | ✅ `9035a7d` |
+| NL20 | The test factory's `public async Task DisposeAsync()` (for `IAsyncLifetime`) hides `WebApplicationFactory.DisposeAsync()` (CS0114). It also only calls `StopAsync` on the container and never disposes it, so cleanup is left to the Testcontainers reaper | `ClinicFlowApiFactory.cs:25-28` | Low (implement `IAsyncLifetime.DisposeAsync` explicitly, call `await _dbContainer.DisposeAsync()` and `await base.DisposeAsync()`) | ✅ `9035a7d` |
+| NL21 | `UnitOfWork` creates repositories itself (`new DoctorRepo(_context)`, …), so repositories can't be resolved, decorated (caching, logging) or replaced through DI. This is a deliberate pattern and works with the `IUnitOfWork` mocks in the tests; it is listed here only because the brief asked for classes that create their own dependencies | `Persistance/UnitOfWork.cs:26-47` | Medium (changes how every service gets its repositories; only worth doing if decoration is needed) | ⏸ Open (deliberate pattern) |
 
 ### Suggested order for these items
 1. **NH1 and NL19:** bump the packages (minutes of work). Update the `Microsoft.*` 10.0.x packages together, ideally after introducing `Directory.Packages.props`.
