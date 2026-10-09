@@ -22,6 +22,7 @@ The React frontend lives in a separate repository. Both apps follow the shared *
 | [docs/openapi.json](docs/openapi.json) | OpenAPI 3.1 document generated from the API |
 | [docs/SETUP_AND_DEPLOYMENT.md](docs/SETUP_AND_DEPLOYMENT.md) | Configuration, running locally, tests, Docker, production checklist, troubleshooting |
 | [docs/REVIEW.md](docs/REVIEW.md) | Code review: known issues and their fix status |
+| [docs/v2/README.md](docs/v2/README.md) | **V2 plan (draft):** clinic operations for a multi-branch clinic: roles, front desk, EMR, billing, insurance, roadmap |
 | [CLAUDE.md](CLAUDE.md) | Conventions and commands for contributors (and AI assistants) |
 
 ## ✨ Features

@@ -11,6 +11,7 @@ This repository is the **backend**: a .NET 10 REST API. A separate React app is 
 | [openapi.json](openapi.json) | Machine-readable OpenAPI 3.1 document generated from the running API |
 | [SETUP_AND_DEPLOYMENT.md](SETUP_AND_DEPLOYMENT.md) | Running locally, configuration, Docker, production checklist |
 | [REVIEW.md](REVIEW.md) | Code review: known issues, their status and fix risk |
+| [v2/README.md](v2/README.md) | V2 plan (draft): clinic operations, roles and permissions, EMR, billing, insurance, roadmap |
 | [../CLAUDE.md](../CLAUDE.md) | Conventions and commands for working in this codebase |
 
 ---

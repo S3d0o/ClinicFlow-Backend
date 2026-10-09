@@ -1,0 +1,29 @@
+# ADR 0004: One appointment state machine, owned by the entity
+
+| | |
+|---|---|
+| **Status** | Accepted |
+| **Date** | 2026-10-09 |
+| **Deciders** | Backend lead |
+
+## Context
+
+In V1, status rules are copied into each service method: three cancel flows (patient, doctor, admin), complete, notes and review each check statuses their own way (REVIEW §4.3, M14). Two enum values (`Pending`, `NoShow`) are never used, completion has no time check, and the admin cancel flow returns the wrong error for completed appointments.
+
+V2 adds check-in, in-progress, reschedule, no-show, deposits and walk-ins. Without one owner for the rules, every new flow would add another copy.
+
+## Decision
+
+1. The appointment statuses are `Pending`, `Confirmed`, `CheckedIn`, `InProgress`, `Completed`, `Cancelled`, `NoShow`, `Rescheduled`, with the transitions in [05 §4.1](../05_DOMAIN_MODEL.md#41-appointment).
+2. Each transition is a **method on `Appointment`** (`Confirm`, `CheckIn`, `Start`, `Complete`, `Cancel`, `MarkNoShow`, `RevertNoShow`, `RescheduleTo`) taking the actor and `now`, returning `Result`. The method checks the current status and time guards and records the timestamps and actor.
+3. Services handle what the entity can't see: permissions and scope (via `IAccessGuard`), loading related data, slot updates, and saving. They never set `Status` directly; the setter is private.
+4. An illegal transition returns `Appointment.InvalidStatusTransition` (409).
+5. Each transition raises a domain event (`AppointmentCheckedIn`, …) for the outbox ([06 §5](../06_TECHNICAL_DESIGN.md#5-domain-events-and-the-outbox)).
+6. The same pattern applies to `Encounter`, `Invoice`, `Claim`, `Refund`, `LeaveRequest` and `CashSession`.
+
+## Consequences
+
+- Positive: the rules exist once and are unit-testable without a database: every legal and illegal transition gets a test.
+- Positive: the three V1 cancel flows collapse into one `Cancel(actor, now, reason)` with role-specific guards.
+- Negative: the entities gain behaviour. This moves the Domain project away from anaemic POCOs, which is intended, but EF configuration must map private setters.
+- Statuses stay strings in the database, so the new values need no data migration, and V1 rows remain valid.
