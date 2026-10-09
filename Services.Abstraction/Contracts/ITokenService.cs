@@ -1,15 +1,17 @@
-﻿using Domain.Entities.IdentityModule;
+using Domain.Entities.IdentityModule;
 using Shared.DTOs.Auth;
 
 namespace Services.Abstraction.Contracts
 {
     public interface ITokenService
     {
-        Task<TokenDto> GenerateTokensAsync(ApplicationUser user, IList<string> roles, string ipAddress);
+        Task<TokenDto> GenerateTokensAsync(ApplicationUser user, IList<string> roles, string ipAddress, CancellationToken ct);
 
         //since we load the user we can directly return the LoginResponse instead of TokenDto
         //so that we can return the user details along with the tokens
-        Task<LoginResponse> RefreshTokenAsync(string refreshToken, string ipAddress);
-        Task RevokeRefreshTokenAsync(string refreshToken, string ipAddress, string? reason = null);
+        Task<Result<LoginResponse>> RefreshTokenAsync(string refreshToken, string ipAddress, CancellationToken ct);
+
+        // Revokes a refresh token that belongs to the given user
+        Task<Result> RevokeRefreshTokenAsync(Guid userId, string refreshToken, string ipAddress, string? reason, CancellationToken ct);
     }
 }

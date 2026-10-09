@@ -72,7 +72,7 @@ public class AuthController(IAuthService service) : ApiController
         [FromBody] RefreshTokenRequest request, CancellationToken ct)
     {
         var ip = HttpContext.GetClientIpAddress();
-        var result = await service.LogoutAsync(request, ip, ct);
+        var result = await service.LogoutAsync(User.GetUserId(), request, ip, ct);
         return HandleResult(result);
     }
 

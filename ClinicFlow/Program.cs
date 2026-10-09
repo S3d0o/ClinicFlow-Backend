@@ -38,12 +38,13 @@ try
 
     // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
     builder.Services.AddOpenApi();
+    var frontendUrl = builder.Configuration["Frontend:BaseUrl"] ?? "http://localhost:3000";
     builder.Services.AddCors(options =>
     {
         options.AddPolicy("React", policy =>
         {
             policy
-                .WithOrigins("http://localhost:3000")
+                .WithOrigins(frontendUrl.TrimEnd('/'))
                 .AllowAnyHeader()
                 .AllowAnyMethod()
                 .AllowCredentials();
@@ -55,6 +56,10 @@ try
     await DataSeeder.SeedAsync(app.Services);
 
     #region Middleware Pipeline
+
+    // Only trusts X-Forwarded-* from loopback by default. When deploying behind a reverse proxy,
+    // add its address to ForwardedHeadersOptions.KnownProxies (see AddWebApiServices).
+    app.UseForwardedHeaders();
 
     app.UseSerilogRequestLogging(opt =>
     {

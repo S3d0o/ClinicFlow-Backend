@@ -46,8 +46,8 @@ namespace Persistence
 
         public IAdminRepo Admins => _admins ??= new AdminRepo(_context);
 
-        public async Task<IDbContextTransaction> BeginTransactionAsync()
-        => await _context.Database.BeginTransactionAsync();
+        public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken ct = default)
+        => _context.Database.BeginTransactionAsync(ct);
         public Task<int> SaveChangesAsync(CancellationToken ct = default)
             => _context.SaveChangesAsync(ct);
 

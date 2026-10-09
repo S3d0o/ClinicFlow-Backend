@@ -66,7 +66,9 @@ namespace Services.Implementations
                 logger.LogWarning("Review not found for ID: {ReviewId}", reviewId);
                 return ReviewErrors.NotFound(reviewId);
             }
-            if(role == "Patient" && review.Patient.UserId != userId)
+            // Only the patient who wrote the review, or an admin, may delete it (doctors must not remove their own reviews)
+            var canDelete = role == "Admin" || (role == "Patient" && review.Patient.UserId == userId);
+            if (!canDelete)
             {
                 logger.LogWarning("User ID: {UserId} is not authorized to delete review ID: {ReviewId}", userId, reviewId);
                 return ReviewErrors.Unauthorized;

@@ -1,4 +1,5 @@
-﻿using Services.Abstraction.Contracts;
+﻿using Microsoft.AspNetCore.Authorization;
+using Services.Abstraction.Contracts;
 using Shared.DTOs.Specialty;
 
 namespace Presentation.Controllers
@@ -34,7 +35,7 @@ namespace Presentation.Controllers
         [ProducesResponseType(typeof(SpecialtyResponse), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-        //[Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<ActionResult<SpecialtyResponse>> Create([FromBody] SpecialtyRequest dto, CancellationToken ct)
         {
             var result = await service.CreateAsync(dto, ct);
@@ -47,7 +48,7 @@ namespace Presentation.Controllers
         [ProducesResponseType(typeof(SpecialtyResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-        //[Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<ActionResult<SpecialtyResponse>> Update(
             [FromRoute] int id,
             [FromBody] SpecialtyRequest dto,
@@ -60,7 +61,7 @@ namespace Presentation.Controllers
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
-        //[Authorize(Roles = "Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(int id, CancellationToken ct)
             => HandleResult(await service.DeleteByIdAsync(id, ct));
     }

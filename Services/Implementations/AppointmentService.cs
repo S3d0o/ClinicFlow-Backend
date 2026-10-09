@@ -355,7 +355,7 @@ namespace Services.Implementations
         }
 
 
-        public async Task<Result<AppointmentResponse>> GetAppointmentAsync(int appointmentId, CancellationToken ct)
+        public async Task<Result<AppointmentResponse>> GetAppointmentAsync(int appointmentId, Guid userId, string role, CancellationToken ct)
         {
             var appointment = await uow.Appointments.GetByIdAsync(appointmentId, ct);
             if (appointment == null)
@@ -363,6 +363,21 @@ namespace Services.Implementations
                 logger.LogWarning("Appointment not found for ID: {AppointmentId}", appointmentId);
                 return AppointmentErrors.NotFound(appointmentId);
             }
+
+            // Appointments contain medical data: only the owning patient, the owning doctor or an admin may read them
+            var canRead = role switch
+            {
+                "Admin" => true,
+                "Patient" => appointment.Patient.UserId == userId,
+                "Doctor" => appointment.Doctor.UserId == userId,
+                _ => false
+            };
+            if (!canRead)
+            {
+                logger.LogWarning("User {UserId} ({Role}) attempted to read appointment {AppointmentId} they do not own", userId, role, appointmentId);
+                return AppointmentErrors.Unauthorized;
+            }
+
             return mapper.Map<AppointmentResponse>(appointment);
         }
 

@@ -1,8 +1,5 @@
 ﻿using Domain.Entities.IdentityModule;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Rewrite;
-using Microsoft.EntityFrameworkCore.Query.Internal;
 using Shared.DTOs.Auth;
 
 namespace Services.Implementations
@@ -25,7 +22,7 @@ namespace Services.Implementations
             // i did this cause i want to make sure that if any of the operations fail,
             // the entire registration process is rolled back to maintain data integrity.
             // if user is created and roles is assigned but doctor profile creation fails, we don't want to have a user without a profile.
-            await using var transaction = await uow.BeginTransactionAsync();
+            await using var transaction = await uow.BeginTransactionAsync(ct);
             try
             {
                 var user = new ApplicationUser
@@ -45,7 +42,7 @@ namespace Services.Implementations
 
                 if (!createResult.Succeeded)
                 {
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(ct);
                     logger.LogWarning("Doctor registration failed for {Email}: {Errors}",
                          request.Email, string.Join(", ", createResult.Errors.Select(e => e.Description)));
                     return AuthErrors.RegistrationFailed(createResult.Errors.Select(e => e.Description));
@@ -55,7 +52,7 @@ namespace Services.Implementations
 
                 if (!roleResult.Succeeded)
                 {
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(ct);
 
                     logger.LogWarning(
                         "Failed to add Doctor role to user {Email}: {Errors}",
@@ -83,9 +80,7 @@ namespace Services.Implementations
 
                 await transaction.CommitAsync(ct);
 
-                var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
-                var encodedToken = Uri.EscapeDataString(token);
-                await emailService.SendEmailConfirmationAsync(user.Email, user.Id, encodedToken);
+                await TrySendConfirmationEmailAsync(user);
 
                 logger.LogInformation("Doctor registered successfully: {Email}", request.Email);
 
@@ -97,7 +92,7 @@ namespace Services.Implementations
             catch (Exception ex)
             {
                 logger.LogError(ex, "An error occurred while registering doctor with email: {Email}", request.Email);
-                await transaction.RollbackAsync();
+                await transaction.RollbackAsync(CancellationToken.None); // must run even if the request was cancelled
                 return AuthErrors.RegistrationFailed(["An error occurred during registration. Please try again later."]);
             }
 
@@ -111,7 +106,7 @@ namespace Services.Implementations
                 return AuthErrors.EmailAlreadyExists;
             }
 
-            await using var transaction = await uow.BeginTransactionAsync();
+            await using var transaction = await uow.BeginTransactionAsync(ct);
 
             try
             {
@@ -135,7 +130,7 @@ namespace Services.Implementations
                     logger.LogWarning("Patient registration failed for {Email}: {Errors}",
                         request.Email, string.Join(", ", createResult.Errors.Select(e => e.Description)));
 
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(ct);
                     return AuthErrors.RegistrationFailed(createResult.Errors.Select(e => e.Description));
                 }
 
@@ -144,7 +139,7 @@ namespace Services.Implementations
                 {
                     logger.LogWarning("Failed to add Patient role to user {Email}: {Errors}",
                         request.Email, string.Join(", ", roleResult.Errors.Select(e => e.Description)));
-                    await transaction.RollbackAsync();
+                    await transaction.RollbackAsync(ct);
                     return AuthErrors.RegistrationFailed(roleResult.Errors.Select(e => e.Description));
                 }
 
@@ -164,9 +159,7 @@ namespace Services.Implementations
 
                 await transaction.CommitAsync(ct);
 
-                var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
-                var encodedToken = Uri.EscapeDataString(token);
-                await emailService.SendEmailConfirmationAsync(user.Email, user.Id, encodedToken);
+                await TrySendConfirmationEmailAsync(user);
 
                 logger.LogInformation("Patient registered successfully: {Email}", request.Email);
 
@@ -177,7 +170,7 @@ namespace Services.Implementations
             catch (Exception ex)
             {
                 logger.LogError(ex, "An error occurred while registering patient with email: {Email}", request.Email);
-                await transaction.RollbackAsync();
+                await transaction.RollbackAsync(CancellationToken.None); // must run even if the request was cancelled
                 return AuthErrors.RegistrationFailed(["An error occurred during registration. Please try again later."]);
             }
         }
@@ -216,6 +209,23 @@ namespace Services.Implementations
                 logger.LogWarning("Login failed: User not found for email {Email}", request.Email);
                 return AuthErrors.InvalidCredentials;
             }
+            if (await userManager.IsLockedOutAsync(user))
+            {
+                logger.LogWarning("Login failed: Account locked out for email {Email}", request.Email);
+                return AuthErrors.AccountLockedOut;
+            }
+
+            // Password first: account state is only revealed to someone who knows the password
+            var isPasswordValid = await userManager.CheckPasswordAsync(user, request.Password);
+            if (!isPasswordValid)
+            {
+                // Counts toward Identity lockout (see Lockout options in AddInfraStructureServices)
+                await userManager.AccessFailedAsync(user);
+                logger.LogWarning("Login failed: Invalid password for email {Email}", request.Email);
+                return AuthErrors.InvalidCredentials;
+            }
+            await userManager.ResetAccessFailedCountAsync(user);
+
             if(!user.IsActive)
             {
                 logger.LogWarning("Login failed: User is not active for email {Email}", request.Email);
@@ -226,16 +236,10 @@ namespace Services.Implementations
                 logger.LogWarning("Login failed: Email not confirmed for email {Email}", request.Email);
                 return AuthErrors.EmailNotConfirmed;
             }
-            var isPasswordValid = await userManager.CheckPasswordAsync(user, request.Password);
-            if (!isPasswordValid)
-            {
-                logger.LogWarning("Login failed: Invalid password for email {Email}", request.Email);
-                return AuthErrors.InvalidCredentials;
-            }
 
             var roles = await userManager.GetRolesAsync(user);
 
-            var tokens = await tokenService.GenerateTokensAsync(user, roles, ipAddress);
+            var tokens = await tokenService.GenerateTokensAsync(user, roles, ipAddress, ct);
 
             return new LoginResponse
                 (
@@ -248,34 +252,18 @@ namespace Services.Implementations
                 );
         }
 
-        public async Task<Result> LogoutAsync(RefreshTokenRequest request,string ipAddress, CancellationToken ct)
+        public async Task<Result> LogoutAsync(Guid userId, RefreshTokenRequest request, string ipAddress, CancellationToken ct)
         {
-            try
-            {
-                await tokenService.RevokeRefreshTokenAsync(request.RefreshToken, ipAddress, "Logout");
-                logger.LogInformation("User logged out — refresh token revoked from {IpAddress}", ipAddress);
-                return Result.Ok();
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "An error occurred during logout for IP {IpAddress}", ipAddress);
-                return AuthErrors.InvalidRefreshToken; // used task.fromresult to return a completed task with the result, since the method signature requires a Task<Result>
-            }
+            var result = await tokenService.RevokeRefreshTokenAsync(userId, request.RefreshToken, ipAddress, "Logout", ct);
+            if (result.IsSuccess)
+                logger.LogInformation("User {UserId} logged out — refresh token revoked from {IpAddress}", userId, ipAddress);
+            return result;
         }
 
-        public async Task<Result<LoginResponse>> RefreshTokenAsync(RefreshTokenRequest request, string ipAddress, CancellationToken ct)
-        {
-            try
-            {
-                var tokenResult = await tokenService.RefreshTokenAsync(request.RefreshToken, ipAddress);
-                return tokenResult;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError("An error occurred while refreshing token: {RefreshToken}. Error: {ErrorMessage}", request.RefreshToken, ex.Message);
-                return AuthErrors.InvalidRefreshToken;
-            }
-        }
+        // TokenService returns expected failures as Result; unexpected exceptions are not swallowed,
+        // so a database outage is not reported to the client as an invalid token (401)
+        public Task<Result<LoginResponse>> RefreshTokenAsync(RefreshTokenRequest request, string ipAddress, CancellationToken ct)
+            => tokenService.RefreshTokenAsync(request.RefreshToken, ipAddress, ct);
 
         public async Task<Result> ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken ct)
         {
@@ -290,11 +278,9 @@ namespace Services.Implementations
 
             var token = await userManager.GeneratePasswordResetTokenAsync(user);
 
-            await emailService.SendPasswordResetAsync(request.Email,user.Id, Uri.EscapeDataString(token));
-            
-            logger.LogInformation(
-                "[DEV ONLY] Password reset token for {Email}: userId={UserId} token={Token}",
-                user.Email, user.Id, token);
+            await emailService.SendPasswordResetAsync(request.Email,user.Id, Uri.EscapeDataString(token), ct);
+
+            logger.LogInformation("Password reset email sent for user {UserId}", user.Id);
 
             return Result.Ok();
         }        
@@ -317,19 +303,30 @@ namespace Services.Implementations
 
             // revoke all existing refresh tokens for the user after password reset
             // user must re-login to get new tokens after password reset on all devices
-            var activeRefreshTokens = await uow.RefreshTokens.GetActiveByUserIdAsync(user.Id);
-            foreach (var token in activeRefreshTokens)
-            {
-                token.Revoked = DateTime.UtcNow;
-                token.RevocationReason = "Password reset";
-            }
-            // Regenerate security stamp — invalidates all existing JWTs
+            await uow.RefreshTokens.RevokeAllActiveAsync(user.Id, "Password reset", null, ct);
+
+            // Regenerate security stamp — refresh tokens carry the stamp, so any token issued
+            // before this point is rejected on refresh. Access tokens (15 min) stay valid until expiry.
             await userManager.UpdateSecurityStampAsync(user);
-            await uow.SaveChangesAsync(ct);
 
             logger.LogInformation("Password reset completed for {Email} — all sessions terminated", user.Email);
             return Result.Ok();
 
+        }
+
+        // Registration is already committed when this runs: an SMTP failure is logged and must not turn
+        // a successful registration into an error (or trigger a rollback of a committed transaction)
+        private async Task TrySendConfirmationEmailAsync(ApplicationUser user)
+        {
+            try
+            {
+                var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
+                await emailService.SendEmailConfirmationAsync(user.Email!, user.Id, Uri.EscapeDataString(token));
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to send confirmation email to user {UserId}", user.Id);
+            }
         }
     }
 }

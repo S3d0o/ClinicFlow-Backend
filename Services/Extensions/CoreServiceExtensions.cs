@@ -26,6 +26,7 @@ namespace Services.Extensions
             services.AddSingleton<IDateTimeProvider, DateTimeProvider>();
 
             services.Configure<EmailSettings>(config.GetSection("EmailSettings"));
+            services.Configure<FrontendSettings>(config.GetSection("Frontend"));
 
 
             return services;

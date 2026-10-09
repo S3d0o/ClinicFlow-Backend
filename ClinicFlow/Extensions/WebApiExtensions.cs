@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using Microsoft.AspNetCore.HttpOverrides;
 using Presentation.Filters;
 using System.Text.Json.Serialization;
 
@@ -22,6 +23,13 @@ namespace ClinicFlow.Extensions
                 });
             services.AddEndpointsApiExplorer();
             services.AddValidatorsFromAssembly(typeof(ValidationFilter).Assembly);
+
+            // Client IP comes from Connection.RemoteIpAddress; X-Forwarded-For is honoured
+            // only from known proxies (loopback by default).
+            services.Configure<ForwardedHeadersOptions>(options =>
+            {
+                options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            });
 
             return services;
         }

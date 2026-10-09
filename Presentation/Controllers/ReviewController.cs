@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using Presentation.Extensions;
+using Microsoft.AspNetCore.Authorization;
 using Services.Abstraction.Contracts;
 using Shared.DTOs.Review;
 using System;
@@ -28,7 +29,7 @@ namespace Presentation.Controllers
         public async Task<ActionResult<ReviewResponse>> Submit(
             [FromBody] SubmitReviewRequest request, CancellationToken ct)
         {
-            var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var userId = User.GetUserId();
             var result = await service.SubmitReviewAsync(userId, request, ct);
             return HandleResult(result, StatusCodes.Status201Created);
         }
@@ -61,8 +62,8 @@ namespace Presentation.Controllers
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Delete(int id, CancellationToken ct)
         {
-            var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            var role = User.FindFirstValue(ClaimTypes.Role)!;
+            var userId = User.GetUserId();
+            var role = User.GetRole();
             var result = await service.DeleteReviewAsync(id, userId, role, ct);
             return HandleResult(result);
         }

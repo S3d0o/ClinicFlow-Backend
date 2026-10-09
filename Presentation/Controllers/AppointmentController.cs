@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using Presentation.Extensions;
+using Microsoft.AspNetCore.Authorization;
 using Services.Abstraction.Contracts;
 using Shared.DTOs.Appointment;
 using Shared.Errors;
@@ -23,7 +24,7 @@ public class AppointmentController(IAppointmentService service) : ApiController
     public async Task<ActionResult<AppointmentResponse>> Book(
         [FromBody] BookAppointmentRequest request, CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = User.GetUserId();
         var result = await service.BookAppointmentAsync(userId, request, ct);
         return HandleResult(result, StatusCodes.Status201Created);
     }
@@ -40,7 +41,7 @@ public class AppointmentController(IAppointmentService service) : ApiController
     public async Task<ActionResult<List<AppointmentResponse>>> GetPatientAppointments(
         [FromQuery] AppointmentFilterRequest request, CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = User.GetUserId();
         var result = await service.GetPatientAppointmentsAsync(userId, request, ct);
         return HandleResult(result);
     }
@@ -57,20 +58,21 @@ public class AppointmentController(IAppointmentService service) : ApiController
     public async Task<ActionResult<List<AppointmentResponse>>> GetDoctorAppointments(
         [FromQuery] AppointmentFilterRequest request, CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = User.GetUserId();
         var result = await service.GetDoctorAppointmentsAsync(userId, request, ct);
         return HandleResult(result);
     }
 
     /// <summary>Get appointment by ID</summary>
-    /// <remarks>Returns full appointment details. Any authenticated user can access.</remarks>
+    /// <remarks>Returns full appointment details. Only the owning patient, the owning doctor or an admin can access.</remarks>
     [Authorize]
     [HttpGet("{id}")]
     [ProducesResponseType(typeof(AppointmentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AppointmentResponse>> GetById(int id, CancellationToken ct)
     {
-        var result = await service.GetAppointmentAsync(id, ct);
+        var result = await service.GetAppointmentAsync(id, User.GetUserId(), User.GetRole(), ct);
         return HandleResult(result);
     }
 
@@ -91,8 +93,8 @@ public class AppointmentController(IAppointmentService service) : ApiController
     public async Task<IActionResult> Cancel(
         int id, [FromBody] CancelAppointmentRequest request, CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var role = User.FindFirstValue(ClaimTypes.Role);
+        var userId = User.GetUserId();
+        var role = User.GetRole();
 
         return role switch
         {
@@ -117,7 +119,7 @@ public class AppointmentController(IAppointmentService service) : ApiController
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Complete(int id, CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = User.GetUserId();
         var result = await service.CompleteAppointmentAsync(userId, id, ct);
         return HandleResult(result);
     }
@@ -137,7 +139,7 @@ public class AppointmentController(IAppointmentService service) : ApiController
     public async Task<IActionResult> AddNotes(
         int id, [FromBody] DoctorNotesRequest request, CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = User.GetUserId();
         var result = await service.AddDoctorNotesAsync(userId, id, request, ct);
         return HandleResult(result);
     }

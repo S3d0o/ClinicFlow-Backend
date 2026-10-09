@@ -3,26 +3,32 @@ using MailKit.Security;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using Shared.Settings;
+using System.Text.Encodings.Web;
 
 namespace Services.Implementations;
 
 public class EmailService(
     IOptions<EmailSettings> emailOptions,
+    IOptions<FrontendSettings> frontendOptions,
     ILogger<EmailService> logger) : IEmailService
 {
+    // An unreachable SMTP server must not hold a request for MailKit's default 2 minutes per operation
+    private const int SmtpTimeoutMilliseconds = 30_000;
+
     private readonly EmailSettings _settings = emailOptions.Value;
+    private readonly string _frontendBaseUrl = frontendOptions.Value.BaseUrl.TrimEnd('/');
 
     // ── SendEmailConfirmationAsync ─────────────────────────────────────────
     // Called after registration.
     // Token is passed raw — browser encoding + frontend decodeURIComponent
     // ensure the value reaching the backend matches what Identity stored.
     public async Task SendEmailConfirmationAsync(
-        string email, Guid userId, string token)
+        string email, Guid userId, string token, CancellationToken ct = default)
     {
         // Raw token in URL — do NOT Uri.EscapeDataString here.
         // The browser will encode it naturally; ConfirmEmailPage.tsx calls
         // decodeURIComponent before posting to /auth/confirm-email.
-        var confirmUrl = $"http://localhost:3000/#/confirm-email?userId={userId}&token={token}";
+        var confirmUrl = $"{_frontendBaseUrl}/#/confirm-email?userId={userId}&token={token}";
 
         var subject = "Confirm your ClinicFlow account";
         var body = BuildEmailTemplate(
@@ -43,7 +49,7 @@ public class EmailService(
                 </p>
             """);
 
-        await SendAsync(email, "ClinicFlow User", subject, body);
+        await SendAsync(email, "ClinicFlow User", subject, body, ct);
         logger.LogInformation("Confirmation email sent to {Email}", email);
     }
 
@@ -51,9 +57,9 @@ public class EmailService(
     // Called from ForgotPasswordAsync.
     // Token is passed raw — same encoding contract as above.
     public async Task SendPasswordResetAsync(
-        string email, Guid userId, string token)
+        string email, Guid userId, string token, CancellationToken ct = default)
     {
-        var resetUrl = $"http://localhost:3000/#/reset-password?userId={userId}&token={token}";
+        var resetUrl = $"{_frontendBaseUrl}/#/reset-password?userId={userId}&token={token}";
 
         var subject = "Reset your ClinicFlow password";
         var body = BuildEmailTemplate(
@@ -76,7 +82,7 @@ public class EmailService(
                 </p>
             """);
 
-        await SendAsync(email, "ClinicFlow User", subject, body);
+        await SendAsync(email, "ClinicFlow User", subject, body, ct);
         logger.LogInformation("Password reset email sent to {Email}", email);
     }
 
@@ -84,26 +90,30 @@ public class EmailService(
     // Called from AppointmentService.BookAppointmentAsync after booking.
     public async Task SendAppointmentConfirmationAsync(
         string email, string patientName,
-        string doctorName, DateOnly date, TimeOnly time)
+        string doctorName, DateOnly date, TimeOnly time, CancellationToken ct = default)
     {
+        // Names are user-controlled — encode before putting them into HTML
+        var safePatientName = HtmlEncoder.Default.Encode(patientName);
+        var safeDoctorName = HtmlEncoder.Default.Encode(doctorName);
+
         var subject = "Appointment Confirmed — ClinicFlow";
         var body = BuildEmailTemplate(
-            previewText: $"Your appointment with Dr. {doctorName} is confirmed.",
+            previewText: $"Your appointment with Dr. {safeDoctorName} is confirmed.",
             headerTitle: "Appointment Confirmed",
             bodyHtml: $"""
                 <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#374151;">
-                    Dear <strong>{patientName}</strong>,<br/>
+                    Dear <strong>{safePatientName}</strong>,<br/>
                     Your appointment has been successfully booked. Here are your details:
                 </p>
-                {AppointmentTable(doctorName, date, time)}
+                {AppointmentTable(safeDoctorName, date, time)}
                 <p style="margin:24px 0 0;font-size:14px;line-height:1.6;color:#6B7280;">
                     Please arrive <strong>10 minutes early</strong> to complete any
                     necessary paperwork. If you need to cancel or reschedule, please
-                    do so at least 24 hours in advance through your ClinicFlow account.
+                    do so at least 2 hours in advance through your ClinicFlow account.
                 </p>
             """);
 
-        await SendAsync(email, patientName, subject, body);
+        await SendAsync(email, patientName, subject, body, ct);
         logger.LogInformation("Appointment confirmation email sent to {Email}", email);
     }
 
@@ -111,26 +121,30 @@ public class EmailService(
     // Called from the background job for appointments starting in 24 h.
     public async Task SendAppointmentReminderAsync(
         string email, string patientName,
-        string doctorName, DateOnly date, TimeOnly time)
+        string doctorName, DateOnly date, TimeOnly time, CancellationToken ct = default)
     {
+        // Names are user-controlled — encode before putting them into HTML
+        var safePatientName = HtmlEncoder.Default.Encode(patientName);
+        var safeDoctorName = HtmlEncoder.Default.Encode(doctorName);
+
         var subject = "Appointment Reminder — ClinicFlow";
         var body = BuildEmailTemplate(
-            previewText: $"Reminder: your appointment with Dr. {doctorName} is tomorrow.",
+            previewText: $"Reminder: your appointment with Dr. {safeDoctorName} is tomorrow.",
             headerTitle: "Upcoming Appointment Reminder",
             bodyHtml: $"""
                 <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#374151;">
-                    Dear <strong>{patientName}</strong>,<br/>
+                    Dear <strong>{safePatientName}</strong>,<br/>
                     This is a friendly reminder that you have an appointment scheduled
                     for <strong>tomorrow</strong>. Here are your details:
                 </p>
-                {AppointmentTable(doctorName, date, time)}
+                {AppointmentTable(safeDoctorName, date, time)}
                 <p style="margin:24px 0 0;font-size:14px;line-height:1.6;color:#6B7280;">
                     Please arrive <strong>10 minutes early</strong>. To manage your
                     appointments, visit your ClinicFlow account.
                 </p>
             """);
 
-        await SendAsync(email, patientName, subject, body);
+        await SendAsync(email, patientName, subject, body, ct);
         logger.LogInformation("Appointment reminder email sent to {Email}", email);
     }
 
@@ -286,26 +300,28 @@ public class EmailService(
     /// To change the mail provider, only this method needs updating.
     /// </summary>
     private async Task SendAsync(
-        string toEmail, string toName, string subject, string htmlBody)
+        string toEmail, string toName, string subject, string htmlBody, CancellationToken ct)
     {
-        var message = new MimeMessage();
+        using var message = new MimeMessage();
         message.From.Add(new MailboxAddress(_settings.FromName, _settings.FromAddress));
         message.To.Add(new MailboxAddress(toName, toEmail));
         message.Subject = subject;
         message.Body = new BodyBuilder { HtmlBody = htmlBody }.ToMessageBody();
 
-        using var client = new SmtpClient();
+        using var client = new SmtpClient { Timeout = SmtpTimeoutMilliseconds };
 
         await client.ConnectAsync(
             _settings.Host,
             _settings.Port,
-            SecureSocketOptions.StartTls);   // port 587 — change to SslOnConnect for port 465
+            SecureSocketOptions.StartTls,   // port 587 — change to SslOnConnect for port 465
+            ct);
 
         await client.AuthenticateAsync(
             _settings.Username,
-            _settings.Password);
+            _settings.Password,
+            ct);
 
-        await client.SendAsync(message);
-        await client.DisconnectAsync(quit: true);
+        await client.SendAsync(message, ct);
+        await client.DisconnectAsync(quit: true, ct);
     }
 }

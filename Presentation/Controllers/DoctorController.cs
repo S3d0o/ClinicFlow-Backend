@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using Presentation.Extensions;
+using Microsoft.AspNetCore.Authorization;
 using Services.Abstraction.Contracts;
 using Shared.DTOs.Review;
 using System.Security.Claims;
@@ -71,7 +72,7 @@ public class DoctorController(IDoctorService service) : ApiController
     public async Task<IActionResult> UpdateProfile(
         [FromBody] UpdateDoctorProfileRequest request, CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = User.GetUserId();
         var result = await service.UpdateDoctorProfileAsync(userId, request, ct);
         return HandleResult(result);
     }
@@ -87,7 +88,7 @@ public class DoctorController(IDoctorService service) : ApiController
     [Authorize(Roles = "Doctor")]
     public async Task<ActionResult<IEnumerable<ScheduleResponse>>> GetMySchedules(CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = User.GetUserId();
         var result = await service.GetMySchedulesAsync(userId, ct);
         return HandleResult(result);
     }
@@ -106,7 +107,7 @@ public class DoctorController(IDoctorService service) : ApiController
     public async Task<ActionResult<ScheduleResponse>> CreateSchedule(
         [FromBody] CreateScheduleRequest request, CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = User.GetUserId();
         var result = await service.CreateScheduleAsync(userId, request, ct);
         return HandleResult(result, StatusCodes.Status201Created);
     }
@@ -125,7 +126,7 @@ public class DoctorController(IDoctorService service) : ApiController
     public async Task<ActionResult<ScheduleResponse>> UpdateSchedule(
         int id, [FromBody] UpdateScheduleRequest request, CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = User.GetUserId();
         var result = await service.UpdateScheduleAsync(id, userId, request, ct);
         return HandleResult(result);
     }
@@ -138,7 +139,7 @@ public class DoctorController(IDoctorService service) : ApiController
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteSchedule(int id, CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = User.GetUserId();
         var result = await service.DeleteScheduleAsync(id, userId, ct);
         return HandleResult(result);
     }
