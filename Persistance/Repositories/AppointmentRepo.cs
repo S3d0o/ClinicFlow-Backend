@@ -99,21 +99,27 @@ namespace Persistence.Repositories
         {
             var now = DateTime.UtcNow;
             var upperBound = now.AddHours(24);
+            var today = DateOnly.FromDateTime(now);
+            var lastDay = DateOnly.FromDateTime(upperBound);
 
-            var appointments = context.Appointments
+            // Narrow by date in SQL (at most two calendar days), then apply the exact 24-hour window in memory
+            var candidates = await context.Appointments
                 .Include(a => a.Slot)
                     .ThenInclude(s=>s.DoctorProfile).ThenInclude(d=>d.User)
                 .Include(a => a.Patient).ThenInclude(p => p.User)
                 .Where(a => a.Status == AppointmentStatus.Confirmed
-                         && a.ReminderSentAt == null)
-                .AsEnumerable() // pull into memory for the DateTime combination
+                         && a.ReminderSentAt == null
+                         && a.Slot.Date >= today
+                         && a.Slot.Date <= lastDay)
+                .ToListAsync(ct);
+
+            return candidates
                 .Where(a =>
                 {
                     var appointmentDateTime = a.Slot.Date.ToDateTime(a.Slot.StartTime);
                     return appointmentDateTime > now && appointmentDateTime <= upperBound;
                 })
                 .ToList();
-            return appointments;
         }
         public async Task<(int Pending, int Confirmed, int Completed, int Cancelled, int NoShow)> GetStatsAsync(CancellationToken ct)
         { 

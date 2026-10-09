@@ -53,7 +53,13 @@ try
 
     var app = builder.Build();
 
-    await DataSeeder.SeedAsync(app.Services);
+    // Demo accounts use published passwords: only seed them in Development unless explicitly enabled.
+    var seedDemoData = app.Configuration.GetValue<bool?>("Seeding:DemoData") ?? app.Environment.IsDevelopment();
+    await DataSeeder.SeedAsync(
+        app.Services,
+        seedDemoData,
+        app.Configuration["Seeding:AdminEmail"],
+        app.Configuration["Seeding:AdminPassword"]);
 
     #region Middleware Pipeline
 
@@ -87,12 +93,15 @@ try
     #endregion
 
     app.MapControllers();
-    app.Run();
+    await app.RunAsync();
+    return 0;
 }
-catch (Exception ex)
+// HostAbortedException is how `dotnet ef` stops the host after reading the model — not a failure
+catch (Exception ex) when (ex is not HostAbortedException)
 {
-    // Critical failure
+    // Critical failure — a non-zero exit code lets Docker/orchestrators see the crash
     Log.Fatal(ex, "Application failed to start");
+    return 1;
 }
 finally
 {

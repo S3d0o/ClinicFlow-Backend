@@ -1,4 +1,5 @@
-﻿using Domain.Entities.IdentityModule;
+﻿using Microsoft.Extensions.Options;
+using Domain.Entities.IdentityModule;
 using Domain.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -38,16 +39,29 @@ namespace ClinicFlow.Extensions
             .AddDefaultTokenProviders();
 
 
-            var jwtSettings = config.GetSection("JwtSettings").Get<JwtSettings>()!;
-
+            // Fail at startup with a clear message instead of at the first login (IDX10720 → 500)
+            services.AddOptions<JwtSettings>()
+                .Bind(config.GetSection("JwtSettings"))
+                .Validate(s => Encoding.UTF8.GetByteCount(s.Secret) >= 32,
+                    "JwtSettings:Secret must be at least 32 bytes (HMAC-SHA256). Set it in user secrets or the environment.")
+                .Validate(s => !string.IsNullOrWhiteSpace(s.Issuer) && !string.IsNullOrWhiteSpace(s.Audience),
+                    "JwtSettings:Issuer and JwtSettings:Audience are required.")
+                .Validate(s => s.AccessTokenExpirationMinutes > 0 && s.RefreshTokenExpirationDays > 0,
+                    "JwtSettings token lifetimes must be positive.")
+                .ValidateOnStart();
 
             services.AddAuthentication(opt =>
             {
                 opt.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
                 opt.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
             })
-                .AddJwtBearer(opt =>
+                .AddJwtBearer();
+
+            // Configure the bearer from the validated JwtSettings rather than reading the section eagerly
+            services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+                .Configure<IOptions<JwtSettings>>((opt, jwtOptions) =>
                 {
+                    var jwtSettings = jwtOptions.Value;
                     opt.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateIssuer = true,
@@ -56,14 +70,10 @@ namespace ClinicFlow.Extensions
                         ValidateIssuerSigningKey = true,
                         ValidIssuer = jwtSettings.Issuer,
                         ValidAudience = jwtSettings.Audience,
-                        IssuerSigningKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(jwtSettings.Secret)),
+                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Secret)),
                         ClockSkew = TimeSpan.Zero, // to prevent token expiration issues due to clock differences
-
                     };
                 });
-            services.AddOptions<JwtSettings>()
-           .Bind(config.GetSection("JwtSettings"));
             services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 

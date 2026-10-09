@@ -8,7 +8,8 @@ namespace Persistence.AppData;
 
 /// <summary>
 /// Seeds the database with realistic Egyptian clinic data.
-/// Call DataSeeder.SeedAsync(app.Services) in Program.cs before app.Run().
+/// Called from Program.cs on startup. The demo accounts below are only created when
+/// Seeding:DemoData is true (default: Development only).
 ///
 /// Seeded accounts (all passwords follow the same pattern):
 ///   Admin   — admin@clinicflow.com         / Admin@1234
@@ -49,7 +50,11 @@ public static class DataSeeder
     private static readonly Guid PatYoussefId = Guid.Parse("00000000-0000-0000-0000-000000000024");
 
     // ── Entry point ───────────────────────────────────────────────────────────
-    public static async Task SeedAsync(IServiceProvider service)
+    // Roles and specialties are always seeded. The demo dataset (accounts with the published
+    // passwords above) is only seeded when seedDemoData is true — never enable it in production.
+    // A real admin can be bootstrapped from configuration (Seeding:AdminEmail / Seeding:AdminPassword).
+    public static async Task SeedAsync(
+        IServiceProvider service, bool seedDemoData, string? adminEmail = null, string? adminPassword = null)
     {
         using var scope = service.CreateScope();
 
@@ -62,6 +67,13 @@ public static class DataSeeder
 
         await SeedRolesAsync(roleManager);
         await SeedSpecialtiesAsync(context);
+
+        if (!string.IsNullOrWhiteSpace(adminEmail) && !string.IsNullOrWhiteSpace(adminPassword))
+            await SeedBootstrapAdminAsync(userManager, adminEmail, adminPassword);
+
+        if (!seedDemoData)
+            return;
+
         await SeedUsersAsync(userManager, context);
         await SeedDoctorSchedulesAsync(context);
         await SeedAppointmentSlotsAsync(context);
@@ -563,7 +575,7 @@ public static class DataSeeder
     //   Cancelled  → slot freed back to Available
     //   NoShow     → patient did not attend a past Confirmed appointment
     //
-    // Dates are pinned to July 2026 so the seeder looks correct regardless of when it runs.
+    // Dates are relative to today, so the demo data always has past and upcoming appointments.
     private static async Task SeedAppointmentsAsync(ClinicDbContext context)
     {
         if (await context.Appointments.AnyAsync()) return;
@@ -792,6 +804,32 @@ public static class DataSeeder
         await context.Notifications.AddRangeAsync(notifications);
         await context.SaveChangesAsync();
     }
+    // ── Bootstrap admin (all environments) ────────────────────────────────────
+    private static async Task SeedBootstrapAdminAsync(
+        UserManager<ApplicationUser> userManager, string email, string password)
+    {
+        if (await userManager.FindByEmailAsync(email) is not null) return;
+
+        var admin = new ApplicationUser
+        {
+            FirstName = "Clinic",
+            LastName = "Admin",
+            Email = email,
+            UserName = email,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true,
+            EmailConfirmed = true,
+        };
+
+        var result = await userManager.CreateAsync(admin, password);
+        if (!result.Succeeded)
+            throw new InvalidOperationException(
+                "Could not create the bootstrap admin from Seeding:AdminEmail/AdminPassword: "
+                + string.Join(", ", result.Errors.Select(e => e.Description)));
+
+        await userManager.AddToRoleAsync(admin, "Admin");
+    }
+
     // ── Helper ────────────────────────────────────────────────────────────────
     private static async Task CreateUserAsync(
         UserManager<ApplicationUser> userManager,

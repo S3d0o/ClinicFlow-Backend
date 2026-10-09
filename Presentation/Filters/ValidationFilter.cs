@@ -1,14 +1,18 @@
-﻿// Presentation/Filters/ValidationFilter.cs
+// Presentation/Filters/ValidationFilter.cs
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Logging;
 
 namespace Presentation.Filters;
 
-public class ValidationFilter(ILogger<ValidationFilter> logger) : IActionFilter
+// Async so validators may use MustAsync/CustomAsync; errors from every argument are reported together.
+public class ValidationFilter(ILogger<ValidationFilter> logger) : IAsyncActionFilter
 {
-    public void OnActionExecuting(ActionExecutingContext context)
+    public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
+        var modelState = new ModelStateDictionary();
+        var ct = context.HttpContext.RequestAborted;
+
         foreach (var argument in context.ActionArguments.Values)
         {
             if (argument is null) continue;
@@ -27,31 +31,33 @@ public class ValidationFilter(ILogger<ValidationFilter> logger) : IActionFilter
                 continue;
             }
 
-            var result = v.Validate(new ValidationContext<object>(argument));
-            if (!result.IsValid)
-            {
-                var errors = result.Errors
-                    .GroupBy(e => e.PropertyName)
-                    .ToDictionary(
-                        g => g.Key,
-                        g => g.Select(e => e.ErrorMessage).ToArray()
-                    );
+            var result = await v.ValidateAsync(new ValidationContext<object>(argument), ct);
+            if (result.IsValid) continue;
 
-                logger.LogWarning(
-                    "Validation failed for {ModelType}. Errors: {@Errors}",
-                    type.Name,
-                    errors);
+            var errors = result.Errors
+                .GroupBy(e => e.PropertyName)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(e => e.ErrorMessage).ToArray()
+                );
 
-                var modelState = new ModelStateDictionary();
-                foreach (var (key, messages) in errors)
-                    foreach (var message in messages)
-                        modelState.AddModelError(key, message);
+            logger.LogWarning(
+                "Validation failed for {ModelType}. Errors: {@Errors}",
+                type.Name,
+                errors);
 
-                context.Result = new BadRequestObjectResult(
-                    new ValidationProblemDetails(modelState));
-            }
+            foreach (var (key, messages) in errors)
+                foreach (var message in messages)
+                    modelState.AddModelError(key, message);
         }
-    }
 
-    public void OnActionExecuted(ActionExecutedContext context) { }
+        if (modelState.ErrorCount > 0)
+        {
+            context.Result = new BadRequestObjectResult(
+                new ValidationProblemDetails(modelState));
+            return;
+        }
+
+        await next();
+    }
 }

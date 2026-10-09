@@ -1,0 +1,7 @@
+<Project>
+  <!-- Applies to every project in the solution -->
+  <PropertyGroup>
+    <!-- The solution builds with zero nullable warnings; keep it that way -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable</WarningsAsErrors>
+  </PropertyGroup>
+</Project>

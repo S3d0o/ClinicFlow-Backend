@@ -8,7 +8,7 @@ services:
       ACCEPT_EULA: "Y"
       MSSQL_PID: "Developer"
     ports:
-      - "1433:1433"
+      - "127.0.0.1:1433:1433" # host-only; the backend reaches SQL Server over the compose network
     volumes:
       - clinicflow_data:/var/opt/mssql
     healthcheck:
@@ -36,6 +36,9 @@ services:
       JwtSettings__TheftDetectionWindowMinutes: "5"
       EmailSettings__Username: ${EMAIL_USERNAME}
       EmailSettings__Password: ${EMAIL_PASSWORD}
+      # Optional: creates a real admin on first start (demo accounts are not seeded in Production)
+      Seeding__AdminEmail: ${ADMIN_EMAIL:-}
+      Seeding__AdminPassword: ${ADMIN_PASSWORD:-}
     ports:
       - "5001:8080"
 
