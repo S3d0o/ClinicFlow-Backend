@@ -3,6 +3,7 @@ services:
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: clinicflow-db
+    restart: unless-stopped
     environment:
       SA_PASSWORD: ${DB_PASSWORD}
       ACCEPT_EULA: "Y"
@@ -21,6 +22,8 @@ services:
   backend:
     image: clinicflow-backend
     container_name: clinicflow-backend
+    # Safety net: startup already retries while SQL Server recovers (DataSeeder.MigrateWithRetryAsync)
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy

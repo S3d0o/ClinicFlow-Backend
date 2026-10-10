@@ -23,7 +23,8 @@ No linter or CI workflow is configured.
 - Add: `dotnet ef migrations add <PascalCaseName> --project Persistance/Persistence.csproj --startup-project ClinicFlow --output-dir AppData/Migrations`
 - Apply manually: `dotnet ef database update --project Persistance/Persistence.csproj --startup-project ClinicFlow`
 - Remove the last unapplied migration: `dotnet ef migrations remove --project Persistance/Persistence.csproj --startup-project ClinicFlow`
-- On every startup, `DataSeeder.SeedAsync` (`ClinicFlow/Program.cs`) runs `Database.MigrateAsync()`, so `dotnet run` applies pending migrations by itself. It then seeds roles and specialties, an optional bootstrap admin, and (only when `Seeding:DemoData` is true) the demo dataset.
+- On every startup, `DataSeeder.SeedAsync` (`ClinicFlow/Program.cs`) runs `Database.MigrateAsync()`, so `dotnet run` applies pending migrations by itself. It retries on `SqlException` for about a minute, because SQL Server accepts connections before it has recovered existing databases and EF then fails with "database already exists" (error 1801). It then seeds roles and specialties, an optional bootstrap admin, and (only when `Seeding:DemoData` is true) the demo dataset.
+- The demo dataset is created once, with dates counted in working days (Sun–Thu) from the day it is seeded. Demo slots are topped up on every start (14 days back to 21 days ahead), so an old demo database stays bookable, but its appointments keep their original dates. To get fresh demo appointments, drop the database and restart.
 - Name migrations in PascalCase without spaces. A name with spaces once produced an all-lower-case class and warning CS8981 (the class has since been renamed; the migration id is what EF uses).
 - `dotnet ef` builds and starts the host, so the configuration below must be present.
 

@@ -269,7 +269,7 @@ HTTP request
 #### H8. Slots run out after two weeks
 - **Status:** ⏸ Open. Needs a slot roll-forward job and idempotent generation; best done together with H4.
 - **Where:** `DoctorService.cs:146-150` generates slots for days 0–13 only, and only when a schedule is created or updated. Nothing rolls the window forward.
-- **Impact:** a doctor who sets a schedule once has no bookable slots 14 days later. The seeder generates 21 days, which hides the problem in demos.
+- **Impact:** a doctor who sets a schedule once has no bookable slots 14 days later. The seeder generates 21 days and tops the demo slots up on every start, which hides the problem in demos.
 - **Fix risk:** Medium. Add a daily background job that extends slots for active schedules, and make generation idempotent (skip existing times; see H4).
 
 ### Medium
@@ -358,7 +358,7 @@ HTTP request
 - **Fix risk:** Low. Move them to config.
 
 #### M12. Docker healthcheck always fails
-- **Status:** ⏸ Open. Needs a choice of probe (install `curl` in the image, or check health from compose).
+- **Status:** ✅ Fixed. `Program.cs` maps `/health` (`AddHealthChecks()`/`MapHealthChecks`, a liveness check that doesn't touch the database) and the runtime image installs `curl`. Compose also sets `restart: unless-stopped` on `db` and `backend`.
 - **Where:** `Dockerfile:39-40` curls `/health`. No health endpoint is mapped, and `curl` isn't in the `aspnet` image.
 - **Fix risk:** Low. Add `AddHealthChecks()`/`MapHealthChecks("/health")` and a probe that exists in the image.
 

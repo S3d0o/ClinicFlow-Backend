@@ -33,6 +33,9 @@ try
 
     builder.Services.AddHostedService<AppointmentReminderJob>();
 
+    // Liveness probe for the Docker HEALTHCHECK (GET /health)
+    builder.Services.AddHealthChecks();
+
 
     #endregion
 
@@ -93,6 +96,7 @@ try
     #endregion
 
     app.MapControllers();
+    app.MapHealthChecks("/health");
     await app.RunAsync();
     return 0;
 }

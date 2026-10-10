@@ -126,7 +126,7 @@ Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data**. Set 
 - [ ] The database login is a dedicated least-privilege user, not `sa` (see REVIEW NM6).
 - [ ] Only one instance runs the reminder job (there is no distributed lock yet; REVIEW M9).
 - [ ] Logs: the Seq URL is configured, or the Seq sink is removed; `logs/` is on persistent storage, if file logs are wanted.
-- [ ] The Docker healthcheck is not usable yet (REVIEW M12). Rely on the container exit code: startup failures exit with 1.
+- [ ] The orchestrator restarts the container on failure (compose: `restart: unless-stopped`), and probes `GET /health` (liveness only; it doesn't check the database). Startup failures exit with 1.
 
 ## 8. Troubleshooting
 
@@ -136,6 +136,8 @@ Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data**. Set 
 | `OptionsValidationException: JwtSettings:Secret must be at least 32 bytes` | Set a longer secret |
 | `A network-related or instance-specific error … wait operation timed out` with `Server=localhost,<port>` | `localhost` may resolve to IPv6 while SQL Server is bound to IPv4. Use `127.0.0.1` |
 | Integration tests fail to start | Docker isn't running |
+| Log shows `Database not ready (SQL error 1801 …). Retrying migration` | Normal when SQL Server and the API start together: SQL Server is still recovering the database. Startup retries for about a minute; if it still fails, check that SQL Server is up |
+| Demo appointments are all in the past | The demo dataset is created once and keeps its dates (slots are topped up on every start). Drop the database and restart to reseed |
 | Login returns `Auth.AccountLockedOut` | 5 wrong passwords: wait 15 minutes, or clear `LockoutEnd` for the user |
 | Login returns `Auth.EmailNotConfirmed` | Confirm the email, or set `EmailConfirmed = 1` in `Users` for local testing |
 | No slots for a doctor | The doctor has no active schedule for that weekday, or the date is more than 14 days ahead |

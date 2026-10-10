@@ -1,7 +1,9 @@
 using ClinicFlow.Domain.Enums;
 using Domain.Enums;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Shared.Enums;
 
 namespace Persistence.AppData;
@@ -49,6 +51,14 @@ public static class DataSeeder
     private static readonly Guid PatRanaId = Guid.Parse("00000000-0000-0000-0000-000000000023");
     private static readonly Guid PatYoussefId = Guid.Parse("00000000-0000-0000-0000-000000000024");
 
+    // Demo doctors work Sun–Thu (the Egyptian working week)
+    private static readonly DayOfWeek[] WorkDays =
+        [DayOfWeek.Sunday, DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday];
+
+    // Demo slots cover this window around today; it is topped up on every start (see SeedAppointmentSlotsAsync)
+    private const int SlotHistoryDays = 14;
+    private const int SlotBookingWindowDays = 21;
+
     // ── Entry point ───────────────────────────────────────────────────────────
     // Roles and specialties are always seeded. The demo dataset (accounts with the published
     // passwords above) is only seeded when seedDemoData is true — never enable it in production.
@@ -61,9 +71,10 @@ public static class DataSeeder
         var context = scope.ServiceProvider.GetRequiredService<ClinicDbContext>();
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(DataSeeder));
 
         // Applies any pending migrations automatically — safe to call on every startup.
-        await context.Database.MigrateAsync();
+        await MigrateWithRetryAsync(context, logger);
 
         await SeedRolesAsync(roleManager);
         await SeedSpecialtiesAsync(context);
@@ -80,6 +91,31 @@ public static class DataSeeder
         await SeedAppointmentsAsync(context);
         await SeedReviewsAsync(context);
         await SeedNotificationsAsync(context);
+    }
+
+    // SQL Server accepts connections before it has finished recovering existing databases (e.g. when
+    // the db and backend containers start together). In that window EF reads "cannot open database"
+    // as "database doesn't exist", runs CREATE DATABASE and fails with error 1801. Retry until it's online.
+    private static async Task MigrateWithRetryAsync(ClinicDbContext context, ILogger logger)
+    {
+        const int maxAttempts = 12;
+        var delay = TimeSpan.FromSeconds(5);
+
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await context.Database.MigrateAsync();
+                return;
+            }
+            catch (SqlException ex) when (attempt < maxAttempts)
+            {
+                logger.LogWarning(
+                    "Database not ready (SQL error {SqlErrorNumber}: {SqlErrorMessage}). Retrying migration in {DelaySeconds}s (attempt {Attempt}/{MaxAttempts})",
+                    ex.Number, ex.Message, delay.TotalSeconds, attempt, maxAttempts);
+                await Task.Delay(delay);
+            }
+        }
     }
 
     // ── 1. Roles ──────────────────────────────────────────────────────────────
@@ -162,8 +198,6 @@ public static class DataSeeder
                 Bio               = "Senior interventional cardiologist with 25+ years at Cairo University Hospital. Specializes in coronary artery disease, heart failure, and echocardiography.",
                 YearsOfExperience = 25,
                 ConsultationFee   = 500,
-                AverageRating     = 4.8,
-                TotalReviews      = 4,
                 IsApprovedByAdmin = true,
                 ClinicAddress     = "15 Tahrir Square, Building 3, Floor 2",
                 ClinicCity        = "Cairo",
@@ -190,8 +224,6 @@ public static class DataSeeder
                 Bio               = "Cosmetic and medical dermatologist trained in Cairo and Paris. Expert in laser therapy, acne management, and skin cancer screening.",
                 YearsOfExperience = 12,
                 ConsultationFee   = 400,
-                AverageRating     = 4.6,
-                TotalReviews      = 3,
                 IsApprovedByAdmin = true,
                 ClinicAddress     = "7 Mohamed Farid Street, Maadi",
                 ClinicCity        = "Cairo",
@@ -218,8 +250,6 @@ public static class DataSeeder
                 Bio               = "Orthopedic surgeon specializing in sports injuries, ACL reconstruction, and total joint replacement. Fellow of the Egyptian Orthopedic Association.",
                 YearsOfExperience = 18,
                 ConsultationFee   = 600,
-                AverageRating     = 4.7,
-                TotalReviews      = 3,
                 IsApprovedByAdmin = true,
                 ClinicAddress     = "22 Gesr El Suez Street, Heliopolis",
                 ClinicCity        = "Cairo",
@@ -246,8 +276,6 @@ public static class DataSeeder
                 Bio               = "Pediatrician focused on neonatal care, childhood development, and vaccination programs. 20 years serving families across Alexandria.",
                 YearsOfExperience = 20,
                 ConsultationFee   = 350,
-                AverageRating     = 4.9,
-                TotalReviews      = 3,
                 IsApprovedByAdmin = true,
                 ClinicAddress     = "5 El-Horreya Road, Smouha",
                 ClinicCity        = "Alexandria",
@@ -274,8 +302,6 @@ public static class DataSeeder
                 Bio               = "Gastroenterologist with expertise in colonoscopy, GERD management, IBD, and liver disease. Trained at Ain Shams University.",
                 YearsOfExperience = 16,
                 ConsultationFee   = 450,
-                AverageRating     = 4.5,
-                TotalReviews      = 2,
                 IsApprovedByAdmin = true,
                 ClinicAddress     = "3 Cleopatra Street, Heliopolis",
                 ClinicCity        = "Cairo",
@@ -302,8 +328,6 @@ public static class DataSeeder
                 Bio               = "Neurologist specializing in epilepsy, migraine disorders, and multiple sclerosis. Board-certified with 14 years of clinical practice.",
                 YearsOfExperience = 14,
                 ConsultationFee   = 550,
-                AverageRating     = 4.7,
-                TotalReviews      = 2,
                 IsApprovedByAdmin = true,
                 ClinicAddress     = "18 El-Nasr Road, Nasr City",
                 ClinicCity        = "Cairo",
@@ -331,8 +355,6 @@ public static class DataSeeder
                 Bio               = "ENT specialist with experience in rhinoplasty, sinusitis treatment, and cochlear implants.",
                 YearsOfExperience = 6,
                 ConsultationFee   = 380,
-                AverageRating     = 0.0,
-                TotalReviews      = 0,
                 IsApprovedByAdmin = false,
                 ClinicAddress     = "10 Abbas El-Akkad Street, Nasr City",
                 ClinicCity        = "Cairo",
@@ -496,9 +518,7 @@ public static class DataSeeder
         {
             // Each doctor works Sun–Thu, morning shift 09:00–13:00 (30-min slots)
             // and an afternoon shift 16:00–19:00 (30-min slots) to make the UI richer.
-            var workDays = new[] { DayOfWeek.Sunday, DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday };
-
-            foreach (var day in workDays)
+            foreach (var day in WorkDays)
             {
                 schedules.Add(new DoctorSchedule
                 {
@@ -527,42 +547,56 @@ public static class DataSeeder
     }
 
     // ── 5. Appointment Slots ──────────────────────────────────────────────────
+    // Runs on every start, not just the first: it adds any missing slots from SlotHistoryDays ago to
+    // SlotBookingWindowDays ahead, so a long-lived demo database keeps bookable slots. Existing slots
+    // (available, booked or blocked) are never touched.
     private static async Task SeedAppointmentSlotsAsync(ClinicDbContext context)
     {
-        if (await context.AppointmentSlots.AnyAsync()) return;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var from = today.AddDays(-SlotHistoryDays);
+        var to = today.AddDays(SlotBookingWindowDays);
 
         var schedules = await context.DoctorSchedules
-            .Where(s => s.IsActive)
+            .Where(s => s.IsActive && s.SlotDurationMinutes > 0)
             .ToListAsync();
+
+        var existing = (await context.AppointmentSlots
+                .Where(s => s.Date >= from && s.Date <= to)
+                .Select(s => new { s.DoctorProfileId, s.Date, s.StartTime })
+                .ToListAsync())
+            .Select(s => (s.DoctorProfileId, s.Date, s.StartTime))
+            .ToHashSet();
 
         var slots = new List<AppointmentSlot>();
 
-        // Generate slots for: 14 past days (history) + today + 21 future days (booking window).
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-
-        for (int dayOffset = -14; dayOffset <= 21; dayOffset++)
+        for (var date = from; date <= to; date = date.AddDays(1))
         {
-            var date = today.AddDays(dayOffset);
-            var dayOfWk = date.DayOfWeek;
-
-            foreach (var schedule in schedules.Where(s => s.DayOfWeek == dayOfWk))
+            foreach (var schedule in schedules.Where(s => s.DayOfWeek == date.DayOfWeek))
             {
-                var current = schedule.StartTime;
-                while (current.AddMinutes(schedule.SlotDurationMinutes) <= schedule.EndTime)
+                // Minutes since midnight, as in DoctorService: TimeOnly.AddMinutes wraps at midnight
+                var duration = schedule.SlotDurationMinutes;
+                var startMinutes = (int)schedule.StartTime.ToTimeSpan().TotalMinutes;
+                var endMinutes = (int)schedule.EndTime.ToTimeSpan().TotalMinutes;
+
+                for (var minute = startMinutes; minute + duration <= endMinutes; minute += duration)
                 {
+                    var start = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(minute));
+                    if (!existing.Add((schedule.DoctorProfileId, date, start))) continue;
+
                     slots.Add(new AppointmentSlot
                     {
                         DoctorProfileId = schedule.DoctorProfileId,
                         DoctorScheduleId = schedule.Id,
                         Date = date,
-                        StartTime = current,
-                        EndTime = current.AddMinutes(schedule.SlotDurationMinutes),
+                        StartTime = start,
+                        EndTime = start.AddMinutes(duration),
                         Status = SlotStatus.Available,
                     });
-                    current = current.AddMinutes(schedule.SlotDurationMinutes);
                 }
             }
         }
+
+        if (slots.Count == 0) return;
 
         await context.AppointmentSlots.AddRangeAsync(slots);
         await context.SaveChangesAsync();
@@ -575,235 +609,304 @@ public static class DataSeeder
     //   Cancelled  → slot freed back to Available
     //   NoShow     → patient did not attend a past Confirmed appointment
     //
-    // Dates are relative to today, so the demo data always has past and upcoming appointments.
+    // Dates are counted in working days from today (see WorkDay), so every appointment lands on a day
+    // the doctor works, whatever weekday the database is seeded on. Each (patient, doctor, status)
+    // combination is used once, which is how SeedReviewsAsync finds the visit a review belongs to.
     private static async Task SeedAppointmentsAsync(ClinicDbContext context)
     {
         if (await context.Appointments.AnyAsync()) return;
 
-        var patients = await context.PatientProfiles.ToListAsync();
+        var now = DateTime.UtcNow;
+        var today = DateOnly.FromDateTime(now);
+        var firstSlotDate = today.AddDays(-SlotHistoryDays);
+
+        var doctorIds = await context.DoctorProfiles.ToDictionaryAsync(d => d.UserId, d => d.Id);
+        var patientIds = await context.PatientProfiles.ToDictionaryAsync(p => p.UserId, p => p.Id);
         var slots = await context.AppointmentSlots
-            .OrderBy(s => s.DoctorProfileId)
-            .ThenBy(s => s.Date)
-            .ThenBy(s => s.StartTime)
+            .Where(s => s.Status == SlotStatus.Available && s.Date >= firstSlotDate)
             .ToListAsync();
-
-        if (!slots.Any() || !patients.Any()) return;
-
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-
-        AppointmentSlot? Slot(Guid doctorUserId, DateOnly date, TimeOnly time)
-        {
-            var doctorProfileId = context.DoctorProfiles
-                .Where(d => d.UserId == doctorUserId)
-                .Select(d => d.Id)
-                .FirstOrDefault();
-
-            if (doctorProfileId == 0) return null;
-
-            return slots.FirstOrDefault(s =>
-                s.DoctorProfileId == doctorProfileId &&
-                s.Date == date &&
-                s.StartTime == time &&
-                s.Status == SlotStatus.Available);
-        }
-
-        PatientProfile Patient(Guid userId) =>
-            patients.First(p => p.UserId == userId);
 
         var appointments = new List<Appointment>();
 
-        // ── Past: Completed appointments ─────────────────────────────────────
-        // Note: past slots don't exist in DB, so we create them inline
+        void Add(Guid doctorUserId, Guid patientUserId, int workDayOffset, TimeOnly time,
+            AppointmentStatus status, string reason, string? notes = null, int bookedDaysBefore = 2,
+            (CancelledBy By, string Reason)? cancellation = null)
+        {
+            if (!doctorIds.TryGetValue(doctorUserId, out var doctorProfileId) ||
+                !patientIds.TryGetValue(patientUserId, out var patientProfileId)) return;
 
-        var s0 = Slot(DrAhmedId, today.AddDays(-1), new TimeOnly(9, 0));
-        if (s0 != null) { appointments.Add(new Appointment { SlotId = s0.Id, PatientProfileId = Patient(PatMohamedId).Id, DoctorProfileId = s0.DoctorProfileId, Status = AppointmentStatus.Completed, ReasonForVisit = "Chest pain and shortness of breath during exercise.", DoctorNotes = "Mild hypertension detected. ECG normal. Prescribed Amlodipine 5 mg once daily. Advised low-sodium diet. Follow-up in 4 weeks.", BookedAt = DateTime.UtcNow.AddDays(-3) }); s0.Status = SlotStatus.Booked; }
+            var date = WorkDay(today, workDayOffset);
+            var slot = slots.FirstOrDefault(s =>
+                s.DoctorProfileId == doctorProfileId && s.Date == date && s.StartTime == time);
+            if (slot is null || slot.Status != SlotStatus.Available) return;
 
-        var s1 = Slot(DrNourId, today.AddDays(-2), new TimeOnly(9, 30));
-        if (s1 != null) { appointments.Add(new Appointment { SlotId = s1.Id, PatientProfileId = Patient(PatSaraId).Id, DoctorProfileId = s1.DoctorProfileId, Status = AppointmentStatus.Completed, ReasonForVisit = "Persistent skin rash on forearms and neck for three weeks.", DoctorNotes = "Contact dermatitis, likely triggered by new detergent. Prescribed Hydrocortisone 1% cream twice daily for 7 days. Avoid irritants.", BookedAt = DateTime.UtcNow.AddDays(-5) }); s1.Status = SlotStatus.Booked; }
+            var start = date.ToDateTime(time, DateTimeKind.Utc);
+            var appointment = new Appointment
+            {
+                SlotId = slot.Id,
+                PatientProfileId = patientProfileId,
+                DoctorProfileId = doctorProfileId,
+                Status = status,
+                ReasonForVisit = reason,
+                DoctorNotes = notes,
+                BookedAt = (start < now ? start : now).AddDays(-bookedDaysBefore),
+            };
 
-        var s2 = Slot(DrKarimId, today.AddDays(-3), new TimeOnly(10, 0));
-        if (s2 != null) { appointments.Add(new Appointment { SlotId = s2.Id, PatientProfileId = Patient(PatHassanId).Id, DoctorProfileId = s2.DoctorProfileId, Status = AppointmentStatus.Completed, ReasonForVisit = "Right knee pain and swelling after football match.", DoctorNotes = "MRI ordered — suspected partial ACL tear. Advised RICE protocol and physiotherapy 3x/week. NSAIDs for pain management. Follow-up in 2 weeks.", BookedAt = DateTime.UtcNow.AddDays(-4) }); s2.Status = SlotStatus.Booked; }
+            if (cancellation is { } c)
+            {
+                var cancelledAt = appointment.BookedAt.AddDays(1);
+                appointment.CancelledAt = cancelledAt < now ? cancelledAt : now;
+                appointment.CancelledBy = c.By;
+                appointment.CancellationReason = c.Reason;
+                // A cancelled appointment frees its slot, as AppointmentService does
+            }
+            else
+            {
+                slot.Status = SlotStatus.Booked;
+            }
 
-        var s3 = Slot(DrLaylaId, today.AddDays(-4), new TimeOnly(9, 0));
-        if (s3 != null) { appointments.Add(new Appointment { SlotId = s3.Id, PatientProfileId = Patient(PatRanaId).Id, DoctorProfileId = s3.DoctorProfileId, Status = AppointmentStatus.Completed, ReasonForVisit = "Severe recurring migraines, 3–4 episodes per week.", DoctorNotes = "Chronic migraine confirmed. Started on Topiramate 25 mg nightly as prophylaxis. Sumatriptan 50 mg for acute attacks. Keep headache diary.", BookedAt = DateTime.UtcNow.AddDays(-7) }); s3.Status = SlotStatus.Booked; }
+            appointments.Add(appointment);
+        }
 
-        var s4 = Slot(DrTarekId, today.AddDays(-3), new TimeOnly(10, 0));
-        if (s4 != null) { appointments.Add(new Appointment { SlotId = s4.Id, PatientProfileId = Patient(PatYoussefId).Id, DoctorProfileId = s4.DoctorProfileId, Status = AppointmentStatus.Completed, ReasonForVisit = "Recurring acid reflux and upper abdominal discomfort after meals.", BookedAt = DateTime.UtcNow.AddDays(-6) }); s4.Status = SlotStatus.Booked; }
+        // ── Past: Completed ──────────────────────────────────────────────────
+        Add(DrAhmedId, PatMohamedId, -1, new TimeOnly(9, 0), AppointmentStatus.Completed,
+            "Chest pain and shortness of breath during exercise.",
+            "Mild hypertension detected. ECG normal. Prescribed Amlodipine 5 mg once daily. Advised low-sodium diet. Follow-up in 4 weeks.",
+            bookedDaysBefore: 3);
 
-        var s5 = Slot(DrDinaId, today.AddDays(-2), new TimeOnly(9, 0));
-        if (s5 != null) { appointments.Add(new Appointment { SlotId = s5.Id, PatientProfileId = Patient(PatMohamedId).Id, DoctorProfileId = s5.DoctorProfileId, Status = AppointmentStatus.Completed, ReasonForVisit = "Child's 18-month routine checkup and vaccination.", BookedAt = DateTime.UtcNow.AddDays(-5) }); s5.Status = SlotStatus.Booked; }
+        Add(DrNourId, PatSaraId, -2, new TimeOnly(9, 30), AppointmentStatus.Completed,
+            "Persistent skin rash on forearms and neck for three weeks.",
+            "Contact dermatitis, likely triggered by new detergent. Prescribed Hydrocortisone 1% cream twice daily for 7 days. Avoid irritants.",
+            bookedDaysBefore: 3);
 
-        var s6 = Slot(DrAhmedId, today.AddDays(-2), new TimeOnly(9, 30));
-        if (s6 != null) { appointments.Add(new Appointment { SlotId = s6.Id, PatientProfileId = Patient(PatSaraId).Id, DoctorProfileId = s6.DoctorProfileId, Status = AppointmentStatus.Completed, ReasonForVisit = "Palpitations and irregular heartbeat noticed for two days.", BookedAt = DateTime.UtcNow.AddDays(-4) }); s6.Status = SlotStatus.Booked; }
+        Add(DrKarimId, PatHassanId, -3, new TimeOnly(10, 0), AppointmentStatus.Completed,
+            "Right knee pain and swelling after football match.",
+            "MRI ordered — suspected partial ACL tear. Advised RICE protocol and physiotherapy 3x/week. NSAIDs for pain management. Follow-up in 2 weeks.",
+            bookedDaysBefore: 1);
 
-        // ── Cancelled ────────────────────────────────────────────────────────
-        var s7 = Slot(DrNourId, today.AddDays(5), new TimeOnly(10, 0));
-        if (s7 != null) { appointments.Add(new Appointment { SlotId = s7.Id, PatientProfileId = Patient(PatRanaId).Id, DoctorProfileId = s7.DoctorProfileId, Status = AppointmentStatus.Cancelled, ReasonForVisit = "Acne treatment consultation.", BookedAt = DateTime.UtcNow.AddDays(-3), CancelledAt = DateTime.UtcNow.AddDays(-1), CancellationReason = "Personal schedule conflict — will rebook next week.", CancelledBy = CancelledBy.Patient }); s7.Status = SlotStatus.Booked; }
+        Add(DrLaylaId, PatRanaId, -4, new TimeOnly(9, 0), AppointmentStatus.Completed,
+            "Severe recurring migraines, 3–4 episodes per week.",
+            "Chronic migraine confirmed. Started on Topiramate 25 mg nightly as prophylaxis. Sumatriptan 50 mg for acute attacks. Keep headache diary.",
+            bookedDaysBefore: 3);
 
-        var s8 = Slot(DrTarekId, today.AddDays(6), new TimeOnly(16, 0));
-        if (s8 != null) { appointments.Add(new Appointment { SlotId = s8.Id, PatientProfileId = Patient(PatHassanId).Id, DoctorProfileId = s8.DoctorProfileId, Status = AppointmentStatus.Cancelled, ReasonForVisit = "Follow-up after colonoscopy results.", BookedAt = DateTime.UtcNow.AddDays(-4), CancelledAt = DateTime.UtcNow.AddDays(-1), CancellationReason = "Doctor unavailable due to emergency surgery. Slot rescheduled.", CancelledBy = CancelledBy.Doctor }); s8.Status = SlotStatus.Booked; }
+        // No doctor notes yet on the next three, so the "add notes" flow can be demoed
+        Add(DrTarekId, PatYoussefId, -3, new TimeOnly(10, 0), AppointmentStatus.Completed,
+            "Recurring acid reflux and upper abdominal discomfort after meals.", bookedDaysBefore: 3);
 
-        // ── NoShow ───────────────────────────────────────────────────────────
-        var s9 = Slot(DrKarimId, today.AddDays(5), new TimeOnly(9, 0));
-        if (s9 != null) { appointments.Add(new Appointment { SlotId = s9.Id, PatientProfileId = Patient(PatYoussefId).Id, DoctorProfileId = s9.DoctorProfileId, Status = AppointmentStatus.NoShow, ReasonForVisit = "Right shoulder impingement follow-up.", BookedAt = DateTime.UtcNow.AddDays(-3) }); s9.Status = SlotStatus.Booked; }
+        Add(DrDinaId, PatMohamedId, -2, new TimeOnly(9, 0), AppointmentStatus.Completed,
+            "Child's 18-month routine checkup and vaccination.", bookedDaysBefore: 3);
 
-        // ── Upcoming: Confirmed ───────────────────────────────────────────────
-        var s10 = Slot(DrAhmedId, today.AddDays(1), new TimeOnly(9, 0));
-        if (s10 != null) { appointments.Add(new Appointment { SlotId = s10.Id, PatientProfileId = Patient(PatMohamedId).Id, DoctorProfileId = s10.DoctorProfileId, Status = AppointmentStatus.Confirmed, ReasonForVisit = "Follow-up on Amlodipine — blood pressure monitoring.", BookedAt = DateTime.UtcNow.AddDays(-2) }); s10.Status = SlotStatus.Booked; }
+        Add(DrAhmedId, PatSaraId, -2, new TimeOnly(9, 30), AppointmentStatus.Completed,
+            "Palpitations and irregular heartbeat noticed for two days.");
 
-        var s11 = Slot(DrNourId, today.AddDays(2), new TimeOnly(10, 0));
-        if (s11 != null) { appointments.Add(new Appointment { SlotId = s11.Id, PatientProfileId = Patient(PatSaraId).Id, DoctorProfileId = s11.DoctorProfileId, Status = AppointmentStatus.Confirmed, ReasonForVisit = "Laser session for pigmentation on cheeks.", BookedAt = DateTime.UtcNow.AddDays(-1) }); s11.Status = SlotStatus.Booked; }
+        // ── Past: Confirmed but not yet completed (Dr. Ahmed can mark it Completed) ──
+        Add(DrAhmedId, PatHassanId, -1, new TimeOnly(16, 0), AppointmentStatus.Confirmed,
+            "Routine cardiac checkup and blood pressure review.");
 
-        var s12 = Slot(DrKarimId, today.AddDays(3), new TimeOnly(16, 0));
-        if (s12 != null) { appointments.Add(new Appointment { SlotId = s12.Id, PatientProfileId = Patient(PatHassanId).Id, DoctorProfileId = s12.DoctorProfileId, Status = AppointmentStatus.Confirmed, ReasonForVisit = "MRI results review and ACL treatment plan.", BookedAt = DateTime.UtcNow.AddDays(-1) }); s12.Status = SlotStatus.Booked; }
+        // ── Past: NoShow ─────────────────────────────────────────────────────
+        Add(DrKarimId, PatYoussefId, -5, new TimeOnly(9, 0), AppointmentStatus.NoShow,
+            "Right shoulder impingement follow-up.", bookedDaysBefore: 3);
 
-        var s13 = Slot(DrLaylaId, today.AddDays(6), new TimeOnly(9, 0));
-        if (s13 != null) { appointments.Add(new Appointment { SlotId = s13.Id, PatientProfileId = Patient(PatRanaId).Id, DoctorProfileId = s13.DoctorProfileId, Status = AppointmentStatus.Confirmed, ReasonForVisit = "Migraine follow-up — Topiramate dosage check.", BookedAt = DateTime.UtcNow.AddDays(-1) }); s13.Status = SlotStatus.Booked; }
+        // ── Upcoming: Cancelled ──────────────────────────────────────────────
+        Add(DrNourId, PatRanaId, 4, new TimeOnly(10, 0), AppointmentStatus.Cancelled,
+            "Acne treatment consultation.", bookedDaysBefore: 3,
+            cancellation: (CancelledBy.Patient, "Personal schedule conflict — will rebook next week."));
 
-        var s14 = Slot(DrTarekId, today.AddDays(7), new TimeOnly(16, 30));
-        if (s14 != null) { appointments.Add(new Appointment { SlotId = s14.Id, PatientProfileId = Patient(PatYoussefId).Id, DoctorProfileId = s14.DoctorProfileId, Status = AppointmentStatus.Confirmed, ReasonForVisit = "GERD follow-up — 4-week Omeprazole check.", BookedAt = DateTime.UtcNow.AddDays(-1) }); s14.Status = SlotStatus.Booked; }
+        Add(DrTarekId, PatHassanId, 5, new TimeOnly(16, 0), AppointmentStatus.Cancelled,
+            "Follow-up after colonoscopy results.", bookedDaysBefore: 4,
+            cancellation: (CancelledBy.Doctor, "Doctor unavailable due to emergency surgery. Slot rescheduled."));
 
-        var s15 = Slot(DrDinaId, today.AddDays(9), new TimeOnly(9, 30));
-        if (s15 != null) { appointments.Add(new Appointment { SlotId = s15.Id, PatientProfileId = Patient(PatMohamedId).Id, DoctorProfileId = s15.DoctorProfileId, Status = AppointmentStatus.Confirmed, ReasonForVisit = "Child fever and ear pain for two days.", BookedAt = DateTime.UtcNow.AddDays(-1) }); s15.Status = SlotStatus.Booked; }
+        // ── Upcoming: Confirmed ──────────────────────────────────────────────
+        Add(DrAhmedId, PatMohamedId, 1, new TimeOnly(9, 0), AppointmentStatus.Confirmed,
+            "Follow-up on Amlodipine — blood pressure monitoring.");
 
-        var s16 = Slot(DrLaylaId, today.AddDays(13), new TimeOnly(10, 0));
-        if (s16 != null) { appointments.Add(new Appointment { SlotId = s16.Id, PatientProfileId = Patient(PatSaraId).Id, DoctorProfileId = s16.DoctorProfileId, Status = AppointmentStatus.Confirmed, ReasonForVisit = "Frequent numbness in left arm — concerned about nerve issues.", BookedAt = DateTime.UtcNow.AddDays(-1) }); s16.Status = SlotStatus.Booked; }
+        Add(DrNourId, PatSaraId, 2, new TimeOnly(10, 0), AppointmentStatus.Confirmed,
+            "Laser session for pigmentation on cheeks.", bookedDaysBefore: 1);
 
-        var s17 = Slot(DrAhmedId, today.AddDays(-1), new TimeOnly(16, 0));
-        if (s17 != null) { appointments.Add(new Appointment { SlotId = s17.Id, PatientProfileId = Patient(PatHassanId).Id, DoctorProfileId = s17.DoctorProfileId, Status = AppointmentStatus.Confirmed, ReasonForVisit = "Routine cardiac checkup and blood pressure review.", BookedAt = DateTime.UtcNow.AddDays(-2) }); s17.Status = SlotStatus.Booked; }
-        
+        Add(DrKarimId, PatHassanId, 3, new TimeOnly(16, 0), AppointmentStatus.Confirmed,
+            "MRI results review and ACL treatment plan.", bookedDaysBefore: 1);
+
+        Add(DrLaylaId, PatRanaId, 5, new TimeOnly(9, 0), AppointmentStatus.Confirmed,
+            "Migraine follow-up — Topiramate dosage check.", bookedDaysBefore: 1);
+
+        Add(DrTarekId, PatYoussefId, 6, new TimeOnly(16, 30), AppointmentStatus.Confirmed,
+            "GERD follow-up — 4-week Omeprazole check.", bookedDaysBefore: 1);
+
+        Add(DrDinaId, PatMohamedId, 8, new TimeOnly(9, 30), AppointmentStatus.Confirmed,
+            "Child fever and ear pain for two days.", bookedDaysBefore: 1);
+
+        Add(DrLaylaId, PatSaraId, 10, new TimeOnly(10, 0), AppointmentStatus.Confirmed,
+            "Frequent numbness in left arm — concerned about nerve issues.", bookedDaysBefore: 1);
+
         await context.Appointments.AddRangeAsync(appointments);
         await context.SaveChangesAsync();
     }
+
     // ── 7. Reviews ────────────────────────────────────────────────────────────
-    // Only completed appointments [0]–[6] are eligible.
+    // Sara's completed visit with Dr. Ahmed is left unreviewed so the "leave a review" flow can be
+    // demoed. Doctor ratings are then derived from the seeded reviews, as ReviewService does.
     private static async Task SeedReviewsAsync(ClinicDbContext context)
     {
         if (await context.Reviews.AnyAsync()) return;
 
-        var completed = await context.Appointments
-            .Where(a => a.Status == AppointmentStatus.Completed)
-            .OrderBy(a => a.BookedAt)
-            .ToListAsync();
-
-        if (!completed.Any()) return;
+        var appointments = await LoadAppointmentsAsync(context);
+        var now = DateTime.UtcNow;
 
         var reviewData = new[]
         {
-        (Rating: 5, Comment: "Dr. Ahmed is exceptional. He explained my condition in detail and the treatment is already making a difference. Highly recommend."),
-        (Rating: 5, Comment: "Dr. Nour was very thorough and kind. The cream she prescribed cleared the rash completely within a week."),
-        (Rating: 4, Comment: "Very professional and experienced. Explained my MRI options clearly. Clinic was busy but worth the wait."),
-        (Rating: 5, Comment: "Finally a doctor who took my migraines seriously. Dr. Layla's treatment plan has reduced my episodes significantly."),
+            (Patient: PatMohamedId, Doctor: DrAhmedId, Rating: 5, Comment: "Dr. Ahmed is exceptional. He explained my condition in detail and the treatment is already making a difference. Highly recommend."),
+            (Patient: PatSaraId, Doctor: DrNourId, Rating: 5, Comment: "Dr. Nour was very thorough and kind. The cream she prescribed cleared the rash completely within a week."),
+            (Patient: PatHassanId, Doctor: DrKarimId, Rating: 4, Comment: "Very professional and experienced. Explained my MRI options clearly. Clinic was busy but worth the wait."),
+            (Patient: PatRanaId, Doctor: DrLaylaId, Rating: 5, Comment: "Finally a doctor who took my migraines seriously. Dr. Layla's treatment plan has reduced my episodes significantly."),
+            (Patient: PatYoussefId, Doctor: DrTarekId, Rating: 4, Comment: "Dr. Tarek listened carefully and explained what triggers my reflux. The diet changes are already helping."),
+            (Patient: PatMohamedId, Doctor: DrDinaId, Rating: 5, Comment: "Dr. Dina was wonderful with our son: patient, gentle and quick. The vaccination went smoothly and she answered all our questions."),
         };
 
         var reviews = new List<Review>();
 
-        for (int i = 0; i < Math.Min(completed.Count, reviewData.Length); i++)
+        foreach (var (patient, doctor, rating, comment) in reviewData)
         {
+            var appointment = appointments.FirstOrDefault(a =>
+                a.Patient.UserId == patient && a.Doctor.UserId == doctor && a.Status == AppointmentStatus.Completed);
+            if (appointment is null) continue;
+
+            var reviewedAt = SlotEnd(appointment).AddHours(6);
             reviews.Add(new Review
             {
-                AppointmentId = completed[i].Id,
-                PatientProfileId = completed[i].PatientProfileId,
-                DoctorProfileId = completed[i].DoctorProfileId,
-                Rating = reviewData[i].Rating,
-                Comment = reviewData[i].Comment,
-                CreatedAt = DateTime.UtcNow.AddDays(-i),
+                AppointmentId = appointment.Id,
+                PatientProfileId = appointment.PatientProfileId,
+                DoctorProfileId = appointment.DoctorProfileId,
+                Rating = rating,
+                Comment = comment,
+                CreatedAt = reviewedAt < now ? reviewedAt : now,
                 IsVisible = true,
             });
         }
 
+        if (reviews.Count == 0) return;
+
         await context.Reviews.AddRangeAsync(reviews);
+
+        foreach (var group in reviews.GroupBy(r => r.DoctorProfileId))
+        {
+            var doctor = await context.DoctorProfiles.FirstAsync(d => d.Id == group.Key);
+            doctor.TotalReviews = group.Count();
+            doctor.AverageRating = group.Average(r => r.Rating);
+        }
+
         await context.SaveChangesAsync();
     }
+
     // ── 8. Notifications ──────────────────────────────────────────────────────
+    // Mirrors what the app sends, with the same titles and wording as AppointmentService: the patient
+    // and the doctor hear about every booking and cancellation, the patient about completions. Anything
+    // older than two days is marked read.
     private static async Task SeedNotificationsAsync(ClinicDbContext context)
     {
         if (await context.Notifications.AnyAsync()) return;
 
-        var appointments = await context.Appointments
-            .OrderBy(a => a.BookedAt)
-            .ToListAsync();
+        var appointments = await LoadAppointmentsAsync(context);
+        if (appointments.Count == 0) return;
 
-        if (!appointments.Any()) return;
-
+        var now = DateTime.UtcNow;
         var notifications = new List<Notification>();
 
-        void AddNotification(Guid userId, string title, string message, NotificationType type, bool isRead, int appointmentIndex)
+        void Notify(Guid userId, Appointment appointment, string title, string message, NotificationType type, DateTime at)
         {
-            if (appointmentIndex >= appointments.Count) return;
+            var createdAt = at < now ? at : now;
             notifications.Add(new Notification
             {
                 UserId = userId,
                 Title = title,
                 Message = message,
                 Type = type,
-                IsRead = isRead,
-                CreatedAt = DateTime.UtcNow.AddDays(-1),
-                RelatedEntityId = appointments[appointmentIndex].Id,
+                IsRead = createdAt < now.AddDays(-2),
+                CreatedAt = createdAt,
+                RelatedEntityId = appointment.Id,
             });
         }
 
-        // ── Booking confirmations (historical) ────────────────────────────
-        AddNotification(PatMohamedId, "Appointment Confirmed",
-            "Your appointment with Dr. Ahmed El-Sayed has been booked.",
-            NotificationType.AppointmentConfirmed, true, 0);
+        static string Name(ApplicationUser user) => $"{user.FirstName} {user.LastName}";
 
-        AddNotification(PatSaraId, "Appointment Confirmed",
-            "Your appointment with Dr. Nour Hassan has been booked.",
-            NotificationType.AppointmentConfirmed, true, 1);
+        foreach (var a in appointments)
+        {
+            var patient = a.Patient.User;
+            var doctor = a.Doctor.User;
+            var when = $"on {a.Slot.Date} at {a.Slot.StartTime:HH:mm}";
 
-        // ── Completion notifications ──────────────────────────────────────
-        AddNotification(PatMohamedId, "Appointment Completed",
-            "Your appointment with Dr. Ahmed El-Sayed is complete. You can now leave a review.",
-            NotificationType.AppointmentCompleted, true, 0);
+            Notify(patient.Id, a, "Appointment Confirmed",
+                $"Your appointment with Dr. {Name(doctor)} {when} has been booked.",
+                NotificationType.AppointmentConfirmed, a.BookedAt);
+            Notify(doctor.Id, a, "New Appointment Booked",
+                $"You have a new appointment with {Name(patient)} {when}.",
+                NotificationType.SystemAlert, a.BookedAt);
 
-        AddNotification(PatSaraId, "Appointment Completed",
-            "Your appointment with Dr. Nour Hassan is complete. You can now leave a review.",
-            NotificationType.AppointmentCompleted, true, 1);
+            switch (a.Status)
+            {
+                case AppointmentStatus.Completed:
+                    Notify(patient.Id, a, "Appointment Completed",
+                        "Your appointment has been completed. You can now leave a review.",
+                        NotificationType.AppointmentCompleted, SlotEnd(a));
+                    break;
 
-        AddNotification(PatRanaId, "Appointment Completed",
-            "Your appointment with Dr. Layla Naguib is complete. You can now leave a review.",
-            NotificationType.AppointmentCompleted, false, 3);
+                case AppointmentStatus.Cancelled:
+                    var cancelledAt = a.CancelledAt ?? now;
+                    Notify(patient.Id, a, "Appointment Cancelled",
+                        $"Your appointment {when} has been cancelled.",
+                        NotificationType.AppointmentCancelled, cancelledAt);
+                    Notify(doctor.Id, a, "Appointment Cancelled",
+                        $"Your appointment with {Name(patient)} {when} has been cancelled.",
+                        NotificationType.AppointmentCancelled, cancelledAt);
+                    break;
 
-        // ── Cancellation notifications ────────────────────────────────────
-        AddNotification(PatRanaId, "Appointment Cancelled",
-            "Your appointment has been cancelled successfully.",
-            NotificationType.AppointmentCancelled, true, 7);
+                case AppointmentStatus.NoShow:
+                    Notify(patient.Id, a, "No-Show Recorded",
+                        $"You missed your appointment with Dr. {Name(doctor)} {when}. Please book a new appointment if needed.",
+                        NotificationType.SystemAlert, SlotEnd(a));
+                    break;
+            }
+        }
 
-        AddNotification(PatHassanId, "Appointment Cancelled",
-            "Your appointment has been cancelled by the doctor. We apologize for the inconvenience.",
-            NotificationType.AppointmentCancelled, false, 8);
-
-        // ── Reminder ──────────────────────────────────────────────────────
-        AddNotification(PatMohamedId, "Appointment Reminder",
-            "Reminder: You have an upcoming appointment with Dr. Ahmed El-Sayed. Please arrive 10 minutes early.",
-            NotificationType.AppointmentReminder, false, 10);
-
-        // ── Upcoming booking confirmations ────────────────────────────────
-        AddNotification(PatSaraId, "Appointment Confirmed",
-            "Your appointment with Dr. Nour Hassan has been booked.",
-            NotificationType.AppointmentConfirmed, false, 11);
-
-        AddNotification(PatHassanId, "Appointment Confirmed",
-            "Your appointment with Dr. Karim Mansour has been booked.",
-            NotificationType.AppointmentConfirmed, false, 12);
-
-        AddNotification(PatRanaId, "Appointment Confirmed",
-            "Your appointment with Dr. Layla Naguib has been booked.",
-            NotificationType.AppointmentConfirmed, false, 13);
-
-        AddNotification(PatYoussefId, "Appointment Confirmed",
-            "Your appointment with Dr. Tarek Soliman has been booked.",
-            NotificationType.AppointmentConfirmed, false, 14);
-
-        // ── System alert ──────────────────────────────────────────────────
-        AddNotification(PatYoussefId, "No-Show Recorded",
-            "You missed your appointment with Dr. Karim Mansour. Please book a new appointment if needed.",
-            NotificationType.SystemAlert, false, 9);
+        // Reminder for the next upcoming visit. ReminderSentAt stops AppointmentReminderJob sending it again.
+        var next = appointments
+            .Where(a => a.Status == AppointmentStatus.Confirmed && SlotEnd(a) > now)
+            .MinBy(SlotEnd);
+        if (next is not null)
+        {
+            next.ReminderSentAt = now.AddHours(-1);
+            Notify(next.Patient.UserId, next, "Appointment Reminder",
+                $"Reminder: You have an appointment on {next.Slot.Date} at {next.Slot.StartTime:HH:mm}.",
+                NotificationType.AppointmentReminder, next.ReminderSentAt.Value);
+        }
 
         await context.Notifications.AddRangeAsync(notifications);
         await context.SaveChangesAsync();
     }
+
+    // ── Demo data helpers ─────────────────────────────────────────────────────
+
+    // The date `offset` working days from today: -1 is the last working day before today, 1 the next one after it.
+    private static DateOnly WorkDay(DateOnly today, int offset)
+    {
+        var date = today;
+        for (var remaining = Math.Abs(offset); remaining > 0;)
+        {
+            date = date.AddDays(Math.Sign(offset));
+            if (WorkDays.Contains(date.DayOfWeek)) remaining--;
+        }
+        return date;
+    }
+
+    private static DateTime SlotEnd(Appointment appointment) =>
+        appointment.Slot.Date.ToDateTime(appointment.Slot.EndTime, DateTimeKind.Utc);
+
+    private static Task<List<Appointment>> LoadAppointmentsAsync(ClinicDbContext context) =>
+        context.Appointments
+            .Include(a => a.Slot)
+            .Include(a => a.Patient).ThenInclude(p => p.User)
+            .Include(a => a.Doctor).ThenInclude(d => d.User)
+            .ToListAsync();
+
     // ── Bootstrap admin (all environments) ────────────────────────────────────
     private static async Task SeedBootstrapAdminAsync(
         UserManager<ApplicationUser> userManager, string email, string password)
