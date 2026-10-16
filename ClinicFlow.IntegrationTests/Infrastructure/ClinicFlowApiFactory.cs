@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Persistence.AppData;
+using Services.Abstraction.Contracts;
 using Testcontainers.MsSql;
 
 namespace ClinicFlow.IntegrationTests.Infrastructure
@@ -56,6 +57,13 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
                 if (hostedServiceDescriptors != null)
                     services.Remove(hostedServiceDescriptors);
 
+                // 4. Never send real email: appsettings.Development.json may hold real SMTP credentials
+                foreach (var d in services.Where(d => d.ServiceType == typeof(IEmailService)).ToList())
+                    services.Remove(d);
+
+                services.AddSingleton<FakeEmailService>();
+                services.AddSingleton<IEmailService>(sp => sp.GetRequiredService<FakeEmailService>());
+
 
                 // this will ovberride the default authentication scheme to use our TestAuthHandler
                 // BUT for cleaner u can first remove the existing authentication scheme and then add the test one
@@ -78,6 +86,9 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
             //// Set environment to Testing so you can branch logic if needed
             //builder.UseEnvironment("Testing");
         }
+
+        // Emails "sent" by the API under test
+        public FakeEmailService Emails => Services.GetRequiredService<FakeEmailService>();
 
         public async Task ResetDataBaseAsync()
         {
