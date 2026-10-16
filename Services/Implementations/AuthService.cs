@@ -276,14 +276,21 @@ namespace Services.Implementations
                 return Result.Ok();
             }
 
-            var token = await userManager.GeneratePasswordResetTokenAsync(user);
-
-            await emailService.SendPasswordResetAsync(request.Email,user.Id, Uri.EscapeDataString(token), ct);
-
-            logger.LogInformation("Password reset email sent for user {UserId}", user.Id);
+            // A send failure is logged, not returned: a 500 here would only happen for registered,
+            // active emails and reveal which emails exist (REVIEW.md NL24)
+            try
+            {
+                var token = await userManager.GeneratePasswordResetTokenAsync(user);
+                await emailService.SendPasswordResetAsync(request.Email, user.Id, Uri.EscapeDataString(token), ct);
+                logger.LogInformation("Password reset email sent for user {UserId}", user.Id);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                logger.LogError(ex, "Failed to send password reset email to user {UserId}", user.Id);
+            }
 
             return Result.Ok();
-        }        
+        }
 
         public async Task<Result> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken ct)
         {

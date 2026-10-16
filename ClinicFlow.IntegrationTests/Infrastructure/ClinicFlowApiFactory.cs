@@ -95,7 +95,10 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
             using var scope = Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ClinicDbContext>();
             await dbContext.Database.EnsureDeletedAsync();
-            await dbContext.Database.MigrateAsync(); 
+            await dbContext.Database.MigrateAsync();
+
+            // Every test class starts with no recorded emails and sending switched back on
+            Emails.Clear();
         }
 
         // Helper: seed data directly into the test DB

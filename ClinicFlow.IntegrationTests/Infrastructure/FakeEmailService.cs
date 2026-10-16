@@ -19,16 +19,25 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
         public IReadOnlyList<SentEmail> Sent => _sent.ToArray();
 
-        public void Clear() => _sent.Clear();
+        // When true, every send throws, as an unreachable SMTP server would
+        public bool FailSends { get; set; }
+
+        public void Clear()
+        {
+            _sent.Clear();
+            FailSends = false;
+        }
 
         public Task SendEmailConfirmationAsync(string email, Guid userId, string token, CancellationToken ct = default)
         {
+            ThrowIfFailing();
             _sent.Enqueue(new SentEmail(SentEmailKind.EmailConfirmation, email, userId, token));
             return Task.CompletedTask;
         }
 
         public Task SendPasswordResetAsync(string email, Guid userId, string token, CancellationToken ct = default)
         {
+            ThrowIfFailing();
             _sent.Enqueue(new SentEmail(SentEmailKind.PasswordReset, email, userId, token));
             return Task.CompletedTask;
         }
@@ -36,6 +45,7 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
         public Task SendAppointmentConfirmationAsync(string email, string patientName,
             string doctorName, DateOnly date, TimeOnly time, CancellationToken ct = default)
         {
+            ThrowIfFailing();
             _sent.Enqueue(new SentEmail(SentEmailKind.AppointmentConfirmation, email));
             return Task.CompletedTask;
         }
@@ -43,8 +53,15 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
         public Task SendAppointmentReminderAsync(string email, string patientName,
             string doctorName, DateOnly date, TimeOnly time, CancellationToken ct = default)
         {
+            ThrowIfFailing();
             _sent.Enqueue(new SentEmail(SentEmailKind.AppointmentReminder, email));
             return Task.CompletedTask;
+        }
+
+        private void ThrowIfFailing()
+        {
+            if (FailSends)
+                throw new InvalidOperationException("SMTP unavailable (FakeEmailService.FailSends)");
         }
     }
 }
