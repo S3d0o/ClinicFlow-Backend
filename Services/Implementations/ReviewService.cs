@@ -1,4 +1,5 @@
-﻿using Domain.Enums;
+﻿using Microsoft.EntityFrameworkCore;
+using Domain.Enums;
 using Domain.Parameters;
 using Shared.DTOs.Review;
 
@@ -50,7 +51,20 @@ namespace Services.Implementations
                 return DoctorErrors.NotFound(appointment.DoctorProfileId);
 
             await uow.Reviews.AddAsync(review, ct);
-            await uow.SaveChangesAsync(ct);
+            try
+            {
+                await uow.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex)
+            {
+                // A concurrent request may have created the review between the check above and this insert
+                // (unique index on AppointmentId); anything else is a real failure
+                if (await uow.Reviews.GetByAppointmentIdAsync(request.AppointmentId, ct) is null)
+                    throw;
+
+                logger.LogWarning(ex, "Concurrent review submission for appointment {AppointmentId}", request.AppointmentId);
+                return AppointmentErrors.ReviewAlreadyExists;
+            }
             await RecalculateAvgRatingAndTotalReviewsForDoctor(doctor, ct);
 
             logger.LogInformation("Review submitted for appointment {AppointmentId} by user {UserId}", request.AppointmentId, patientUserId);
@@ -66,7 +80,9 @@ namespace Services.Implementations
                 logger.LogWarning("Review not found for ID: {ReviewId}", reviewId);
                 return ReviewErrors.NotFound(reviewId);
             }
-            if(role == "Patient" && review.Patient.UserId != userId)
+            // Only the patient who wrote the review, or an admin, may delete it (doctors must not remove their own reviews)
+            var canDelete = role == "Admin" || (role == "Patient" && review.Patient.UserId == userId);
+            if (!canDelete)
             {
                 logger.LogWarning("User ID: {UserId} is not authorized to delete review ID: {ReviewId}", userId, reviewId);
                 return ReviewErrors.Unauthorized;

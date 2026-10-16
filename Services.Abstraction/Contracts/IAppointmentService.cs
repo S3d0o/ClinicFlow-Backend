@@ -22,7 +22,7 @@ namespace Services.Abstraction.Contracts
         Task<Result> AddDoctorNotesAsync(Guid doctorUserId, int appointmentId, DoctorNotesRequest request, CancellationToken ct);
 
         // Queries
-        Task<Result<AppointmentResponse>> GetAppointmentAsync(int appointmentId, CancellationToken ct);
+        Task<Result<AppointmentResponse>> GetAppointmentAsync(int appointmentId, Guid userId, string role, CancellationToken ct);
         Task<Result<List<AppointmentResponse>>> GetPatientAppointmentsAsync(Guid patientUserId, AppointmentFilterRequest request, CancellationToken ct);
         Task<Result<List<AppointmentResponse>>> GetDoctorAppointmentsAsync(Guid doctorUserId, AppointmentFilterRequest request, CancellationToken ct);
     }

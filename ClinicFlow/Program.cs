@@ -33,17 +33,21 @@ try
 
     builder.Services.AddHostedService<AppointmentReminderJob>();
 
+    // Liveness probe for the Docker HEALTHCHECK (GET /health)
+    builder.Services.AddHealthChecks();
+
 
     #endregion
 
     // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
     builder.Services.AddOpenApi();
+    var frontendUrl = builder.Configuration["Frontend:BaseUrl"] ?? "http://localhost:3000";
     builder.Services.AddCors(options =>
     {
         options.AddPolicy("React", policy =>
         {
             policy
-                .WithOrigins("http://localhost:3000")
+                .WithOrigins(frontendUrl.TrimEnd('/'))
                 .AllowAnyHeader()
                 .AllowAnyMethod()
                 .AllowCredentials();
@@ -52,9 +56,19 @@ try
 
     var app = builder.Build();
 
-    await DataSeeder.SeedAsync(app.Services);
+    // Demo accounts use published passwords: only seed them in Development unless explicitly enabled.
+    var seedDemoData = app.Configuration.GetValue<bool?>("Seeding:DemoData") ?? app.Environment.IsDevelopment();
+    await DataSeeder.SeedAsync(
+        app.Services,
+        seedDemoData,
+        app.Configuration["Seeding:AdminEmail"],
+        app.Configuration["Seeding:AdminPassword"]);
 
     #region Middleware Pipeline
+
+    // Only trusts X-Forwarded-* from loopback by default. When deploying behind a reverse proxy,
+    // add its address to ForwardedHeadersOptions.KnownProxies (see AddWebApiServices).
+    app.UseForwardedHeaders();
 
     app.UseSerilogRequestLogging(opt =>
     {
@@ -82,15 +96,22 @@ try
     #endregion
 
     app.MapControllers();
-    app.Run();
+    app.MapHealthChecks("/health");
+    await app.RunAsync();
+    return 0;
 }
-catch (Exception ex)
+// HostAbortedException is how `dotnet ef` stops the host after reading the model — not a failure
+catch (Exception ex) when (ex is not HostAbortedException)
 {
-    // Critical failure
+    // Critical failure — a non-zero exit code lets Docker/orchestrators see the crash
     Log.Fatal(ex, "Application failed to start");
+    return 1;
 }
 finally
 {
     // Ensures all logs are flushed
     Log.CloseAndFlush();
 }
+
+
+public partial class Program() { }

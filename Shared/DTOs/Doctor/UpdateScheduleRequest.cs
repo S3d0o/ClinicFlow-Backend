@@ -4,8 +4,9 @@
     {
         public TimeOnly? StartTime { get; init; }       // e.g. 09:00
         public TimeOnly? EndTime { get; init; }         // e.g. 17:00
-        public int? SlotDurationMinutes { get; init; } = 30;
-        public bool? IsActive { get; init; } = true;
+        // No defaults: a field that is not sent keeps its current value
+        public int? SlotDurationMinutes { get; init; }
+        public bool? IsActive { get; init; }
 
     }
 }

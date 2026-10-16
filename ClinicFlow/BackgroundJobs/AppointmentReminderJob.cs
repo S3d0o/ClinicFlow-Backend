@@ -55,29 +55,33 @@ public sealed class AppointmentReminderJob(
             {
                 try
                 {
-                    await notificationService.CreateAsync(
-                        new CreateNotificationRequest(
-                            UserId: appointment.Patient.UserId,
-                            Title: "Appointment Reminder",
-                            Message:
-                                $"Reminder: You have an appointment tomorrow at {appointment.Slot.StartTime:HH:mm}.",
-                            Type: NotificationType.AppointmentReminder,
-                            RelatedEntityId: appointment.Id), cancellationToken);
-
-                    appointment.ReminderSentAt = DateTime.UtcNow;
-
+                    // Email first: if it fails, ReminderSentAt stays null and the reminder is retried next run
                     await emailService.SendAppointmentReminderAsync(
                         email: appointment.Patient.User.Email!, // patient + user included in query
                         patientName: $"{appointment.Patient.User.FirstName} {appointment.Patient.User.LastName}",
                         doctorName: $"{appointment.Slot.DoctorProfile.User.FirstName} {appointment.Slot.DoctorProfile.User.LastName}",
                         date: appointment.Slot.Date,
-                        time: appointment.Slot.StartTime);
+                        time: appointment.Slot.StartTime,
+                        ct: cancellationToken);
+
+                    appointment.ReminderSentAt = DateTime.UtcNow;
+
+                    // CreateAsync saves the notification and the ReminderSentAt change together
+                    await notificationService.CreateAsync(
+                        new CreateNotificationRequest(
+                            UserId: appointment.Patient.UserId,
+                            Title: "Appointment Reminder",
+                            Message:
+                                $"Reminder: You have an appointment on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm}.",
+                            Type: NotificationType.AppointmentReminder,
+                            RelatedEntityId: appointment.Id), cancellationToken);
+
                     logger.LogInformation(
                         "Reminder sent for Appointment {AppointmentId} to Patient {PatientId}.",
                         appointment.Id,
                         appointment.Patient.UserId);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     logger.LogError(
                         ex,
@@ -86,6 +90,7 @@ public sealed class AppointmentReminderJob(
                 }
             }
 
+            // Persists ReminderSentAt for any reminder whose email went out but whose notification save failed
             await uow.SaveChangesAsync(cancellationToken);
 
             logger.LogInformation(

@@ -1,7 +1,6 @@
-﻿using Domain.Entities.IdentityModule;
+using Domain.Entities.IdentityModule;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Shared.DTOs.Auth;
@@ -17,139 +16,157 @@ namespace Services.Implementations
     public class TokenService(
         IOptions<JwtSettings> jwtOptions,
         UserManager<ApplicationUser> userManager,
-        IUnitOfWork uow) : ITokenService
+        IUnitOfWork uow,
+        ILogger<TokenService> logger) : ITokenService
     {
+        private const string RotatedReason = "Rotated";
+        private const string ReuseDetectedReason = "Reuse of rotated refresh token detected";
+
         private readonly JwtSettings _jwt = jwtOptions.Value;
-        public async Task<TokenDto> GenerateTokensAsync(ApplicationUser user, IList<string> roles, string ipAddress)
+
+        public async Task<TokenDto> GenerateTokensAsync(ApplicationUser user, IList<string> roles, string ipAddress, CancellationToken ct)
         {
-            if(user == null) 
-                throw new ArgumentNullException(nameof(user));
+            ArgumentNullException.ThrowIfNull(user);
             roles ??= new List<string>();
 
             var accessToken = GenerateAccessToken(user, roles);
 
             var securityStamp = await userManager.GetSecurityStampAsync(user);
 
-            var RefreshTokenExpirationDays = _jwt.RefreshTokenExpirationDays;
-
             var refreshToken = GenerateRefreshToken();
             var refreshTokenHash = HashRefreshToken(refreshToken);
-            var refreshTokenEntity = CreateRefreshEntity(refreshTokenHash, user.Id, ipAddress, RefreshTokenExpirationDays, securityStamp);
+            var refreshTokenEntity = CreateRefreshEntity(refreshTokenHash, user.Id, ipAddress, _jwt.RefreshTokenExpirationDays, securityStamp);
 
-            await uow.RefreshTokens.AddAsync(refreshTokenEntity);
-            await uow.SaveChangesAsync();
+            await uow.RefreshTokens.AddAsync(refreshTokenEntity, ct);
+            await uow.SaveChangesAsync(ct);
 
-            var ATexpiresAt = DateTime.UtcNow.AddMinutes(_jwt.AccessTokenExpirationMinutes);
+            var accessTokenExpiresAt = DateTime.UtcNow.AddMinutes(_jwt.AccessTokenExpirationMinutes);
 
-            return new TokenDto(accessToken, refreshToken, ATexpiresAt);
-
+            return new TokenDto(accessToken, refreshToken, accessTokenExpiresAt);
         }
 
-
-        public async Task<LoginResponse> RefreshTokenAsync(string refreshToken, string ipAddress)
+        // Expected failures return AuthErrors.InvalidRefreshToken (401). Anything else (DB outage,
+        // cancellation) propagates, so infrastructure problems are not reported as "please log in again".
+        public async Task<Result<LoginResponse>> RefreshTokenAsync(string refreshToken, string ipAddress, CancellationToken ct)
         {
             var tokenHash = HashRefreshToken(refreshToken);
 
-            using var transaction = await uow.BeginTransactionAsync();
-
-            var existingToken = await uow.RefreshTokens.GetRefreshTokenByHashAsync(tokenHash);
-
-            if (existingToken == null)
-                throw new SecurityTokenException("Invalid refresh token");
-
-            if (!existingToken.IsActive)
-                throw new SecurityTokenException("Inactive refresh token");
-
-            if (existingToken.Revoked != null)
-                throw new SecurityTokenException("Refresh token already revoked");
-
-            if (existingToken.IsExpired)
-                throw new SecurityTokenException("Refresh token expired");
-
-            if (!string.IsNullOrEmpty(existingToken.ReplacedByTokenHash))
-                throw new SecurityTokenException("Refresh token already rotated");
-
-            // Theft detection
-            if (existingToken.LastUsed != null)
+            var existingToken = await uow.RefreshTokens.GetRefreshTokenByHashAsync(tokenHash, ct);
+            if (existingToken is null)
             {
-                var minutes = (DateTime.UtcNow - existingToken.LastUsed.Value).TotalMinutes;
-                if (minutes < _jwt.TheftDetectionWindowMinutes && existingToken.LastUsedByIp != ipAddress)
-                    throw new SecurityTokenException("Suspicious refresh token activity detected");
+                logger.LogWarning("Refresh failed: unknown refresh token from {IpAddress}", ipAddress);
+                return AuthErrors.InvalidRefreshToken;
             }
 
-            // Load user for security-stamp check
-            var user = await userManager.FindByIdAsync(existingToken.UserId.ToString())
-                ?? throw new SecurityTokenException("Invalid token - User not found");
+            // A rotated token is being presented again: either a client race or a stolen token.
+            if (existingToken.ReplacedByTokenHash is not null)
+                return await HandleRotatedTokenReuseAsync(existingToken, ipAddress, ct);
+
+            if (!existingToken.IsActive)
+            {
+                logger.LogWarning("Refresh failed: token {TokenId} is revoked or expired", existingToken.Id);
+                return AuthErrors.InvalidRefreshToken;
+            }
+
+            var user = await userManager.FindByIdAsync(existingToken.UserId.ToString());
+            if (user is null || !user.IsActive)
+            {
+                logger.LogWarning("Refresh failed: user {UserId} not found or suspended", existingToken.UserId);
+                return AuthErrors.InvalidRefreshToken;
+            }
 
             var currentStamp = await userManager.GetSecurityStampAsync(user);
             if (existingToken.SecurityStamp != currentStamp)
-                throw new SecurityTokenException("Refresh token invalidated due to user security changes");
+            {
+                logger.LogWarning("Refresh failed: security stamp changed for user {UserId}", user.Id);
+                return AuthErrors.InvalidRefreshToken;
+            }
 
             // Mark existing token as rotated
-            existingToken.LastUsed = DateTime.UtcNow;
-            existingToken.LastUsedByIp = ipAddress;
-            existingToken.RevocationReason = "Rotated";
-            existingToken.Revoked = DateTime.UtcNow;
-            existingToken.RevokedByIp = ipAddress;
-
-            // Generate new refresh token
+            var now = DateTime.UtcNow;
             var newRefreshToken = GenerateRefreshToken();
             var newRefreshTokenHash = HashRefreshToken(newRefreshToken);
+
+            existingToken.LastUsed = now;
+            existingToken.LastUsedByIp = ipAddress;
+            existingToken.Revoked = now;
+            existingToken.RevokedByIp = ipAddress;
+            existingToken.RevocationReason = RotatedReason;
             existingToken.ReplacedByTokenHash = newRefreshTokenHash;
-            var RefreshTokenExpirationDays = _jwt.RefreshTokenExpirationDays;
 
-            var newTokenEntity = CreateRefreshEntity(
-                newRefreshTokenHash,
-                user.Id,
-                ipAddress,
-                RefreshTokenExpirationDays,
-                currentStamp
-            );
-
-            await uow.RefreshTokens.AddAsync(newTokenEntity);
+            await uow.RefreshTokens.AddAsync(
+                CreateRefreshEntity(newRefreshTokenHash, user.Id, ipAddress, _jwt.RefreshTokenExpirationDays, currentStamp), ct);
 
             try
             {
-                await uow.SaveChangesAsync();
-                await transaction.CommitAsync();
+                // RowVersion on RefreshToken: a concurrent refresh with the same token fails here
+                await uow.SaveChangesAsync(ct);
             }
             catch (DbUpdateConcurrencyException)
             {
-                await transaction.RollbackAsync();
-                throw new SecurityTokenException("Refresh token already used");
+                logger.LogWarning("Refresh failed: token {TokenId} was used concurrently", existingToken.Id);
+                return AuthErrors.InvalidRefreshToken;
             }
-            var AccessTokenExpirationMinutes = _jwt.AccessTokenExpirationMinutes;
 
-            // New access token
             var roles = await userManager.GetRolesAsync(user);
             return new LoginResponse(
                 AccessToken: GenerateAccessToken(user, roles),
                 RefreshToken: newRefreshToken,
-                ExpiresAt: DateTime.UtcNow.AddMinutes(AccessTokenExpirationMinutes),
+                ExpiresAt: now.AddMinutes(_jwt.AccessTokenExpirationMinutes),
                 Email: user.Email ?? "",
                 FullName: string.Join(" ", user.FirstName, user.LastName),
                 Role: roles.FirstOrDefault() ?? ""
             );
         }
 
-        public async Task RevokeRefreshTokenAsync(string refreshToken, string ipAddress, string? reason = null)
+        public async Task<Result> RevokeRefreshTokenAsync(Guid userId, string refreshToken, string ipAddress, string? reason, CancellationToken ct)
         {
             var tokenHash = HashRefreshToken(refreshToken);
-            var existingToken = await uow.RefreshTokens.GetRefreshTokenByHashAsync(tokenHash);
+            var existingToken = await uow.RefreshTokens.GetRefreshTokenByHashAsync(tokenHash, ct);
 
-            if (existingToken == null)
-                throw new KeyNotFoundException("Refresh token not found");
+            // A user may only revoke their own tokens
+            if (existingToken is null || existingToken.UserId != userId)
+            {
+                logger.LogWarning("Revoke failed: refresh token not found for user {UserId}", userId);
+                return AuthErrors.InvalidRefreshToken;
+            }
 
             if (existingToken.Revoked == null)
             {
                 existingToken.Revoked = DateTime.UtcNow;
                 existingToken.RevokedByIp = ipAddress;
                 existingToken.RevocationReason = reason ?? "RevokedByUser";
-                await uow.SaveChangesAsync();
+                await uow.SaveChangesAsync(ct);
             }
+
+            return Result.Ok();
         }
 
-        #region Helpers 
+        #region Helpers
+
+        // Reuse within the theft-detection window from the same IP is treated as a client race
+        // (e.g. two tabs refreshing at once) and only rejected. Any other reuse means the token
+        // may have been stolen, so every active session of the user is revoked.
+        private async Task<Result<LoginResponse>> HandleRotatedTokenReuseAsync(RefreshToken token, string ipAddress, CancellationToken ct)
+        {
+            var isLikelyRace = token.LastUsed is not null
+                && token.LastUsedByIp == ipAddress
+                && (DateTime.UtcNow - token.LastUsed.Value).TotalMinutes < _jwt.TheftDetectionWindowMinutes;
+
+            if (isLikelyRace)
+            {
+                logger.LogWarning("Refresh failed: rotated token {TokenId} reused from the same IP within the detection window", token.Id);
+                return AuthErrors.InvalidRefreshToken;
+            }
+
+            var revoked = await uow.RefreshTokens.RevokeAllActiveAsync(token.UserId, ReuseDetectedReason, ipAddress, ct);
+            logger.LogWarning(
+                "Rotated refresh token {TokenId} reused from {IpAddress}; revoked {Count} active tokens of user {UserId}",
+                token.Id, ipAddress, revoked, token.UserId);
+
+            return AuthErrors.InvalidRefreshToken;
+        }
+
         private string GenerateAccessToken(ApplicationUser user, IList<string> roles)
         {
             var claims = new List<Claim>

@@ -1,7 +1,6 @@
 ﻿using ClinicFlow.Domain.Enums;
 using Domain.Enums;
 using Domain.Parameters;
-using Services.MappingProfiles;
 using Shared.DTOs.Appointment;
 using Shared.DTOs.Notification;
 
@@ -12,7 +11,8 @@ namespace Services.Implementations
         IMapper mapper,
         ILogger<AppointmentService> logger,
         INotificationService notificationService,
-        IEmailService emailService) : IAppointmentService
+        IEmailService emailService,
+        IDateTimeProvider dateTimeProvider) : IAppointmentService
     {
         public async Task<Result<AppointmentResponse>> BookAppointmentAsync(Guid patientUserId, BookAppointmentRequest request, CancellationToken ct)
         {
@@ -27,20 +27,20 @@ namespace Services.Implementations
             if (slot == null)
             {
                 logger.LogWarning("Appointment slot not found for slot ID: {SlotId}", request.SlotId);
-                return AppointmentErrors.NotFound(request.SlotId);
+                return AppointmentErrors.SlotNotFound(request.SlotId);
             }
             if (slot.Status == SlotStatus.Blocked || slot.Status == SlotStatus.Booked)
             {
                 logger.LogWarning("Appointment slot is not available for booking. Slot ID: {SlotId}, Status: {Status}", request.SlotId, slot.Status);
                 return AppointmentErrors.SlotNotAvailable;
             }
-            if (slot.Date < DateOnly.FromDateTime(DateTime.UtcNow)
-                || (slot.Date == DateOnly.FromDateTime(DateTime.UtcNow) && slot.StartTime < TimeOnly.FromDateTime(DateTime.UtcNow)))
+            if (slot.Date < DateOnly.FromDateTime(dateTimeProvider.UtcNow)
+                || (slot.Date == DateOnly.FromDateTime(dateTimeProvider.UtcNow) && slot.StartTime < TimeOnly.FromDateTime(dateTimeProvider.UtcNow)))
             {
                 logger.LogWarning("Appointment slot is in the past and cannot be booked. Slot ID: {SlotId}, Date: {Date}, StartTime: {StartTime}", request.SlotId, slot.Date, slot.StartTime);
                 return AppointmentErrors.SlotInPast;
             }
-            using var transaction = await uow.BeginTransactionAsync();
+            await using var transaction = await uow.BeginTransactionAsync(ct);
             try
             {
                 var SlotUpdateResult = await uow.Slots.SetStatusFromAvailableToBookedAsync(slot.Id, ct);
@@ -61,7 +61,7 @@ namespace Services.Implementations
 
                 await uow.Appointments.AddAsync(appointment, ct);
                 await uow.SaveChangesAsync(ct);
-                await transaction.CommitAsync();
+                await transaction.CommitAsync(ct);
 
                 logger.LogInformation("Appointment booked successfully for patient ID: {PatientId}, slot ID: {SlotId}, appointment ID: {AppointmentId}", patientProfile.Id, slot.Id, appointment.Id);
 
@@ -89,7 +89,7 @@ namespace Services.Implementations
                     await emailService.SendAppointmentConfirmationAsync(
                         email: patientProfile.User.Email!,
                         patientName: $"{patientProfile.User.FirstName} {patientProfile.User.LastName}",
-                        doctorName: $"Dr. {slot.DoctorProfile.User.FirstName} {slot.DoctorProfile.User.LastName}",
+                        doctorName: $"{slot.DoctorProfile.User.FirstName} {slot.DoctorProfile.User.LastName}", // the email template adds "Dr."
                         date: slot.Date,
                         time: slot.StartTime);
                 }
@@ -105,7 +105,7 @@ namespace Services.Implementations
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error occurred while booking appointment for patient ID: {PatientId}, slot ID: {SlotId}", patientProfile.Id, request.SlotId);
-                await transaction.RollbackAsync();
+                await transaction.RollbackAsync(CancellationToken.None); // must run even if the request was cancelled
                 return Error.Failure("An error occurred while booking the appointment.");
             }
 
@@ -118,7 +118,7 @@ namespace Services.Implementations
             if (patientProfile == null)
             {
                 logger.LogWarning("Patient not found for user ID: {UserId}", patientUserId);
-                return DoctorErrors.ProfileNotFound(patientUserId);
+                return PatientErrors.ProfileNotFound(patientUserId);
             }
             var appointment = await uow.Appointments.GetByIdAsync(appointmentId, ct);
             if (appointment == null)
@@ -144,7 +144,7 @@ namespace Services.Implementations
 
             var slotDateTime = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
 
-            if (DateTime.UtcNow > slotDateTime.AddHours(-2))
+            if (dateTimeProvider.UtcNow > slotDateTime.AddHours(-2))
             {
                 logger.LogWarning("Appointment ID: {AppointmentId} cannot be cancelled within 2 hours of the scheduled time.", appointmentId);
                 return AppointmentErrors.CancellationWindowExpired;
@@ -159,9 +159,11 @@ namespace Services.Implementations
 
             logger.LogInformation("Appointment ID: {AppointmentId} cancelled by patient ID: {PatientId}.", appointmentId, patientProfile.Id);
 
-            // Create AppointmentCancelled event and send notification to doctor and patient about the cancelled appointment
-            await notificationService.CreateRangeAsync([
-                new CreateNotificationRequest(
+            try
+            {
+                // Create AppointmentCancelled event and send notification to doctor and patient about the cancelled appointment
+                await notificationService.CreateRangeAsync([
+                    new CreateNotificationRequest(
                     UserId:          patientUserId,
                     Title:           "Appointment Cancelled",
                     Message:         $"Your appointment on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm} has been cancelled.",
@@ -170,9 +172,15 @@ namespace Services.Implementations
                 new CreateNotificationRequest(
                     UserId:          appointment.Doctor.UserId,
                     Title:           "Appointment Cancelled",
-                    Message:         $"Your appointment with {appointment.Patient.User.FirstName} {appointment.Patient.User.LastName} on {appointment.Slot.Date} on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm} has been cancelled.",
+                    Message:         $"Your appointment with {appointment.Patient.User.FirstName} {appointment.Patient.User.LastName} on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm} has been cancelled.",
                     Type:            NotificationType.AppointmentCancelled,
                     RelatedEntityId: appointment.Id) ], ct);
+            }
+            catch (Exception ex)
+            {
+                // notification failure should not fail the Cancellation
+                logger.LogError(ex, "Failed to send cancellation notification for appointment {AppointmentId}", appointment.Id);
+            }
 
             return Result.Ok();
         }
@@ -215,7 +223,7 @@ namespace Services.Implementations
             logger.LogInformation("Appointment ID: {AppointmentId} cancelled by doctor ID: {DoctorId}.", appointmentId, doctorProfile.Id);
 
             //Todo: Create AppointmentCancelled event and send notification to doctor and patient about the cancelled appointment
-            await notificationService.CreateRangeAsync([
+            await TryNotifyAsync(appointment.Id, [
               new CreateNotificationRequest(
                     UserId:          appointment.Patient.UserId,
                     Title:           "Appointment Cancelled",
@@ -225,7 +233,7 @@ namespace Services.Implementations
                 new CreateNotificationRequest(
                     UserId:          doctorProfile.UserId,
                     Title:           "Appointment Cancelled",
-                    Message:         $"Your appointment with {appointment.Patient.User.FirstName} {appointment.Patient.User.LastName} on {appointment.Slot.Date} on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm} has been cancelled.",
+                    Message:         $"Your appointment with {appointment.Patient.User.FirstName} {appointment.Patient.User.LastName} on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm} has been cancelled.",
                     Type:            NotificationType.AppointmentCancelled,
                     RelatedEntityId: appointment.Id) ], ct);
 
@@ -254,7 +262,7 @@ namespace Services.Implementations
             logger.LogInformation("Appointment ID: {AppointmentId} cancelled by admin.", appointmentId);
 
             // TODO: Create AppointmentCancelled event and send notification to doctor and patient about the cancelled appointment
-            await notificationService.CreateRangeAsync([
+            await TryNotifyAsync(appointment.Id, [
                  new CreateNotificationRequest(
                        UserId:          appointment.Patient.UserId,
                        Title:           "Appointment Cancelled",
@@ -264,7 +272,7 @@ namespace Services.Implementations
                    new CreateNotificationRequest(
                        UserId:          appointment.Doctor.UserId,
                        Title:           "Appointment Cancelled",
-                       Message:         $"Your appointment with {appointment.Patient.User.FirstName} {appointment.Patient.User.LastName} on {appointment.Slot.Date} on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm} has been cancelled.",
+                       Message:         $"Your appointment with {appointment.Patient.User.FirstName} {appointment.Patient.User.LastName} on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm} has been cancelled.",
                        Type:            NotificationType.AppointmentCancelled,
                        RelatedEntityId: appointment.Id) ], ct);
 
@@ -305,12 +313,12 @@ namespace Services.Implementations
             await uow.SaveChangesAsync(ct);
             logger.LogInformation("Appointment ID: {AppointmentId} marked as completed by doctor ID: {DoctorId}", appointmentId, doctorProfile.Id);
 
-            await notificationService.CreateAsync(new CreateNotificationRequest(
+            await TryNotifyAsync(appointment.Id, [new CreateNotificationRequest(
                  UserId: appointment.Patient.UserId,
                  Title: "Appointment Completed",
                  Message: "Your appointment has been completed. You can now leave a review.",
                  Type: NotificationType.AppointmentCompleted,
-                 RelatedEntityId: appointment.Id), ct);
+                 RelatedEntityId: appointment.Id)], ct);
 
             return Result.Ok();
 
@@ -347,7 +355,7 @@ namespace Services.Implementations
         }
 
 
-        public async Task<Result<AppointmentResponse>> GetAppointmentAsync(int appointmentId, CancellationToken ct)
+        public async Task<Result<AppointmentResponse>> GetAppointmentAsync(int appointmentId, Guid userId, string role, CancellationToken ct)
         {
             var appointment = await uow.Appointments.GetByIdAsync(appointmentId, ct);
             if (appointment == null)
@@ -355,6 +363,21 @@ namespace Services.Implementations
                 logger.LogWarning("Appointment not found for ID: {AppointmentId}", appointmentId);
                 return AppointmentErrors.NotFound(appointmentId);
             }
+
+            // Appointments contain medical data: only the owning patient, the owning doctor or an admin may read them
+            var canRead = role switch
+            {
+                "Admin" => true,
+                "Patient" => appointment.Patient.UserId == userId,
+                "Doctor" => appointment.Doctor.UserId == userId,
+                _ => false
+            };
+            if (!canRead)
+            {
+                logger.LogWarning("User {UserId} ({Role}) attempted to read appointment {AppointmentId} they do not own", userId, role, appointmentId);
+                return AppointmentErrors.Unauthorized;
+            }
+
             return mapper.Map<AppointmentResponse>(appointment);
         }
 
@@ -386,8 +409,19 @@ namespace Services.Implementations
 
         #region Helpers
 
-
-
+        // Runs after the appointment change is committed: a notification failure is logged
+        // and must not turn the successful operation into an error response
+        private async Task TryNotifyAsync(int appointmentId, IEnumerable<CreateNotificationRequest> notifications, CancellationToken ct)
+        {
+            try
+            {
+                await notificationService.CreateRangeAsync(notifications, ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to create notifications for appointment {AppointmentId}", appointmentId);
+            }
+        }
 
         #endregion
 

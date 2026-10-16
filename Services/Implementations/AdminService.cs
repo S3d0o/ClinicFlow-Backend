@@ -38,7 +38,7 @@ public class AdminService(
         doctor.IsApprovedByAdmin = true;
         await unitOfWork.SaveChangesAsync(ct);
 
-        await notificationService.CreateAsync(new CreateNotificationRequest(
+        await TryNotifyAsync(new CreateNotificationRequest(
             UserId: doctor.UserId,
             Title: "Profile Approved",
             Message: "Your doctor profile has been approved. You can now set your schedule and accept appointments.",
@@ -68,7 +68,11 @@ public class AdminService(
         doctor.User.IsActive = false;
         await unitOfWork.SaveChangesAsync(ct);
 
-        await notificationService.CreateAsync(new CreateNotificationRequest(
+        // End existing sessions: refresh also rejects inactive users, and revoking stops
+        // further refreshes immediately. Access tokens stay valid until they expire (15 min).
+        await unitOfWork.RefreshTokens.RevokeAllActiveAsync(doctor.UserId, "Account suspended", null, ct);
+
+        await TryNotifyAsync(new CreateNotificationRequest(
             UserId: doctor.UserId,
             Title: "Profile Suspended",
             Message: "Your doctor profile has been suspended. Please contact support for more information.",
@@ -94,6 +98,19 @@ public class AdminService(
             totalSpecialties,
             pendingApprovals,
             totalReviews);
+    }
+
+    // Runs after the main change is committed: a notification failure is logged, never returned
+    private async Task TryNotifyAsync(CreateNotificationRequest request, CancellationToken ct)
+    {
+        try
+        {
+            await notificationService.CreateAsync(request, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to create {Type} notification for user {UserId}", request.Type, request.UserId);
+        }
     }
 
     public async Task<Result<AppointmentStatsResponse>> GetAppointmentStatsAsync(CancellationToken ct)

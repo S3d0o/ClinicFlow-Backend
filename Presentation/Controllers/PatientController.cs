@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using Presentation.Extensions;
+using Microsoft.AspNetCore.Authorization;
 using Services.Abstraction.Contracts;
 using System.Security.Claims;
 
@@ -15,7 +16,7 @@ public class PatientController(IPatientService service) : ApiController
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<PatientProfileResponse>> GetProfile(CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = User.GetUserId();
         var result = await service.GetProfileAsync(userId, ct);
         return HandleResult(result);
     }
@@ -33,7 +34,7 @@ public class PatientController(IPatientService service) : ApiController
     public async Task<IActionResult> UpdateProfile(
         [FromBody] UpdatePatientProfileRequest request, CancellationToken ct)
     {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var userId = User.GetUserId();
         var result = await service.UpdateProfileAsync(userId, request, ct);
         return HandleResult(result);
     }

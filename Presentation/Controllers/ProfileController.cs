@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using Presentation.Extensions;
+using Microsoft.AspNetCore.Authorization;
 using Services.Abstraction.Contracts;
 using Shared.DTOs.Profile;
 using System.Security.Claims;
@@ -21,7 +22,7 @@ namespace Presentation.Controllers
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
         public async Task<ActionResult<UserProfileResponse>> GetProfile(CancellationToken ct)
         {
-            var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var userId = User.GetUserId();
             var result = await service.GetProfileAsync(userId, ct);
             return HandleResult(result);
         }
@@ -39,7 +40,7 @@ namespace Presentation.Controllers
         public async Task<IActionResult> UpdateProfile(
             [FromBody] UpdateUserProfileRequest request, CancellationToken ct)
         {
-            var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var userId = User.GetUserId();
             var result = await service.UpdateProfileAsync(userId, request, ct);
             return HandleResult(result);
         }

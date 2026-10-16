@@ -1,4 +1,5 @@
-﻿// Presentation/Controllers/NotificationController.cs
+﻿using Presentation.Extensions;
+// Presentation/Controllers/NotificationController.cs
 using Microsoft.AspNetCore.Authorization;
 using Services.Abstraction.Contracts;
 using Shared.DTOs.Notification;
@@ -19,7 +20,7 @@ namespace Presentation.Controllers
         public async Task<ActionResult<List<NotificationResponse>>> GetMyNotifications(
             [FromQuery] bool unreadOnly = false, CancellationToken ct = default)
         {
-            var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var userId = User.GetUserId();
             var result = await service.GetMyNotificationsAsync(userId, unreadOnly, ct);
             return HandleResult(result);
         }
@@ -35,7 +36,7 @@ namespace Presentation.Controllers
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
         public async Task<IActionResult> MarkAsRead(int id, CancellationToken ct)
         {
-            var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var userId = User.GetUserId();
             var result = await service.MarkAsReadAsync(userId, id, ct);
             return HandleResult(result);
         }
@@ -46,7 +47,7 @@ namespace Presentation.Controllers
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         public async Task<IActionResult> MarkAllAsRead(CancellationToken ct)
         {
-            var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var userId = User.GetUserId();
             var result = await service.MarkAllAsReadAsync(userId, ct);
             return HandleResult(result);
         }

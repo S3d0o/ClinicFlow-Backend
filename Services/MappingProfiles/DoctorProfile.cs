@@ -20,9 +20,15 @@ namespace Services.MappingProfiles
                 .ForMember(dest=>dest.Id, opt => opt.Ignore())
                 .ForMember(dest => dest.DoctorProfileId, opt => opt.Ignore());
             CreateMap<DoctorSchedule, ScheduleResponse>();
+            // Partial update: omitted fields keep their value. ForAllMembers(Condition(srcMember is not null))
+            // does not work here — for nullable value types (TimeOnly? -> TimeOnly) AutoMapper still writes default.
             CreateMap<UpdateScheduleRequest, DoctorSchedule>()
                 .ForMember(dest => dest.Id, opt => opt.Ignore())
-                .ForMember(dest => dest.DoctorProfileId, opt => opt.Ignore());
+                .ForMember(dest => dest.DoctorProfileId, opt => opt.Ignore())
+                .ForMember(dest => dest.StartTime, opt => { opt.PreCondition(src => src.StartTime.HasValue); opt.MapFrom(src => src.StartTime!.Value); })
+                .ForMember(dest => dest.EndTime, opt => { opt.PreCondition(src => src.EndTime.HasValue); opt.MapFrom(src => src.EndTime!.Value); })
+                .ForMember(dest => dest.SlotDurationMinutes, opt => { opt.PreCondition(src => src.SlotDurationMinutes.HasValue); opt.MapFrom(src => src.SlotDurationMinutes!.Value); })
+                .ForMember(dest => dest.IsActive, opt => { opt.PreCondition(src => src.IsActive.HasValue); opt.MapFrom(src => src.IsActive!.Value); });
             CreateMap<AppointmentSlot, SlotResponse>();
             CreateMap<ReviewFilterRequest, ReviewFilterParams>();
             CreateMap<Review, ReviewResponse>()

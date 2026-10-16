@@ -17,7 +17,7 @@ namespace Domain.Interfaces
         IAdminRepo Admins { get; }
 
 
-        Task<IDbContextTransaction> BeginTransactionAsync();
+        Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken ct = default);
         Task<int> SaveChangesAsync(CancellationToken ct = default);
 
     }

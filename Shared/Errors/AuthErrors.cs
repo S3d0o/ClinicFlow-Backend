@@ -26,7 +26,10 @@ namespace Shared.Errors
             Error.Failure("Auth.InvalidPasswordResetToken", "Password reset token is invalid or expired");
 
         public static readonly Error UserNotFound =
-            Error.NotFound("Auth.UserNotFound", "No account found with this email");
+            Error.NotFound("Auth.UserNotFound", "User account was not found");
+
+        public static readonly Error AccountLockedOut =
+            Error.Unauthorized("Auth.AccountLockedOut", "Too many failed login attempts. Please try again later");
 
         public static Error RegistrationFailed(IEnumerable<string> errors) =>
             Error.Failure("Auth.RegistrationFailed", string.Join(", ", errors));

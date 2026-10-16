@@ -5,7 +5,7 @@
 namespace Persistence.AppData.Migrations
 {
     /// <inheritdoc />
-    public partial class appointmentstatusisstringinthedb : Migration
+    public partial class AppointmentStatusIsStringInTheDb : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

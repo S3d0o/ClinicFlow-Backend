@@ -1,10 +1,18 @@
 # 🏥 ClinicFlow
 
-> Full-stack clinic management system — **.NET 10** REST API + **React/TypeScript** frontend, built with Clean Architecture.
+> Full-stack clinic management system: a **.NET 10** REST API + **React/TypeScript** frontend, built with Clean Architecture.
 
-ClinicFlow solves real clinic problems: doctors register and wait for admin approval before appearing in search, patients browse live slots and book appointments with optimistic concurrency preventing double-bookings under load, a background service sends automated reminders the day before, and JWT authentication uses refresh token rotation with theft detection.
+ClinicFlow lets patients find doctors and book appointment slots, doctors publish weekly schedules and manage their visits, and admins approve doctors and manage specialties. It covers:
+- JWT authentication with rotating refresh tokens and login lockout
+- email confirmation, password reset and appointment emails
+- an hourly reminder job
+- in-app notifications
+- reviews with cached doctor ratings
+
+This repository is the backend. The React frontend lives in its own repository, and both apps follow the shared **[API contract](docs/API_CONTRACT.md)**.
 
 **→ [Frontend Repository](https://github.com/S3d0o/ClinicFlow-Frontend) · [Live API Docs](https://registry.scalar.com/@default-team-2gu37/apis/clinicflow-v1@1.0.0) · [Live Demo on LinkedIn](https://www.linkedin.com/posts/saad-mohamed-li_dotnet-csharp-react-ugcPost-7483058574588379136-R35x/?utm_source=social_share_send&utm_medium=member_desktop_web&rcm=ACoAAFtidxABr0vs0HxJVu7Xnwvp_d1T8J8FNdM)** *(video walkthrough)*
+
 ---
 
 ## 📸 Screenshots
@@ -28,71 +36,76 @@ ClinicFlow solves real clinic problems: doctors register and wait for admin appr
 ![Scalar Docs](docs/screenshots/scalar-docs.png)
 *Interactive API documentation — [explore live](https://registry.scalar.com/@default-team-2gu37/apis/clinicflow-v1@1.0.0)*
 
-> **Steps to add the images:**
-> 1. Create a `docs/screenshots/` folder in your repo root
-> 2. Take screenshots of: doctor search page, patient appointments page, doctor appointments page, admin panel, and `/scalar`
-> 3. Save them with the exact filenames above
-> 4. Commit and push — the images will render here on GitHub automatically
-
 ---
 
-## ✨ What It Does
+## 📚 Documentation
 
-- **Role-based access** — three distinct roles (`Patient`, `Doctor`, `Admin`), each with their own endpoints and permissions
-- **Doctor onboarding flow** — doctors register, submit their profile, and wait for admin approval before appearing in search results
-- **Slot-based booking** — patients browse real-time available slots, book them, and cancel; optimistic concurrency (`RowVersion`) prevents double-bookings under load
-- **Automated reminders** — a `BackgroundService` runs every hour, sends email + in-app notifications for next-day appointments, and stamps each record to prevent duplicate sends
-- **Refresh token rotation** — 15-minute access tokens paired with 7-day rotating refresh tokens; replayed tokens trigger family-wide invalidation (theft detection)
-- **Email integration** — confirmation, password reset, booking confirmation, and appointment reminders via SMTP (MailKit)
-- **Result pattern** — all service methods return `Result<T>` instead of throwing exceptions, giving consistent and predictable error propagation across the entire stack
-- **Structured logging** — Serilog with Console, rolling File, and Seq sinks; every request enriched with TraceId, path, method, and client IP
-- **Interactive API docs** — Scalar UI available at `/scalar` in development
-- **Docker support** — multi-stage `Dockerfile` included for containerized deployment
+| Document | What's in it |
+|---|---|
+| [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) | Roles, features, domain model, business rules, architecture |
+| [docs/API_CONTRACT.md](docs/API_CONTRACT.md) | **Shared backend ↔ frontend contract:** endpoints, payloads, errors, auth and session rules, TypeScript types |
+| [docs/openapi.json](docs/openapi.json) | OpenAPI 3.1 document generated from the API |
+| [docs/SETUP_AND_DEPLOYMENT.md](docs/SETUP_AND_DEPLOYMENT.md) | Configuration, running locally, tests, Docker, production checklist, troubleshooting |
+| [docs/REVIEW.md](docs/REVIEW.md) | Code review: known issues and their fix status |
+| [docs/v2/README.md](docs/v2/README.md) | **V2 plan (draft):** clinic operations for a multi-branch clinic: roles, front desk, EMR, billing, insurance, roadmap |
+| [CLAUDE.md](CLAUDE.md) | Conventions and commands for contributors (and AI assistants) |
 
----
+## ✨ Features
+
+- **Three roles:**
+  - **Patient:** books, cancels and reviews appointments.
+  - **Doctor:** manages schedule, appointments and notes.
+  - **Admin:** approves or suspends doctors, manages specialties, sees stats.
+- **Doctor onboarding:** doctors register and confirm their email; an admin approves them before they appear in search.
+- **Schedules and slots:** one weekly schedule per weekday. Bookable slots are generated automatically for the next 14 days.
+- **Safe booking:** a conditional database update inside a transaction guarantees a slot is booked only once.
+- **Cancellation rules:**
+  - Patients can cancel up to 2 hours before the appointment.
+  - Doctors and admins can cancel at any time.
+  - The slot becomes bookable again.
+- **Reviews:** one review per completed appointment, 1–5 stars. The doctor's rating is recalculated.
+- **Reminders:** an hourly background job emails and notifies patients about appointments in the next 24 hours.
+- **Security:**
+  - Refresh tokens are stored hashed and rotated on every use. Reusing an old token revokes the user's sessions.
+  - Login locks the account after 5 failures.
+  - Owner-only access to appointment details.
+- **Result pattern:** services return `Result`/`Result<T>`, which map to consistent ProblemDetails responses.
+- **Observability:** Serilog with console, rolling-file and Seq sinks; every request is logged with its trace id.
+- **OpenAPI and Scalar:** interactive docs at `/scalar` in Development.
 
 ## 🏛️ Architecture
 
-Clean Architecture with six projects and a strict one-way dependency flow:
-
 ```
-ClinicFlow.sln
-├── Domain                  # Entities, interfaces, enums, domain parameters
-├── Shared                  # DTOs, error types, Result pattern, settings
-├── Persistance             # EF Core DbContext, configurations, migrations, repositories, UoW
-├── Services.Abstraction    # Service contracts (interfaces only)
-├── Services                # Business logic, AutoMapper profiles, email service
-├── Presentation            # Controllers, FluentValidation, API filters
-└── ClinicFlow              # Entry point — DI wiring, middleware, background jobs
-```
-
-**Dependency flow:**
-
-```
-ClinicFlow → Presentation → Services.Abstraction
-                          → Services → Persistance → Domain
-                                    ↘ Shared ↗
+ClinicFlow.slnx
+├── Domain                 entities, enums, repository interfaces, IUnitOfWork
+├── Shared                 DTOs, Result/Error, error catalogues, settings        → Domain
+├── Persistance            EF Core DbContext, configurations, migrations,         → Domain
+│   (Persistence.csproj)   repositories, UnitOfWork, DataSeeder
+├── Services.Abstraction   service interfaces                                     → Shared
+├── Services               business logic, AutoMapper, email, JWT                 → Domain, Persistence, Services.Abstraction
+├── Presentation           controllers, FluentValidation validators, filter       → Services.Abstraction
+├── ClinicFlow             host: DI, middleware, reminder job, startup seeding    → Persistence, Presentation, Services
+├── ClinicFlow.Tests               unit tests (xUnit + NSubstitute)
+└── ClinicFlow.IntegrationTests    API tests (WebApplicationFactory + Testcontainers SQL Server)
 ```
 
----
+More detail is in [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md#5-architecture).
 
-## 🛠️ Tech Stack
+## 🛠️ Tech stack
 
 ### Backend
 
-| Layer | Technology |
+| Concern | Technology |
 |---|---|
-| Runtime | .NET 10 |
-| Web framework | ASP.NET Core 10 |
-| ORM | Entity Framework Core 10 |
-| Database | SQL Server |
-| Authentication | ASP.NET Core Identity + JWT Bearer |
-| Mapping | AutoMapper 16 |
-| Validation | FluentValidation 12 |
-| Email | MailKit 4 |
+| Runtime | .NET 10, ASP.NET Core 10 |
+| Data | Entity Framework Core 10, SQL Server 2022 |
+| Auth | ASP.NET Core Identity, JWT bearer, rotating refresh tokens |
+| Validation / mapping | FluentValidation 12, AutoMapper 16 |
+| Email | MailKit |
 | Logging | Serilog (Console · File · Seq) |
-| API docs | Scalar + ASP.NET Core OpenAPI |
-| Containerization | Docker (multi-stage) |
+| API docs | ASP.NET Core OpenAPI + Scalar |
+| Tests | xUnit, NSubstitute, FluentAssertions, Testcontainers |
+| Containers | Linux multi-stage Dockerfile, docker-compose (db + backend + frontend) |
 
 ### Frontend
 
@@ -105,254 +118,60 @@ ClinicFlow → Presentation → Services.Abstraction
 | HTTP client | Axios |
 | Date handling | date-fns |
 
----
-
-## 📁 Domain Model
-
-```
-ApplicationUser (Identity)
-├── DoctorProfile           ← specialty, fee, rating, clinic info, admin approval flag
-│   ├── DoctorSchedule      ← recurring weekly template (day + time range)
-│   ├── AppointmentSlot     ← materialized slots with RowVersion for concurrency
-│   ├── Appointment         ← booking record; links Patient ↔ Slot ↔ Doctor
-│   └── Review              ← one per completed appointment; updates doctor avg rating
-└── PatientProfile          ← blood type, medical history, emergency contact
-
-Notification                ← per-user inbox (booked / reminder / cancelled)
-RefreshToken                ← hashed, IP-tracked, rotation-aware
-```
-
----
-
-## 🔌 API Overview
-
-| Endpoint | Role | What |
-|---|---|---|
-| `POST /api/auth/*` | Public | Register, login, refresh token, email confirm, forgot/reset password |
-| `GET /api/doctors` | Public | Paginated doctor search — filter by specialty and city, sort by rating/fee/experience |
-| `GET /api/doctors/{id}/slots` | Public | Available slots for a doctor on a given date |
-| `GET /api/specialties` | Public | List all medical specialties |
-| `POST /api/appointments` | Patient | Book an available slot |
-| `DELETE /api/appointments/{id}` | Patient / Doctor | Cancel an appointment |
-| `PATCH /api/appointments/{id}/complete` | Doctor | Mark a past appointment as completed |
-| `PATCH /api/appointments/{id}/notes` | Doctor | Add or update clinical notes |
-| `GET /api/appointments` | Patient / Doctor | View own appointments with status filter and pagination |
-| `POST /api/doctors/schedule` | Doctor | Create weekly schedule — slots generated automatically |
-| `PUT /api/doctors/schedule/{id}` | Doctor | Update an existing schedule |
-| `POST /api/reviews` | Patient | Submit a review for a completed appointment |
-| `GET /api/reviews` | Public | List reviews for a doctor |
-| `GET /api/notifications/my` | Authenticated | Fetch notifications, optionally filter unread |
-| `PATCH /api/notifications/{id}/read` | Authenticated | Mark a notification as read |
-| `GET /api/profile/me` | Authenticated | Get own profile |
-| `GET /api/admin/doctors/pending` | Admin | List doctors awaiting approval |
-| `POST /api/admin/doctors/{id}/approve` | Admin | Approve a doctor |
-| `GET /api/admin/overview` | Admin | Platform stats — total users, appointments, revenue |
-
-> Full interactive docs available at `/scalar` when running in Development mode.
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- SQL Server (local or remote)
-- (Optional) [Seq](https://datalust.co/seq) for structured log viewing
-
-### 1. Clone the repository
+## 🚀 Getting started
 
 ```bash
-git clone https://github.com/S3d0o/ClinicFlow.git
-cd ClinicFlow
-```
+git clone https://github.com/S3d0o/ClinicFlow-Backend.git
+cd ClinicFlow-Backend
 
-### 2. Configure settings
+# SQL Server (or use a local instance)
+docker run -d --name clinicflow-sql -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='<pwd>' -p 127.0.0.1:1433:1433 mcr.microsoft.com/mssql/server:2022-latest
 
-Update `ClinicFlow/appsettings.json`:
+# required secrets
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=127.0.0.1,1433;Database=ClinicFlow;User Id=sa;Password=<pwd>;TrustServerCertificate=True" --project ClinicFlow
+dotnet user-secrets set "JwtSettings:Secret" "<at least 32 random characters>" --project ClinicFlow
 
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=.;Database=ClinicFlow;Trusted_Connection=True;"
-  },
-  "JwtSettings": {
-    "Secret": "<your-256-bit-secret>",
-    "Issuer": "https://localhost:5143",
-    "Audience": "ClinicFlowClient",
-    "AccessTokenExpirationMinutes": 15,
-    "RefreshTokenExpirationDays": 7
-  },
-  "EmailSettings": {
-    "Host": "smtp.gmail.com",
-    "Port": 587,
-    "Username": "<your-email>",
-    "Password": "<your-app-password>",
-    "FromName": "ClinicFlow",
-    "FromAddress": "<your-email>"
-  }
-}
-```
-
-> **Security:** Never commit real credentials. Use [user secrets](https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets) or environment variables in production.
-
-```bash
-dotnet user-secrets set "JwtSettings:Secret" "<your-secret>" --project ClinicFlow/ClinicFlow.csproj
-```
-
-### 3. Apply migrations
-
-```bash
-dotnet ef database update --project Persistance --startup-project ClinicFlow
-```
-
-The app runs `DataSeeder.SeedAsync` on startup and populates roles, specialties, doctors, patients, appointments, reviews, and notifications automatically.
-
-### 4. Run the API
-
-```bash
+# run: applies migrations and seeds demo data in Development
 dotnet run --project ClinicFlow/ClinicFlow.csproj
 ```
 
-Navigate to `https://localhost:5143/scalar` to explore all endpoints interactively.
+Open http://localhost:5143/scalar. For the demo logins, email settings and all options, see [docs/SETUP_AND_DEPLOYMENT.md](docs/SETUP_AND_DEPLOYMENT.md).
 
----
-
-### 🔑 Seeded Accounts
-
-| Role | Email | Password |
-|---|---|---|
-| Admin | admin@clinicflow.com | Admin@1234 |
-| Doctor — Cardiology | ahmed.elsayed@clinicflow.com | Doctor@1234 |
-| Doctor — Dermatology | nour.hassan@clinicflow.com | Doctor@1234 |
-| Doctor — Orthopedics | karim.mansour@clinicflow.com | Doctor@1234 |
-| Doctor — Pediatrics | dina.youssef@clinicflow.com | Doctor@1234 |
-| Doctor — Gastroenterology | tarek.soliman@clinicflow.com | Doctor@1234 |
-| Doctor — Neurology | layla.naguib@clinicflow.com | Doctor@1234 |
-| Doctor — ENT (pending approval) | omar.farouk@clinicflow.com | Doctor@1234 |
-| Patient | mohamed.ali@gmail.com | Patient@1234 |
-| Patient | sara.ibrahim@gmail.com | Patient@1234 |
-| Patient | hassan.mahmoud@gmail.com | Patient@1234 |
-| Patient | rana.khalil@gmail.com | Patient@1234 |
-| Patient | youssef.badawi@gmail.com | Patient@1234 |
-
----
+```bash
+dotnet test ClinicFlow.Tests               # unit tests
+dotnet test ClinicFlow.IntegrationTests    # integration tests (Docker must be running)
+```
 
 ## 🐳 Docker
 
 ```bash
-# Build from solution root
-docker build -f ClinicFlow/Dockerfile -t clinicflow .
-
-# Run with your connection string
-docker run -p 8080:8080 \
-  -e "ConnectionStrings__DefaultConnection=Server=host.docker.internal;Database=ClinicFlow;..." \
-  clinicflow
+docker build -t clinicflow-backend .   # Dockerfile is at the repo root
+cp .env.example .env                   # fill in DB_PASSWORD, JWT_SECRET, EMAIL_*, ADMIN_*
+docker compose up -d                   # frontend :3000, backend :5001
 ```
 
----
-
-## 🔐 Authentication Flow
+## 🔐 Authentication flow
 
 ```
-POST /api/auth/register/patient   → confirmation email sent
-POST /api/auth/confirm-email      → account activated
-POST /api/auth/login              → { accessToken (15 min), refreshToken (7 days) }
-POST /api/auth/refresh-token      → new token pair issued; old refresh token invalidated
+POST /api/auth/register/patient   → confirmation email (link to the frontend's /#/confirm-email)
+POST /api/auth/confirm-email      → account confirmed
+POST /api/auth/login              → { accessToken (15 min), refreshToken (7 days), role, ... }
 Authorization: Bearer <accessToken>
+POST /api/auth/refresh-token      → new token pair; the old refresh token stops working
+POST /api/auth/logout             → revokes the caller's refresh token
 ```
 
-Refresh tokens are hashed before storage. If a previously used token is replayed within the theft detection window (5 min default), the entire token family is invalidated immediately.
+The frontend's session rules (single-flight refresh, reuse detection, lockout) are in [API_CONTRACT.md §2](docs/API_CONTRACT.md#2-authentication-and-sessions).
 
----
+## 🤝 Contributing
 
-## ⚙️ Background Jobs
-
-**`AppointmentReminderJob`** — runs every hour via `PeriodicTimer`:
-
-1. Queries appointments scheduled for tomorrow with no reminder sent yet
-2. Creates an in-app `Notification` for the patient
-3. Sends an email reminder via MailKit
-4. Stamps `ReminderSentAt` on the appointment to prevent duplicate sends
-
----
-
-## 📐 Design Patterns
-
-| Pattern | Where used |
-|---|---|
-| Clean Architecture | Solution structure — strict one-way dependency flow |
-| Repository + Unit of Work | `IUnitOfWork` aggregates all repos; one `SaveChangesAsync` per request |
-| Result pattern | `Result<T>` across all service returns — no exception-driven control flow |
-| Optimistic concurrency | `RowVersion` on `AppointmentSlot` prevents double-booking races |
-| Options pattern | `JwtSettings`, `EmailSettings` bound via `IOptions<T>` |
-| Background Service | `IHostedService` for the appointment reminder job |
-
----
-
-## 🗺️ Roadmap
-
-- [ ] WebSocket / SignalR for real-time notifications
-- [ ] Redis caching for doctor search results and slot availability
-- [ ] Admin dashboard UI
-- [ ] Google Calendar integration for appointment sync
-- [ ] Mobile app (React Native)
-
----
-
-## 📂 Project Structure
-
-```
-ClinicFlow-master/
-├── ClinicFlow/                         # Entry point
-│   ├── BackgroundJobs/
-│   │   └── AppointmentReminderJob.cs
-│   ├── Extensions/
-│   │   ├── InfraStructureServiceExtensions.cs
-│   │   └── WebApiExtensions.cs
-│   ├── Program.cs
-│   └── Dockerfile
-├── Domain/
-│   ├── Entities/
-│   │   ├── AppModule/                  # Appointment, Slot, Doctor/Patient profile, Review, Specialty
-│   │   └── IdentityModule/             # ApplicationUser, RefreshToken, Notification
-│   ├── Enums/
-│   ├── Interfaces/
-│   │   ├── IRepositories/
-│   │   └── IUnitOfWork.cs
-│   └── Parameters/
-├── Persistance/
-│   ├── AppData/
-│   │   ├── Configurations/
-│   │   ├── Migrations/
-│   │   ├── ClinicDbContext.cs
-│   │   └── DataSeeder.cs
-│   └── Repositories/
-├── Services.Abstraction/
-│   └── Contracts/                      # IAuthService, IAppointmentService, IDoctorService ...
-├── Services/
-│   ├── Implementations/                # AuthService, AppointmentService, TokenService, EmailService ...
-│   └── MappingProfiles/
-├── Presentation/
-│   └── Controllers/                    # Auth, Appointment, Doctor, Patient, Admin, Review ...
-└── Shared/
-    ├── DTOs/                           # Request / Response models per domain
-    ├── Errors/                         # Typed error constants per domain
-    ├── ResultPattern/                  # Result<T>, Error, ErrorType
-    └── Settings/                       # JwtSettings, EmailSettings
-```
-
----
+1. Create a feature branch: `git checkout -b feature/your-feature`
+2. Follow the conventions in [CLAUDE.md](CLAUDE.md). If you change an endpoint, update [docs/API_CONTRACT.md](docs/API_CONTRACT.md) and [docs/openapi.json](docs/openapi.json) in the same PR (see the [change process](docs/API_CONTRACT.md#11-how-to-change-this-contract)).
+3. Make sure `dotnet build` has no warnings and both test projects pass.
+4. Open a pull request against `master`.
 
 ## 👤 Author
 
 **Saad Mohamed**
-
 - GitHub: [@S3d0o](https://github.com/S3d0o)
 - LinkedIn: [linkedin.com/in/saad-mohamed-li](https://linkedin.com/in/saad-mohamed-li)
-
----
-
-## 📄 License
-
-This project is open source and available under the [MIT License](LICENSE).
