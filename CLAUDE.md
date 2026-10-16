@@ -87,6 +87,12 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
 
 ## Conventions
 
+### Git workflow
+- **Every new feature gets its own branch.** Create the branch before writing any code: `git switch master && git pull && git switch -c feature/<kebab-case-name>`. Never build a feature on `master` or on another feature's branch.
+- **Uncommitted changes:** if the working tree has them when a feature starts, stop and ask whether to commit, stash or carry them over. Don't switch branches over them.
+- **Other branch prefixes:** `fix/`, `docs/`, `test/` and `chore/` follow the same rule for other kinds of work (e.g. `docs/review-and-claude-md`).
+- **Commits and pushes:** commit or push only when asked.
+
 ### Naming
 - **Repositories:** `I<Name>Repo` / `<Name>Repo`. **Services:** `I<Name>Service` / `<Name>Service`.
 - **Persistence and mapping:** `<Entity>Config : IEntityTypeConfiguration<T>` for EF configs, `<Feature>Profile : Profile` for AutoMapper.
