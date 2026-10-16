@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Contract version** | 1.0.1 |
+| **Contract version** | 1.0.2 |
 | **Last updated** | 2026-10-17 |
 | **Applies to** | ClinicFlow backend (`ClinicFlow.Backend`) and the ClinicFlow frontend (React) |
 | **Canonical copy** | `ClinicFlow.Backend/docs/API_CONTRACT.md`. The frontend repo keeps an identical copy at `docs/API_CONTRACT.md` |
@@ -320,7 +320,7 @@ Each entry lists the request, the success response, and the errors that endpoint
 **7. `POST /api/auth/forgot-password`** (anonymous)
 - **Body:** `{ "email": string }`
 - **204** whether or not the email exists, so callers can't discover registered emails. The email links to `/#/reset-password`.
-- **Errors:** 500 if the email cannot be sent.
+- **Errors:** none for a well-formed body. If the email fails to send, the failure is logged and the response is still 204, so a mail outage doesn't reveal which emails are registered.
 
 **8. `POST /api/auth/reset-password`** (anonymous)
 - **Body:** `{ "userId": "<guid>", "token": string, "newPassword": string }`
@@ -703,6 +703,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) whose fix **will change the cont
 |---|---|---|
 | 1.0.0 | 2026-10-09 | First version of the contract. Behaviour changes that shipped the same day and that the frontend may notice: specialty write routes require Admin (C1); `GET /api/appointments/{id}` returns 403 for non-owners (C4); doctors can no longer delete reviews (H2); refresh fails for suspended users (H3); reuse of a rotated refresh token can revoke all sessions (H7); login lockout after 5 failures with the new code `Auth.AccountLockedOut` (M6); logout only accepts the caller's own refresh token (L7); new code `Appointment.SlotNotFound` replaces `Appointment.NotFound` for an unknown slot (L4); `PUT /api/doctors/schedule/{id}` no longer resets omitted fields (H5); appointment lists now fill `doctorName`/`patientName` (NM4); email links use `Frontend:BaseUrl` |
 | 1.0.1 | 2026-10-17 | Bug fix (NL22): `POST /api/reviews` for another patient's appointment now always returns 403 `Appointment.Unauthorized`. Before, it returned 409 `Appointment.ReviewAlreadyExists` when that appointment already had a review, which revealed whether it had been reviewed. 409 now applies only to the caller's own appointment. No change for a frontend that only offers reviews on the patient's own completed appointments |
+| 1.0.2 | 2026-10-17 | Bug fix (NL24): `POST /api/auth/forgot-password` returns 204 even when the reset email fails to send. Before, it returned 500 in that case, which only happened for registered, active emails and so revealed them. No frontend change is needed if it already shows the same message for every 204 |
 
 ## 11. How to change this contract
 

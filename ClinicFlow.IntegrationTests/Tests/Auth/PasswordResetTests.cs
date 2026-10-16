@@ -67,6 +67,20 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         }
 
         [Fact]
+        public async Task ForgotPassword_EmailSendFails_StillReturns204LikeAnUnknownEmail()
+        {
+            // A 500 here would only happen for registered emails and reveal them (REVIEW.md NL24)
+            _factory.Emails.FailSends = true;
+
+            var known = await _client.PostAsJsonAsync(ForgotUrl, new ForgotPasswordRequest(_email));
+            var unknown = await _client.PostAsJsonAsync(ForgotUrl, new ForgotPasswordRequest("nobody@test.com"));
+
+            known.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            unknown.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            _factory.Emails.Sent.Should().BeEmpty();
+        }
+
+        [Fact]
         public async Task ForgotPassword_SuspendedUser_Returns204AndSendsNothing()
         {
             await _factory.SeedAsync(async db =>

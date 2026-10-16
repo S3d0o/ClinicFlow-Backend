@@ -57,14 +57,38 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
         }
 
         [Fact]
-        public async Task ForgotPasswordAsync_WhenEmailSendFails_Throws()
+        public async Task ForgotPasswordAsync_WhenEmailSendFails_ReturnsSuccess()
         {
-            // Documented in the contract: 500 if the email cannot be sent. Unlike registration,
-            // the email is the whole operation, so the failure is not swallowed
+            // A failure must look the same as an unknown email, or it reveals which emails exist (REVIEW.md NL24)
             _emailService.SendPasswordResetAsync(_email, _user.Id, Arg.Any<string>(), _ct)
                 .ThrowsAsync(new InvalidOperationException("SMTP unavailable"));
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.ForgotPasswordAsync(_request, _ct));
+            var result = await _sut.ForgotPasswordAsync(_request, _ct);
+
+            Assert.True(result.IsSuccess);
+        }
+
+        [Fact]
+        public async Task ForgotPasswordAsync_WhenTokenGenerationFails_ReturnsSuccessWithoutSendingEmail()
+        {
+            _userManager.GeneratePasswordResetTokenAsync(_user).ThrowsAsync(new InvalidOperationException("No token provider"));
+
+            var result = await _sut.ForgotPasswordAsync(_request, _ct);
+
+            Assert.True(result.IsSuccess);
+            await _emailService.DidNotReceive().SendPasswordResetAsync(
+                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        }
+
+        [Fact]
+        public async Task ForgotPasswordAsync_WhenRequestCancelled_PropagatesCancellation()
+        {
+            // Only failures are swallowed; a cancelled request still ends as cancelled
+            using var cts = new CancellationTokenSource();
+            _emailService.SendPasswordResetAsync(_email, _user.Id, Arg.Any<string>(), cts.Token)
+                .Returns(_ => { cts.Cancel(); throw new OperationCanceledException(cts.Token); });
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => _sut.ForgotPasswordAsync(_request, cts.Token));
         }
     }
 }
