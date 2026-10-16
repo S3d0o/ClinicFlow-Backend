@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Contract version** | 1.0.0 |
-| **Last updated** | 2026-10-09 |
+| **Contract version** | 1.0.1 |
+| **Last updated** | 2026-10-17 |
 | **Applies to** | ClinicFlow backend (`ClinicFlow.Backend`) and the ClinicFlow frontend (React) |
 | **Canonical copy** | `ClinicFlow.Backend/docs/API_CONTRACT.md`. The frontend repo keeps an identical copy at `docs/API_CONTRACT.md` |
 | **Machine-readable companion** | [`openapi.json`](openapi.json) (OpenAPI 3.1, generated from the running API) |
@@ -477,9 +477,10 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **201:** `ReviewResponse`. The doctor's average rating is updated.
 - **Errors:**
   - 400 (B), or (C) `Appointment.ReviewNotAllowed`
-  - 403 `Appointment.Unauthorized`
+  - 403 `Appointment.Unauthorized` (another patient's appointment, whether or not it has been reviewed)
   - 404 `Patient.ProfileNotFound`, `Appointment.NotFound`, `Doctor.NotFound`
-  - 409 `Appointment.ReviewAlreadyExists`
+  - 409 `Appointment.ReviewAlreadyExists` (the caller's own appointment only)
+- **Check order:** appointment exists → belongs to the caller → completed → not yet reviewed.
 - **Frontend:** show the review button only when `AppointmentResponse.status == "Completed"` and `hasReview == false`.
 
 **26. `GET /api/reviews/doctor/{doctorId}?pageNumber=&pageSize=`** (anonymous)
@@ -701,6 +702,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) whose fix **will change the cont
 | Version | Date | Changes |
 |---|---|---|
 | 1.0.0 | 2026-10-09 | First version of the contract. Behaviour changes that shipped the same day and that the frontend may notice: specialty write routes require Admin (C1); `GET /api/appointments/{id}` returns 403 for non-owners (C4); doctors can no longer delete reviews (H2); refresh fails for suspended users (H3); reuse of a rotated refresh token can revoke all sessions (H7); login lockout after 5 failures with the new code `Auth.AccountLockedOut` (M6); logout only accepts the caller's own refresh token (L7); new code `Appointment.SlotNotFound` replaces `Appointment.NotFound` for an unknown slot (L4); `PUT /api/doctors/schedule/{id}` no longer resets omitted fields (H5); appointment lists now fill `doctorName`/`patientName` (NM4); email links use `Frontend:BaseUrl` |
+| 1.0.1 | 2026-10-17 | Bug fix (NL22): `POST /api/reviews` for another patient's appointment now always returns 403 `Appointment.Unauthorized`. Before, it returned 409 `Appointment.ReviewAlreadyExists` when that appointment already had a review, which revealed whether it had been reviewed. 409 now applies only to the caller's own appointment. No change for a frontend that only offers reviews on the patient's own completed appointments |
 
 ## 11. How to change this contract
 

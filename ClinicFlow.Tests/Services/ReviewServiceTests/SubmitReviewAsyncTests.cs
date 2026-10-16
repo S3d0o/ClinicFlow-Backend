@@ -130,6 +130,22 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
             _uow.Doctors.DidNotReceive().UpdateRatingCache(Arg.Any<DoctorProfile>());
         }
 
+        [Fact]
+        public async Task SubmitReviewAsync_WhenAnotherPatientsAppointmentAlreadyReviewed_ReturnsUnauthorizedError()
+        {
+            // Ownership is checked before the duplicate check, so the response doesn't reveal
+            // whether another patient's appointment was reviewed (REVIEW.md NL22)
+            _appointment.PatientProfileId = _patientId + 1;
+            _uow.Reviews.GetByAppointmentIdAsync(_appointmentId, _ct).Returns(new Review { AppointmentId = _appointmentId });
+
+            var result = await _sut.SubmitReviewAsync(_patientUserId, _request, _ct);
+
+            Assert.True(result.IsFailure);
+            Assert.Contains(AppointmentErrors.Unauthorized, result.Errors);
+            Assert.DoesNotContain(AppointmentErrors.ReviewAlreadyExists, result.Errors);
+            await _uow.Reviews.DidNotReceive().GetByAppointmentIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+        }
+
         [Theory]
         [InlineData(AppointmentStatus.Pending)]
         [InlineData(AppointmentStatus.Confirmed)]
