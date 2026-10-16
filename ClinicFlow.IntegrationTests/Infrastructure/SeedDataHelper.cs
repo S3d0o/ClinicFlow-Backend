@@ -143,6 +143,25 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
             return patientUser.Id;
         }
 
+        // ResetDataBaseAsync migrates without the startup seed, so registration needs the roles seeded
+        public static async Task SeedRolesAsync(ClinicDbContext db)
+        {
+            foreach (var name in new[] { "Admin", "Doctor", "Patient" })
+            {
+                if (db.Roles.Any(r => r.Name == name))
+                    continue;
+
+                db.Roles.Add(new IdentityRole<Guid>
+                {
+                    Id = Guid.NewGuid(),
+                    Name = name,
+                    NormalizedName = name.ToUpperInvariant(),
+                    ConcurrencyStamp = Guid.NewGuid().ToString()
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+
         // used for authentication tests, returns the password as well
         public static async Task<(Guid userId, string email, string password)>
            SeedPatientUserAsync(ClinicDbContext db, string suffix = "auth")

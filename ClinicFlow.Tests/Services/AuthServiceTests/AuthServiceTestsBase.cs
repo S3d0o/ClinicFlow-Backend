@@ -1,0 +1,43 @@
+using Domain.Entities.IdentityModule;
+using Domain.Interfaces;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
+using NSubstitute;
+using Services.Abstraction.Contracts;
+using Services.Implementations;
+
+namespace ClinicFlow.Tests.Services.AuthServiceTests
+{
+    public abstract class AuthServiceTestsBase
+    {
+        // Dependencies
+        protected readonly UserManager<ApplicationUser> _userManager;
+        protected readonly ILogger<AuthService> _logger;
+        protected readonly IUnitOfWork _uow;
+        protected readonly ITokenService _tokenService;
+        protected readonly IEmailService _emailService;
+        protected readonly IDbContextTransaction _transaction;
+
+        // System Under Test
+        protected readonly AuthService _sut;
+
+        protected AuthServiceTestsBase()
+        {
+            _userManager = Substitute.For<UserManager<ApplicationUser>>(
+                Substitute.For<IUserStore<ApplicationUser>>(), null!, null!, null!, null!, null!, null!, null!, null!);
+            _logger = Substitute.For<ILogger<AuthService>>();
+            _uow = Substitute.For<IUnitOfWork>();
+            _tokenService = Substitute.For<ITokenService>();
+            _emailService = Substitute.For<IEmailService>();
+            _transaction = Substitute.For<IDbContextTransaction>();
+
+            _uow.BeginTransactionAsync(Arg.Any<CancellationToken>()).Returns(_transaction);
+
+            _sut = new AuthService(_userManager, _logger, _uow, _tokenService, _emailService);
+        }
+
+        protected static IdentityResult Failed(params string[] descriptions) =>
+            IdentityResult.Failed(descriptions.Select(d => new IdentityError { Description = d }).ToArray());
+    }
+}
