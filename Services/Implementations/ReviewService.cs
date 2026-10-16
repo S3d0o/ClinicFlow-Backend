@@ -18,12 +18,8 @@ namespace Services.Implementations
                 logger.LogWarning("Patient not found for user ID: {UserId}", patientUserId);
                 return PatientErrors.ProfileNotFound(patientUserId);
             }
-            // 1. Check no review exists yet
-            var existingReview = await uow.Reviews.GetByAppointmentIdAsync(request.AppointmentId, ct);
-            if (existingReview != null)
-                return AppointmentErrors.ReviewAlreadyExists;
-
-            // 2. Get the actual appointment to validate ownership and status
+            // 1. Validate ownership and status first, so a patient can't learn whether
+            //    another patient's appointment has been reviewed (REVIEW.md NL22)
             var appointment = await uow.Appointments.GetByIdAsync(request.AppointmentId, ct);
             if (appointment == null)
                 return AppointmentErrors.NotFound(request.AppointmentId);
@@ -33,6 +29,11 @@ namespace Services.Implementations
 
             if (appointment.Status != AppointmentStatus.Completed)
                 return AppointmentErrors.ReviewNotAllowed;
+
+            // 2. Check no review exists yet
+            var existingReview = await uow.Reviews.GetByAppointmentIdAsync(request.AppointmentId, ct);
+            if (existingReview != null)
+                return AppointmentErrors.ReviewAlreadyExists;
 
             // 3. Create the review
             var review = new Review

@@ -121,6 +121,22 @@ namespace ClinicFlow.IntegrationTests.Tests.Reviews
         }
 
         [Fact]
+        public async Task SubmitReview_OtherPatientsAlreadyReviewedAppointment_Returns403()
+        {
+            // Must match the not-yet-reviewed case above, so the status code doesn't reveal
+            // whether another patient's appointment was reviewed (REVIEW.md NL22)
+            AuthenticateAs(_otherPatientUserId, "Patient");
+            (await _client.PostAsJsonAsync(BaseUrl, new SubmitReviewRequest(_otherCompletedAppointmentId, 5, null)))
+                .StatusCode.Should().Be(HttpStatusCode.Created);
+
+            AuthenticateAs(_patientUserId, "Patient");
+            var response = await _client.PostAsJsonAsync(BaseUrl, new SubmitReviewRequest(_otherCompletedAppointmentId, 1, "not mine"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("Appointment.ReviewAlreadyExists");
+        }
+
+        [Fact]
         public async Task SubmitReview_OwnAppointmentNotCompleted_Returns400()
         {
             int ownConfirmedAppointmentId = 0;
