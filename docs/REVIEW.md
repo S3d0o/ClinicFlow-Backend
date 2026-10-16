@@ -471,7 +471,7 @@ What exists: unit tests for `AppointmentService.BookAppointmentAsync` and `Cance
 
 **Fix risk:** Low. Adding tests can't break production. Write tests for H4/H6/H7 *before* fixing them.
 
-**Status:** 🟡 Partly addressed. Added unit tests: `GetAppointmentAsyncTests` (C4), `DeleteReviewAsyncTests` (H2), `CreateScheduleAsyncTests` (H1) and `UpdateScheduleAsyncTests` (H5, L5, using the real AutoMapper configuration). Added integration tests: `AuthorizationTests` (C1, C4), `AuthSecurityTests` (H3, H7, M6, L7) and a names assertion in `GetPatientAppointmentsTests` (NM4). The three wrong cancel tests are ✅ corrected in `9035a7d`: already-cancelled now asserts 409, a cross-patient 403 test was added, the names were fixed, and the hardcoded id was replaced. `AuthService` registration, `AdminService`, `NotificationService`, the reminder job and the validators are still untested.
+**Status:** 🟡 Partly addressed. Added unit tests: `GetAppointmentAsyncTests` (C4), `DeleteReviewAsyncTests` (H2), `CreateScheduleAsyncTests` (H1) and `UpdateScheduleAsyncTests` (H5, L5, using the real AutoMapper configuration). Added integration tests: `AuthorizationTests` (C1, C4), `AuthSecurityTests` (H3, H7, M6, L7) and a names assertion in `GetPatientAppointmentsTests` (NM4). The three wrong cancel tests are ✅ corrected in `9035a7d`: already-cancelled now asserts 409, a cross-patient 403 test was added, the names were fixed, and the hardcoded id was replaced. Every `AppointmentService` method now has a unit test class: `CancelByDoctorAsyncTests`, `CancelByAdminAsyncTests`, `CompleteAppointmentAsyncTests`, `AddDoctorNotesAsyncTests`, `GetDoctorAppointmentsAsyncTests` and `GetPatientAppointmentsAsyncTests` (34 tests, branch `test/appointment-service-tests`). They cover ownership, each status error, the freed slot, notifications, and notification failures not failing the operation. `CancelByAdminAsyncTests` pins the M14 "wrong error" behaviour as documented in the contract; early completion (M14) is not tested until the rule is decided. The doctor and admin paths of `POST /api/appointments/{id}/cancel`, complete and notes still have no integration tests. `AuthService` registration, `AdminService`, `NotificationService`, the reminder job and the validators are still untested.
 
 ---
 
@@ -566,6 +566,8 @@ The table lists 9 distinct warnings. The build summary reports 13 because some N
 The `Microsoft.*` 10.0.x packages are pinned at three different patch levels: 10.0.7, 10.0.8 and 10.0.10. There is no `Directory.Packages.props` (Central Package Management) to keep them aligned.
 
 **Status:** ✅ all `Microsoft.*` 10.0.x packages are on 10.0.12 and `Testcontainers.MsSql` is on 4.16.0 (`9035a7d`). Central Package Management was not added. The other outdated packages (AutoMapper, MailKit, Serilog, Scalar and the test tooling majors) were not updated.
+
+**New advisory (2026-10-16):** `dotnet list package --vulnerable --include-transitive` again reports a vulnerable package, so the "0 warnings" above no longer holds. The transitive `System.Security.Cryptography.Pkcs` is flagged in every project except `Domain`, `Shared`, `Services.Abstraction` and `Presentation`: 10.0.0 in most of them, 9.0.11 in `Persistence`. It has GHSA-846f-f764-76mx (High, NU1903) and GHSA-2fmv-rv2c-59x7 (moderate, NU1902). Status: ⏸ Open. Find the top-level package that pulls it in and update that package, or pin a patched `System.Security.Cryptography.Pkcs` version.
 
 ### High
 
