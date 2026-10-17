@@ -140,7 +140,7 @@ Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data**. Set 
 | Demo appointments are all in the past | The demo dataset is created once and keeps its dates (slots are topped up on every start). Drop the database and restart to reseed |
 | Login returns `Auth.AccountLockedOut` | 5 wrong passwords: wait 15 minutes, or clear `LockoutEnd` for the user |
 | Login returns `Auth.EmailNotConfirmed` | Confirm the email, or set `EmailConfirmed = 1` in `Users` for local testing |
-| No slots for a doctor | The doctor has no active schedule for that weekday, or the date is more than 14 days ahead |
+| No slots for a doctor | The doctor has no active schedule for that weekday, is not approved or is suspended, or the date is more than 14 days ahead. The daily `SlotGenerationJob` extends the window at startup and then every 24 hours |
 | Emails not arriving | Check the logs for `Failed to send …`. Verify the SMTP credentials and `FromAddress` |
 
 ## Regenerating openapi.json

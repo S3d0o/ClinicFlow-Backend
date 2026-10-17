@@ -57,7 +57,7 @@ This repository is the backend. The React frontend lives in its own repository, 
   - **Doctor:** manages schedule, appointments and notes.
   - **Admin:** approves or suspends doctors, manages specialties, sees stats.
 - **Doctor onboarding:** doctors register and confirm their email; an admin approves them before they appear in search.
-- **Schedules and slots:** one weekly schedule per weekday. Bookable slots are generated automatically for the next 14 days.
+- **Schedules and slots:** one weekly schedule per weekday. Bookable slots are generated automatically for the next 14 days, and a daily job keeps that window rolling.
 - **Safe booking:** a conditional database update inside a transaction guarantees a slot is booked only once.
 - **Cancellation rules:**
   - Patients can cancel up to 2 hours before the appointment.

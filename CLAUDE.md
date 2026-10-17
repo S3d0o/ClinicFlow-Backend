@@ -41,6 +41,7 @@ Nothing secret lives in `appsettings.json`, and nothing secret should be added t
 | `JwtSettings:Secret` | Yes | HMAC-SHA256 key, at least 32 bytes. **Validated at startup** (`ValidateOnStart`), along with issuer, audience and lifetimes, which live in `appsettings.json` |
 | `EmailSettings:Username`, `EmailSettings:Password`, `EmailSettings:FromAddress` | For email | SMTP (Gmail, port 587, StartTLS). Host, port and from-name are in `appsettings.json` |
 | `Frontend:BaseUrl` | No | Default `http://localhost:3000`. Used for the CORS origin and for links in emails |
+| `Clinic:TimeZoneId` | No | IANA zone of the clinic, default `Africa/Cairo` (in `appsettings.json`). Slot dates and times are wall-clock times in this zone. **Validated at startup** |
 | `Seeding:DemoData` | No | Seeds the demo accounts with published passwords. Default: `true` in Development, `false` otherwise. Never enable in production |
 | `Seeding:AdminEmail`, `Seeding:AdminPassword` | No | When both are set, an admin with these credentials is created on startup if one doesn't exist |
 
@@ -64,18 +65,18 @@ Clean Architecture, one project per layer. Folders are listed per project, and e
 | Project (folder) | Contents | `Global.cs` imports |
 |---|---|---|
 | `Domain` | `Entities/AppModule` (doctor, patient, schedule, slot, appointment, review, specialty), `Entities/IdentityModule` (`ApplicationUser`, `Notification`, `RefreshToken`), `Enums`, `Interfaces/IUnitOfWork.cs`, `Interfaces/IRepositories/I*Repo.cs`, `Parameters/*FilterParams.cs` | `Domain.Enums`, `Domain.Entities.AppModule`, `Domain.Parameters`, `Shared.Enums`, Identity |
-| `Shared` | `DTOs/<Feature>/` request/response records, `Errors/<Feature>Errors.cs`, `ResultPattern/` (`Result`, `Result<T>`, `Error`, `ErrorType`), `Settings/` (`JwtSettings`, `EmailSettings`) | none |
+| `Shared` | `DTOs/<Feature>/` request/response records, `Errors/<Feature>Errors.cs`, `ResultPattern/` (`Result`, `Result<T>`, `Error`, `ErrorType`), `Settings/` (`JwtSettings`, `EmailSettings`, `FrontendSettings`, `ClinicSettings`), `DTOs/Common/PagedList.cs` | none |
 | `Persistance` (project `Persistence.csproj`, namespaces `Persistence.*`) | `AppData/ClinicDbContext.cs`, `AppData/DataSeeder.cs`, `AppData/Configurations/<Entity>Config.cs`, `AppData/Migrations/`, `Repositories/<Name>Repo.cs`, `UnitOfWork.cs` | EF Core, `Persistence.AppData`, `Domain.Interfaces.IRepositories`, entities |
 | `Services.Abstraction` | `Contracts/I<Name>Service.cs`, plus `IEmailService`, `ITokenService`, `IDateTimeProvider` | `Shared.DTOs`, `Shared.ResultPattern` |
 | `Services` | `Implementations/<Name>Service.cs`, `MappingProfiles/<Feature>Profile.cs` (AutoMapper), `Extensions/CoreServiceExtensions.cs` (DI), `ServiceAssemblyReference.cs` (assembly marker) | AutoMapper, logging, `Services.Abstraction.Contracts`, `Shared.Errors`, `Shared.ResultPattern`, `Domain.Interfaces` |
 | `Presentation` | `Controllers/<Name>Controller.cs` + `ApiController.cs` (base), `Validators/<Request>Validator.cs`, `Filters/ValidationFilter.cs`, `Extensions/HttpContextExtensions.cs` | MVC, `FluentValidation`, `Shared.ResultPattern`, `Shared.DTOs.Doctor`/`Patient` |
-| `ClinicFlow` (host) | `Program.cs`, `Extensions/WebApiExtensions.cs` (MVC, filters, validators), `Extensions/InfraStructureServiceExtensions.cs` (DbContext, Identity, JWT, `IUnitOfWork`), `BackgroundJobs/AppointmentReminderJob.cs` (hourly `BackgroundService`) | Serilog, `ClinicFlow.Extensions`, `Services.Extensions` |
+| `ClinicFlow` (host) | `Program.cs`, `Extensions/WebApiExtensions.cs` (MVC, filters, validators), `Extensions/InfraStructureServiceExtensions.cs` (DbContext, Identity, JWT, `IUnitOfWork`), `BackgroundJobs/AppointmentReminderJob.cs` (hourly) and `BackgroundJobs/SlotGenerationJob.cs` (daily, keeps slots 14 days ahead), both `BackgroundService` | Serilog, `ClinicFlow.Extensions`, `Services.Extensions` |
 | `ClinicFlow.Tests` | `Services/<Service>Tests/` with a `*TestsBase` and one class per method | |
 | `ClinicFlow.IntegrationTests` | `Infrastructure/` (`ClinicFlowApiFactory`, `TestAuthHandler`, `SeedDataHelper`, `IntegrationTestCollection`), `Tests/<Feature>/` | |
 
 Project references: `Shared → Domain`, `Persistence → Domain`, `Services.Abstraction → Shared`, `Services → Domain, Persistence, Services.Abstraction`, `Presentation → Services.Abstraction`, `ClinicFlow → Persistence, Presentation, Services`.
 
-`Program.cs` calls `AddWebApiServices` / `AddInfraStructureServices` / `AddCoreServices`, registers the reminder job and Serilog, and ends with `public partial class Program` so tests can use `WebApplicationFactory<Program>`.
+`Program.cs` calls `AddWebApiServices` / `AddInfraStructureServices` / `AddCoreServices`, registers the background jobs and Serilog, and maps ProblemDetails for every error (`UseExceptionHandler`, `UseStatusCodePages`), and ends with `public partial class Program` so tests can use `WebApplicationFactory<Program>`.
 
 ### Namespace gotchas
 Enum namespaces don't match their folder:
@@ -107,7 +108,7 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
 - In `Shared/Errors/<Feature>Errors.cs`, declare fixed errors as `public static readonly Error X = Error.Conflict("Feature.Reason", "...")` and parameterized ones as `public static Error NotFound(int id) => Error.NotFound(...)`. Codes are `Feature.Reason`.
 - Pick the `ErrorType` for the status code it produces: NotFound→404, Conflict→409, Forbidden→403, Validation→400, Unauthorized/InvalidCredentials→401, Failure→500. Use `Failure` only for unexpected server errors; every expected error was moved off it in contract 2.0.0 (`docs/REVIEW.md` M3). Integration tests assert status codes, so changing a type changes the API.
 - Side effects after the main write (notifications, emails) are logged and swallowed, so they never fail the main operation. Follow the existing `TryNotifyAsync` helpers in `AppointmentService` and `AdminService`, and `TrySendConfirmationEmailAsync` in `AuthService`. Don't pass the request `ct` to emails for an already-committed change.
-- Use the injected `IDateTimeProvider` for "now" in business rules (the past-slot check, the 2-hour cancellation window). Unit tests stub it.
+- Use the injected `IDateTimeProvider` for "now" in business rules. Slot dates and times are **clinic-local**, so compare them with `ClinicNow` (the past-slot check, the 2-hour cancellation window, completion, no-show grace, slot generation's "today"); use `UtcNow` only for UTC timestamps such as `CancelledAt`. Repositories don't read the clock: pass "today" or "now" in from the service (`docs/REVIEW.md` M2). Unit tests stub it; integration tests seed time-sensitive slots from `_factory.ClinicNow`.
 
 ### Endpoints
 - Controllers live in `Presentation/Controllers`, inherit `ApiController` (not `ControllerBase`), take the service through a primary constructor, and set an explicit route: `[Route("api/appointments")]`. The base `api/[controller]` route is only used by `SpecialtyController`.
@@ -115,9 +116,9 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
   - `[EndpointSummary]`, `[EndpointDescription]`, and `[ProducesResponseType]` per status code (`ProblemDetails` / `ValidationProblemDetails` for errors)
   - `CancellationToken ct` as the last parameter
   - a body of `return HandleResult(await service.XAsync(..., ct));`
-- `HandleResult(Result)` returns 204 by default. `HandleResult<T>(Result<T>)` returns 200, or 201 when given a location URI or a status code.
+- `HandleResult(Result)` returns 204 by default. `HandleResult<T>(Result<T>)` returns 200, or 201 when given a location URI or a status code. For a paged list, return `Result<PagedList<T>>` from the service and use `HandlePagedResult`: the body stays an array and the total goes in the `X-Total-Count` header.
 - Get the user id with `User.GetUserId()` and the role with `User.GetRole()` (`Presentation/Extensions/HttpContextExtensions.cs`). Roles are `Admin`, `Doctor` and `Patient`. For anything that reads or changes a specific record, check ownership in the service (see `AppointmentService.GetAppointmentAsync` and `ReviewService.DeleteReviewAsync`), not just the role.
-- **Always add `[Authorize]` / `[Authorize(Roles = "...")]` explicitly.** There is no fallback authorization policy, so an action without one is anonymous.
+- **Always add `[Authorize]` / `[Authorize(Roles = "...")]` or `[AllowAnonymous]` explicitly.** A fallback policy requires a logged-in user for anything without a rule, so a forgotten attribute fails closed, and `AuthorizationTests.EveryControllerAction_DeclaresAuthorizeOrAllowAnonymous` fails on it. Public endpoints need `[AllowAnonymous]`.
 - **The API is a contract shared with the frontend repo.** Any change to a route, request or response field, status code, error code or auth rule must update `docs/API_CONTRACT.md` (the endpoint section, the error catalog and the §10 changelog) and regenerate `docs/openapi.json` in the same change. Follow the process in §11 of that file. Breaking changes are listed in §9 first.
 - Request bodies are validated automatically by the global async `ValidationFilter` (`ValidateAsync`, so `MustAsync` rules are fine). Add a `<Request>Validator` in `Presentation/Validators`; nothing else is needed.
 - Enums are serialized as strings (`JsonStringEnumConverter`), and several are stored as strings in the DB.
@@ -158,7 +159,7 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
 
 - **Unit (`ClinicFlow.Tests`):** xUnit + NSubstitute. Each service gets a folder with a `*TestsBase` that substitutes every constructor dependency and builds `_sut` (see `Services/AppointmentServiceTests/AppointmentServiceTestsBase.cs`), plus one test class per method (`BookAppointmentAsyncTests`, ...).
 - **Integration (`ClinicFlow.IntegrationTests`):** xUnit + FluentAssertions + `Microsoft.AspNetCore.Mvc.Testing`.
-  - **Factory:** `ClinicFlowApiFactory` starts an MsSql Testcontainer, points `ClinicDbContext` at it, removes `AppointmentReminderJob`, and replaces JWT auth with `TestAuthHandler`.
+  - **Factory:** `ClinicFlowApiFactory` starts an MsSql Testcontainer, points `ClinicDbContext` at it, removes the background jobs (`AppointmentReminderJob`, `SlotGenerationJob`), and replaces JWT auth with `TestAuthHandler`.
   - **Authentication:** set the headers `TestAuthHandler.UserIdHeader` (`X-Test-UserId`) and `UserRoleHeader` (`X-Test-Role`) on a request to authenticate it. Without them the request is anonymous.
   - **Test classes:** every test class has `[Collection(nameof(IntegrationTestCollection))]`, so they share one container and run sequentially. Each one implements `IAsyncLifetime`. Its `InitializeAsync` calls `_factory.ResetDataBaseAsync()`, which drops and re-migrates the DB **without** the demo seed. It then clears the client headers and seeds its own data with `_factory.SeedAsync(db => SeedDataHelper...)`. Pass a distinct `suffix` to seed more than one set of entities.
 - **Naming:** test names follow `Method_Scenario_ExpectedResult`.
