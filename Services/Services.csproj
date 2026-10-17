@@ -18,4 +18,9 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets unit tests check EmailService's link format without an SMTP server -->
+    <InternalsVisibleTo Include="ClinicFlow.Tests" />
+  </ItemGroup>
+
 </Project>
