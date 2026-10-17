@@ -22,6 +22,10 @@ namespace ClinicFlow.Extensions
                         new JsonStringEnumConverter());
                 });
             services.AddEndpointsApiExplorer();
+
+            // Every error response is ProblemDetails with a traceId: unhandled exceptions (UseExceptionHandler),
+            // bodiless 401/403/404 (UseStatusCodePages) and validation failures (REVIEW.md M5, NL9)
+            services.AddProblemDetails();
             services.AddValidatorsFromAssembly(typeof(ValidationFilter).Assembly);
 
             // Client IP comes from Connection.RemoteIpAddress; X-Forwarded-For is honoured

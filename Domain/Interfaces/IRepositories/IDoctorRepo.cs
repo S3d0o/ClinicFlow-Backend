@@ -9,7 +9,8 @@ namespace Domain.Interfaces.IRepositories
         Task<DoctorProfile?> GetDetailedByIdAsync(int id, CancellationToken ct); // includes User + Specialty
         Task<DoctorProfile?> GetByUserIdAsync(Guid userId, CancellationToken ct);
         Task<(IReadOnlyList<DoctorProfile> Doctors, int TotalCount)> GetApprovedPagedAsync(DoctorFilterParams filters, CancellationToken ct);
-        Task<IReadOnlyList<DoctorProfile>> GetPendingApprovalsAsync(CancellationToken ct);
+        // Oldest applications first; pageSize null returns them all
+        Task<(IReadOnlyList<DoctorProfile> Doctors, int TotalCount)> GetPendingApprovalsAsync(int pageNumber, int? pageSize, CancellationToken ct);
         Task<bool> ExistsAsync(int id, CancellationToken ct);
 
         // Schedule

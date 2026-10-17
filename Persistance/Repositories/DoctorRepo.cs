@@ -36,22 +36,28 @@ namespace Persistence.Repositories
             var totalCount = await query.CountAsync(ct);
 
             var doctors = await query
-                .Skip((filters.PageNumber - 1) * filters.PageSize)
-                .Take(filters.PageSize)
+                .Page(filters.PageNumber, filters.PageSize)
                 .ToListAsync(ct); // ct is important here to allow cancellation if user navigates away before data loads
 
             return (doctors, totalCount);
         }
-        public async Task<IReadOnlyList<DoctorProfile>> GetPendingApprovalsAsync(CancellationToken ct) // this is for admin dashboard to show doctors waiting for approval
+        public async Task<(IReadOnlyList<DoctorProfile> Doctors, int TotalCount)> GetPendingApprovalsAsync(int pageNumber, int? pageSize, CancellationToken ct) // this is for admin dashboard to show doctors waiting for approval
         {
-            var doctors = await context.DoctorProfiles
+            var query = context.DoctorProfiles
                 .AsNoTracking()
                 .Include(d => d.Specialty)
                 .Include(d => d.User)
                 .Where(d => !d.IsApprovedByAdmin && d.User.IsActive)
-                .ToListAsync(ct);
+                .OrderBy(d => d.User.CreatedAt)
+                .ThenBy(d => d.Id);
 
-            return doctors;
+            var totalCount = await query.CountAsync(ct);
+
+            var doctors = pageSize is null
+                ? await query.ToListAsync(ct)
+                : await query.Page(pageNumber, pageSize.Value).ToListAsync(ct);
+
+            return (doctors, totalCount);
         }
 
         public async Task<bool> ExistsAsync(int id, CancellationToken ct) // lightweight check for existence

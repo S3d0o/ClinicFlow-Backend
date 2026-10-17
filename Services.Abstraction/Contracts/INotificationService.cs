@@ -1,4 +1,5 @@
 ﻿using ClinicFlow.Domain.Enums;
+using Shared.DTOs.Common;
 using Shared.DTOs.Notification;
 
 namespace Services.Abstraction.Contracts
@@ -6,8 +7,8 @@ namespace Services.Abstraction.Contracts
     public interface INotificationService
     {
         // User reads their own notifications
-        Task<Result<List<NotificationResponse>>> GetMyNotificationsAsync(
-            Guid userId, bool unreadOnly = false, CancellationToken ct = default);
+        Task<Result<PagedList<NotificationResponse>>> GetMyNotificationsAsync(
+            Guid userId, NotificationFilterRequest filter, CancellationToken ct);
 
         // Mark one notification as read
         Task<Result> MarkAsReadAsync(Guid userId, int notificationId, CancellationToken ct);

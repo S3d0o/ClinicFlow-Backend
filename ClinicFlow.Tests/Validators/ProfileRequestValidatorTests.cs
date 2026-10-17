@@ -63,12 +63,17 @@ namespace ClinicFlow.Tests.Validators
                 .ShouldHaveValidationErrorFor(x => x.EmergencyContactPhone);
 
         [Fact]
-        public void Validate_LocalPhoneWithLeadingZero_IsAllowedHereButNotAtRegistration()
+        public void Validate_LocalPhoneWithLeadingZero_FailsLikeAtRegistration()
         {
-            // Documents REVIEW.md M13: updates accept ^\+?[0-9]{7,15}$, registration requires E.164
+            // REVIEW.md M13: updates used to accept ^\+?[0-9]{7,15}$; now every phone field uses the registration rule
             _validator.TestValidate(new UpdatePatientProfileRequest { EmergencyContactPhone = "01001234567" })
-                .ShouldNotHaveAnyValidationErrors();
+                .ShouldHaveValidationErrorFor(x => x.EmergencyContactPhone);
         }
+
+        [Fact]
+        public void Validate_E164Phone_HasNoErrors()
+            => _validator.TestValidate(new UpdatePatientProfileRequest { EmergencyContactPhone = "+201001234567" })
+                .ShouldNotHaveAnyValidationErrors();
 
         [Fact]
         public void Validate_TextOverLimits_FailsOnEachField()

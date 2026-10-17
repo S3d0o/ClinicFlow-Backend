@@ -27,8 +27,7 @@ namespace Persistence.Repositories
             var totalCount = await query.CountAsync(ct);
 
             var reviews = await query
-                .Skip((filters.PageNumber - 1) * filters.PageSize)
-                .Take(filters.PageSize)
+                .Page(filters.PageNumber, filters.PageSize)
                 .ToListAsync(ct);
 
             return (reviews, totalCount);

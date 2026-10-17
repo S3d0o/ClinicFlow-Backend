@@ -39,14 +39,11 @@ namespace Persistence.Repositories
 
             var totalCount = await query.CountAsync(ct);
 
-            var pageNumber = Math.Max(1, filters.PageNumber);
-            var pageSize = Math.Max(1, filters.PageSize);
-
             var appointments = await query
                 .OrderByDescending(x => x.Slot.Date)
                 .ThenByDescending(x => x.Slot.StartTime)
-                .Skip((pageNumber - 1) * pageSize)
-                .Take(pageSize)
+                .ThenByDescending(x => x.Id) // unique tie-breaker keeps paging stable
+                .Page(filters.PageNumber, filters.PageSize)
                 .ToListAsync(ct);
 
             return (appointments, totalCount);
@@ -74,8 +71,8 @@ namespace Persistence.Repositories
             var appointments = await query
                 .OrderByDescending(x => x.Slot.Date)
                     .ThenByDescending(x => x.Slot.StartTime)
-                .Skip((filters.PageNumber - 1) * filters.PageSize)
-                .Take(filters.PageSize)
+                    .ThenByDescending(x => x.Id) // unique tie-breaker keeps paging stable
+                .Page(filters.PageNumber, filters.PageSize)
                 .ToListAsync(ct);
 
             return (appointments, totalCount);

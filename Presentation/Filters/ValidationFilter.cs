@@ -1,6 +1,8 @@
 // Presentation/Filters/ValidationFilter.cs
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Presentation.Filters;
@@ -53,8 +55,11 @@ public class ValidationFilter(ILogger<ValidationFilter> logger) : IAsyncActionFi
 
         if (modelState.ErrorCount > 0)
         {
+            // Same factory as ValidationProblem() and [ApiController]'s binding errors, so every 400
+            // has one shape: type, title, status, errors and traceId (REVIEW.md NL9)
+            var problemDetailsFactory = context.HttpContext.RequestServices.GetRequiredService<ProblemDetailsFactory>();
             context.Result = new BadRequestObjectResult(
-                new ValidationProblemDetails(modelState));
+                problemDetailsFactory.CreateValidationProblemDetails(context.HttpContext, modelState));
             return;
         }
 

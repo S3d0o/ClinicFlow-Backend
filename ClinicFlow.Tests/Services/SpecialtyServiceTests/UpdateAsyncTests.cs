@@ -13,7 +13,8 @@ namespace ClinicFlow.Tests.Services.SpecialtyServiceTests
 
         public UpdateAsyncTests()
         {
-            _uow.Specialties.GetByIdAsync(_id, _ct).Returns(_specialty);
+            // Admin updates and deletes reach inactive specialties too (REVIEW.md L6)
+            _uow.Specialties.GetByIdAsync(_id, _ct, includeInactive: true).Returns(_specialty);
         }
 
         [Fact]
@@ -54,6 +55,39 @@ namespace ClinicFlow.Tests.Services.SpecialtyServiceTests
             Assert.Contains(SpecialtyErrors.NameAlreadyExists, result.Errors);
             Assert.Equal("Neurology", _specialty.Name);
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
+        }
+
+        [Fact]
+        public async Task UpdateAsync_WithIsActiveTrue_ReactivatesAnInactiveSpecialty()
+        {
+            // REVIEW.md L6: an inactive specialty couldn't be read, updated or reactivated
+            _specialty.IsActive = false;
+
+            var result = await _sut.UpdateAsync(_id, new SpecialtyRequest("Neurology", "Old", null, IsActive: true), _ct);
+
+            Assert.True(result.IsSuccess);
+            Assert.True(_specialty.IsActive);
+            Assert.True(result.Value.IsActive);
+        }
+
+        [Fact]
+        public async Task UpdateAsync_WithIsActiveFalse_Deactivates()
+        {
+            var result = await _sut.UpdateAsync(_id, new SpecialtyRequest("Neurology", "Old", null, IsActive: false), _ct);
+
+            Assert.True(result.IsSuccess);
+            Assert.False(_specialty.IsActive);
+        }
+
+        [Fact]
+        public async Task UpdateAsync_WithoutIsActive_KeepsTheCurrentState()
+        {
+            _specialty.IsActive = false;
+
+            var result = await _sut.UpdateAsync(_id, new SpecialtyRequest("Neurology", "New description", null), _ct);
+
+            Assert.True(result.IsSuccess);
+            Assert.False(_specialty.IsActive);
         }
 
         [Fact]

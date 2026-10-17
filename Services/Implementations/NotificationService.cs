@@ -1,4 +1,5 @@
 ﻿using Domain.Entities.IdentityModule;
+using Shared.DTOs.Common;
 using Shared.DTOs.Notification;
 
 public class NotificationService(
@@ -24,14 +25,15 @@ public class NotificationService(
         logger.LogInformation("{Count} notifications created", notifications.Count);
     }
 
-    public async Task<Result<List<NotificationResponse>>> GetMyNotificationsAsync(
-        Guid userId, bool unreadOnly = false, CancellationToken ct = default)
+    public async Task<Result<PagedList<NotificationResponse>>> GetMyNotificationsAsync(
+        Guid userId, NotificationFilterRequest filter, CancellationToken ct)
     {
-        var notifications = await uow.Notifications.GetByUserIdAsync(userId, unreadOnly, ct);
+        var (notifications, totalCount) = await uow.Notifications.GetByUserIdAsync(
+            userId, filter.UnreadOnly, filter.PageNumber, filter.PageSize, ct);
         var response = mapper.Map<List<NotificationResponse>>(notifications);
         logger.LogInformation(
-            "Retrieved {Count} notifications for user {UserId}", response.Count, userId);
-        return response;
+            "Retrieved {Count} of {TotalCount} notifications for user {UserId}", response.Count, totalCount, userId);
+        return new PagedList<NotificationResponse>(response, totalCount);
     }
 
     public async Task<Result> MarkAsReadAsync(Guid userId, int notificationId, CancellationToken ct)

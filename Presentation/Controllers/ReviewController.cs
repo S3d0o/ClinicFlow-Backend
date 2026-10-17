@@ -39,6 +39,7 @@ namespace Presentation.Controllers
         /// Returns paginated visible reviews for a doctor.
         /// Ordered by most recent first.
         /// </remarks>
+        [AllowAnonymous]
         [HttpGet("doctor/{doctorId}")]
         [ProducesResponseType(typeof(List<ReviewResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

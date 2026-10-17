@@ -1,6 +1,7 @@
 ﻿using Domain.Enums;
 using Shared.DTOs.Admin;
 using Shared.DTOs.Appointment;
+using Shared.DTOs.Common;
 using Shared.DTOs.Doctor;
 using Shared.DTOs.Notification;
 
@@ -12,12 +13,12 @@ public class AdminService(
     ILogger<AdminService> logger,
     INotificationService notificationService) : IAdminService
 {
-    public async Task<Result<List<DoctorResponse>>> GetPendingDoctorsAsync(CancellationToken ct)
+    public async Task<Result<PagedList<DoctorResponse>>> GetPendingDoctorsAsync(PendingDoctorsFilterRequest filter, CancellationToken ct)
     {
-        var pendingDoctors = await unitOfWork.Doctors.GetPendingApprovalsAsync(ct);
+        var (pendingDoctors, totalCount) = await unitOfWork.Doctors.GetPendingApprovalsAsync(filter.PageNumber, filter.PageSize, ct);
         var result = mapper.Map<List<DoctorResponse>>(pendingDoctors);
-        logger.LogInformation("Retrieved {Count} pending doctors for approval.", result.Count);
-        return result;
+        logger.LogInformation("Retrieved {Count} of {TotalCount} pending doctors for approval.", result.Count, totalCount);
+        return new PagedList<DoctorResponse>(result, totalCount);
     }
 
     public async Task<Result> ApproveDoctorAsync(int doctorProfileId, CancellationToken ct)

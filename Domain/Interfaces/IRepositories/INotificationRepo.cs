@@ -5,7 +5,8 @@ namespace Domain.Interfaces.IRepositories
     public interface INotificationRepo
     {
         // Queries
-        public  Task<IReadOnlyList<Notification>> GetByUserIdAsync(Guid userId, bool unreadOnly = false, CancellationToken ct = default);
+        // Newest first, one page, plus the total matching count
+        Task<(IReadOnlyList<Notification> Notifications, int TotalCount)> GetByUserIdAsync(Guid userId, bool unreadOnly, int pageNumber, int pageSize, CancellationToken ct);
         Task<Notification?> GetByIdAsync(int id, CancellationToken ct);
 
         // Write

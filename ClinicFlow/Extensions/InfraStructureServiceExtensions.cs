@@ -2,6 +2,7 @@
 using Domain.Entities.IdentityModule;
 using Domain.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -74,6 +75,13 @@ namespace ClinicFlow.Extensions
                         ClockSkew = TimeSpan.Zero, // to prevent token expiration issues due to clock differences
                     };
                 });
+            // Secure by default: an endpoint without [Authorize] or [AllowAnonymous] requires a logged-in user,
+            // so forgetting an attribute can't open an endpoint (REVIEW.md NM5, C1)
+            services.AddAuthorization(options =>
+            {
+                options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
+            });
+
             services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 

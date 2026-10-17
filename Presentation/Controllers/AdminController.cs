@@ -15,11 +15,16 @@ public class AdminController(
     // ── Doctor management ─────────────────────────────────────────────────────
 
     /// <summary>Get pending doctors</summary>
-    /// <remarks>Returns all doctors awaiting admin approval.</remarks>
+    /// <remarks>
+    /// Returns doctors awaiting admin approval, oldest application first. All of them by default;
+    /// pass PageSize (1–100) and PageNumber for one page. The total is in the X-Total-Count header.
+    /// </remarks>
     [HttpGet("doctors/pending")]
     [ProducesResponseType(typeof(List<DoctorResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<DoctorResponse>>> GetPendingDoctors(CancellationToken ct)
-        => HandleResult(await adminService.GetPendingDoctorsAsync(ct));
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyList<DoctorResponse>>> GetPendingDoctors(
+        [FromQuery] PendingDoctorsFilterRequest request, CancellationToken ct)
+        => HandlePagedResult(await adminService.GetPendingDoctorsAsync(request, ct));
 
     /// <summary>Approve a doctor</summary>
     /// <remarks>

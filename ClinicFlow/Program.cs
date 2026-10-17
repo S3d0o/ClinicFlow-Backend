@@ -51,7 +51,8 @@ try
                 .WithOrigins(frontendUrl.TrimEnd('/'))
                 .AllowAnyHeader()
                 .AllowAnyMethod()
-                .AllowCredentials();
+                .AllowCredentials()
+                .WithExposedHeaders("X-Total-Count"); // paged lists (REVIEW.md NL2); the browser hides it otherwise
         });
     });
 
@@ -71,6 +72,11 @@ try
     // add its address to ForwardedHeadersOptions.KnownProxies (see AddWebApiServices).
     app.UseForwardedHeaders();
 
+    // An unhandled exception becomes a 500 ProblemDetails without exception details (the developer
+    // exception page still applies in Development); empty 401/403/404 responses get a ProblemDetails body
+    app.UseExceptionHandler();
+    app.UseStatusCodePages();
+
     app.UseSerilogRequestLogging(opt =>
     {
         opt.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
@@ -85,8 +91,8 @@ try
     // Configure the HTTP request pipeline.
     if (app.Environment.IsDevelopment())
     {
-        app.MapOpenApi();
-        app.MapScalarApiReference();
+        app.MapOpenApi().AllowAnonymous();
+        app.MapScalarApiReference().AllowAnonymous();
     }
 
     app.UseHttpsRedirection();
@@ -97,7 +103,7 @@ try
     #endregion
 
     app.MapControllers();
-    app.MapHealthChecks("/health");
+    app.MapHealthChecks("/health").AllowAnonymous(); // the fallback policy would otherwise require a login
     await app.RunAsync();
     return 0;
 }

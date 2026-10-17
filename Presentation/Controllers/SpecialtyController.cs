@@ -6,6 +6,7 @@ namespace Presentation.Controllers
 {
     public class SpecialtyController(ISpecialtyService service) : ApiController
     {
+        [AllowAnonymous]
         [HttpGet]
         [EndpointSummary("Retrieve all specialties")]
         [EndpointDescription("Returns all active specialties. Admin can see inactive ones by passing includeInactive=true.")]
@@ -21,6 +22,7 @@ namespace Presentation.Controllers
             return HandleResult(await service.GetAllAsync(includeInactive, ct));
         }
 
+        [AllowAnonymous]
         [HttpGet("{id}")]
         [EndpointSummary("Get specialty by ID")]
         [EndpointDescription("Returns a single active specialty by its ID.")]

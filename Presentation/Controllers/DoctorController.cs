@@ -14,6 +14,7 @@ public class DoctorController(IDoctorService service) : ApiController
     /// Returns paginated, approved doctors only.
     /// Filter by SpecialtyId, City. Sort by Rating, Fee, or Experience.
     /// </remarks>
+    [AllowAnonymous]
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<DoctorSummaryResponse>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<DoctorSummaryResponse>>> GetAll(
@@ -25,6 +26,7 @@ public class DoctorController(IDoctorService service) : ApiController
 
     /// <summary>Get doctor by ID</summary>
     /// <remarks>Returns full doctor profile including specialty and rating. 404 if not approved or not found.</remarks>
+    [AllowAnonymous]
     [HttpGet("{id}")]
     [ProducesResponseType(typeof(DoctorResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -35,12 +37,14 @@ public class DoctorController(IDoctorService service) : ApiController
     }
 
     /// <summary>Get available slots</summary>
-    /// <remarks>Returns Available slots for a doctor on a specific date.</remarks>
+    /// <remarks>Returns Available slots for a doctor on a specific date. `date` is required (400 without it).</remarks>
+    [AllowAnonymous]
     [HttpGet("{id}/slots")]
     [ProducesResponseType(typeof(List<SlotResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<List<SlotResponse>>> GetAllSlots(
-        int id, [FromQuery] DateOnly date, CancellationToken ct)
+        int id, [FromQuery, BindRequired] DateOnly date, CancellationToken ct) // a missing date used to bind as 0001-01-01 (REVIEW.md NL11)
     {
         var result = await service.GetSlotsByDateAsync(id, date, ct);
         return HandleResult(result);
@@ -48,6 +52,7 @@ public class DoctorController(IDoctorService service) : ApiController
 
     /// <summary>Get doctor reviews</summary>
     /// <remarks>Returns visible reviews for a doctor.</remarks>
+    [AllowAnonymous]
     [HttpGet("{id}/reviews")]
     [ProducesResponseType(typeof(IEnumerable<ReviewResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

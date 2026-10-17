@@ -92,6 +92,18 @@ namespace ClinicFlow.IntegrationTests.Tests.Doctors
         // ---- slots ----
 
         [Fact]
+        public async Task Slots_WithoutDate_Returns400()
+        {
+            // REVIEW.md NL11: a missing date used to bind as 0001-01-01 and return an empty list
+            int doctorId = 0;
+            await _factory.SeedAsync(async db => (_, doctorId) = await SeedDataHelper.SeedDoctorAsync(db, "nodate"));
+
+            var response = await _client.GetAsync($"{BaseUrl}/{doctorId}/slots");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Fact]
         public async Task Slots_ReturnOnlyAvailableSlotsOrderedByStartTime()
         {
             int doctorId = 0;

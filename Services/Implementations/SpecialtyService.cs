@@ -46,7 +46,7 @@ namespace Services.Implementations
 
         public async Task<Result> DeleteByIdAsync(int id, CancellationToken ct)
         {
-            var specialty = await uow.Specialties.GetByIdAsync(id, ct);
+            var specialty = await uow.Specialties.GetByIdAsync(id, ct, includeInactive: true);
             if (specialty is null)
             {
                 logger.LogWarning("Attempted to delete non-existing specialty with id {Id}", id);
@@ -68,7 +68,7 @@ namespace Services.Implementations
 
         public async Task<Result<SpecialtyResponse>> UpdateAsync(int id, SpecialtyRequest specialtyDTO, CancellationToken ct)
         {
-            var specialty = await uow.Specialties.GetByIdAsync(id, ct);
+            var specialty = await uow.Specialties.GetByIdAsync(id, ct, includeInactive: true); // admins manage inactive ones too (REVIEW.md L6)
             if (specialty is null)
             {
                 logger.LogWarning("Attempted to update non-existing specialty with id {Id}", id);

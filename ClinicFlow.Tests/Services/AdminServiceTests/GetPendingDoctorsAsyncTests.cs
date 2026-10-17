@@ -1,6 +1,7 @@
 using Domain.Entities.AppModule;
 using Domain.Entities.IdentityModule;
 using NSubstitute;
+using Shared.DTOs.Admin;
 
 namespace ClinicFlow.Tests.Services.AdminServiceTests
 {
@@ -9,7 +10,7 @@ namespace ClinicFlow.Tests.Services.AdminServiceTests
         private readonly CancellationToken _ct = CancellationToken.None;
 
         [Fact]
-        public async Task GetPendingDoctorsAsync_WhenDoctorsPending_ReturnsMappedDoctors()
+        public async Task GetPendingDoctorsAsync_WhenDoctorsPending_ReturnsMappedDoctorsAndTheTotal()
         {
             IReadOnlyList<DoctorProfile> pending =
             [
@@ -21,12 +22,13 @@ namespace ClinicFlow.Tests.Services.AdminServiceTests
                     Specialty = new Specialty { Name = "Cardiology" }
                 }
             ];
-            _uow.Doctors.GetPendingApprovalsAsync(_ct).Returns(pending);
+            _uow.Doctors.GetPendingApprovalsAsync(1, null, _ct).Returns((pending, 1));
 
-            var result = await _sut.GetPendingDoctorsAsync(_ct);
+            var result = await _sut.GetPendingDoctorsAsync(new PendingDoctorsFilterRequest(), _ct);
 
             Assert.True(result.IsSuccess);
-            var doctor = Assert.Single(result.Value);
+            Assert.Equal(1, result.Value.TotalCount);
+            var doctor = Assert.Single(result.Value.Items);
             Assert.Equal(5, doctor.Id);
             Assert.Equal("Mona Adel", doctor.FullName);
             Assert.Equal("Cardiology", doctor.SpecialtyName);
@@ -34,14 +36,26 @@ namespace ClinicFlow.Tests.Services.AdminServiceTests
         }
 
         [Fact]
+        public async Task GetPendingDoctorsAsync_WithPageSize_PassesThePageToTheRepository()
+        {
+            // REVIEW.md NL2: paged only when the caller asks for it
+            _uow.Doctors.GetPendingApprovalsAsync(2, 10, _ct).Returns((Array.Empty<DoctorProfile>(), 12));
+
+            var result = await _sut.GetPendingDoctorsAsync(new PendingDoctorsFilterRequest { PageNumber = 2, PageSize = 10 }, _ct);
+
+            Assert.Equal(12, result.Value.TotalCount);
+            await _uow.Doctors.Received(1).GetPendingApprovalsAsync(2, 10, _ct);
+        }
+
+        [Fact]
         public async Task GetPendingDoctorsAsync_WhenNonePending_ReturnsEmptyList()
         {
-            _uow.Doctors.GetPendingApprovalsAsync(_ct).Returns(Array.Empty<DoctorProfile>());
+            _uow.Doctors.GetPendingApprovalsAsync(1, null, _ct).Returns((Array.Empty<DoctorProfile>(), 0));
 
-            var result = await _sut.GetPendingDoctorsAsync(_ct);
+            var result = await _sut.GetPendingDoctorsAsync(new PendingDoctorsFilterRequest(), _ct);
 
             Assert.True(result.IsSuccess);
-            Assert.Empty(result.Value);
+            Assert.Empty(result.Value.Items);
         }
     }
 }

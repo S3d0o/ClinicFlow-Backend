@@ -16,7 +16,7 @@ public class UpdateUserProfileRequestValidator : AbstractValidator<UpdateUserPro
             .When(x => x.LastName is not null);
 
         RuleFor(x => x.PhoneNumber)
-            .Matches(@"^\+?[0-9]{7,15}$").WithMessage("Phone number must be a valid format.")
+            .ValidPhoneNumber() // same E.164 rule as registration (REVIEW.md M13)
             .When(x => x.PhoneNumber is not null);
 
         RuleFor(x => x.ProfilePictureUrl)

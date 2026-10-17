@@ -1,5 +1,9 @@
 using ClinicFlow.IntegrationTests.Infrastructure;
 using FluentAssertions;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Shared.DTOs.Specialty;
 using System.Net;
 using System.Net.Http.Json;
@@ -74,6 +78,43 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
             var response = await _client.DeleteAsync($"{SpecialtyUrl}/1");
 
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        // ── Secure by default (NM5) ────────────────────────────────────────
+
+        [Theory]
+        [InlineData("/api/doctors")]
+        [InlineData("/api/Specialty")]
+        [InlineData("/api/reviews/doctor/1")]
+        [InlineData("/health")]
+        public async Task PublicEndpoints_Anonymous_Return200(string url)
+        {
+            var response = await _client.GetAsync(url);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Fact]
+        public async Task UnknownRoute_Anonymous_Returns401()
+        {
+            // The fallback policy covers every request with no explicit rule, unknown routes included
+            var response = await _client.GetAsync("/api/does-not-exist");
+
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Fact]
+        public void EveryControllerAction_DeclaresAuthorizeOrAllowAnonymous()
+        {
+            // The fallback policy makes a forgotten attribute fail closed; this keeps every rule explicit (CLAUDE.md)
+            var actions = _factory.Services.GetRequiredService<EndpointDataSource>().Endpoints
+                .Where(e => e.Metadata.GetMetadata<ControllerActionDescriptor>() is not null)
+                .ToList();
+
+            actions.Should().NotBeEmpty();
+            actions.Where(e => e.Metadata.GetMetadata<IAuthorizeData>() is null && e.Metadata.GetMetadata<IAllowAnonymous>() is null)
+                .Select(e => e.DisplayName)
+                .Should().BeEmpty();
         }
 
         // ── Appointment details are owner/admin only (C4) ──────────────────

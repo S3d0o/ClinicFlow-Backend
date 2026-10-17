@@ -11,6 +11,7 @@ public class AuthController(IAuthService service) : ApiController
 {
     /// <summary>Register a new patient</summary>
     /// <remarks>Creates a patient account. Email confirmation required before login.</remarks>
+    [AllowAnonymous]
     [HttpPost("register/patient")]
     [ProducesResponseType(typeof(RegisterResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -25,6 +26,7 @@ public class AuthController(IAuthService service) : ApiController
 
     /// <summary>Register a new doctor</summary>
     /// <remarks>Creates a doctor account. Requires admin approval before appearing in search.</remarks>
+    [AllowAnonymous]
     [HttpPost("register/doctor")]
     [ProducesResponseType(typeof(RegisterResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -40,6 +42,7 @@ public class AuthController(IAuthService service) : ApiController
 
     /// <summary>Login</summary>
     /// <remarks>Returns JWT access token and refresh token. Email must be confirmed first.</remarks>
+    [AllowAnonymous]
     [HttpPost("login")]
     [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -54,6 +57,7 @@ public class AuthController(IAuthService service) : ApiController
 
     /// <summary>Refresh access token</summary>
     /// <remarks>Exchange a valid refresh token for a new access token + refresh token pair.</remarks>
+    [AllowAnonymous]
     [HttpPost("refresh-token")]
     [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -81,6 +85,7 @@ public class AuthController(IAuthService service) : ApiController
 
     /// <summary>Confirm email</summary>
     /// <remarks>Validates the email confirmation token sent after registration.</remarks>
+    [AllowAnonymous]
     [HttpPost("confirm-email")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -97,6 +102,7 @@ public class AuthController(IAuthService service) : ApiController
     /// Sends a password reset email. Always returns 204 regardless of whether
     /// the email exists — prevents email enumeration.
     /// </remarks>
+    [AllowAnonymous]
     [HttpPost("forgot-password")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -109,6 +115,7 @@ public class AuthController(IAuthService service) : ApiController
 
     /// <summary>Reset password</summary>
     /// <remarks>Resets the password using the token from the reset email. Revokes all active sessions.</remarks>
+    [AllowAnonymous]
     [HttpPost("reset-password")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]

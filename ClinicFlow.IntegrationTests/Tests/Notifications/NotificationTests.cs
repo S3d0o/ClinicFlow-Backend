@@ -84,6 +84,32 @@ namespace ClinicFlow.IntegrationTests.Tests.Notifications
         }
 
         [Fact]
+        public async Task GetMyNotifications_Paged_ReturnsThePageAndTheTotalInTheHeader()
+        {
+            // REVIEW.md NL2: the inbox used to return every notification the user ever had
+            AuthenticateAs(_userId);
+
+            var response = await _client.GetAsync($"{BaseUrl}/my?pageNumber=2&pageSize=2");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Headers.GetValues("X-Total-Count").Should().Equal("3");
+            (await response.Content.ReadFromJsonAsync<List<NotificationResponse>>(_json))!
+                .Select(n => n.Id).Should().Equal(_oldReadId);
+        }
+
+        [Theory]
+        [InlineData("pageNumber=0")]
+        [InlineData("pageSize=101")]
+        public async Task GetMyNotifications_PagingOutOfRange_Returns400(string query)
+        {
+            AuthenticateAs(_userId);
+
+            var response = await _client.GetAsync($"{BaseUrl}/my?{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Fact]
         public async Task MarkAsRead_OwnNotification_Returns204AndMarksOnlyThatOne()
         {
             AuthenticateAs(_userId);

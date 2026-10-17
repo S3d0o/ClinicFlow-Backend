@@ -15,9 +15,9 @@ public class SpecialtyRepo(ClinicDbContext context) : ISpecialtyRepo
             .Where(s => includeInactive || s.IsActive)
             .ToListAsync(ct);
 
-    public async Task<Specialty?> GetByIdAsync(int id, CancellationToken ct)
+    public async Task<Specialty?> GetByIdAsync(int id, CancellationToken ct, bool includeInactive = false)
         => await context.Specialties
-            .FirstOrDefaultAsync(s => s.Id == id && s.IsActive, ct);
+            .FirstOrDefaultAsync(s => s.Id == id && (includeInactive || s.IsActive), ct);
 
     public async Task<Specialty?> GetByNameAsync(string name, CancellationToken ct)
         => await context.Specialties

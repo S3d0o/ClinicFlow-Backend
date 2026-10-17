@@ -94,6 +94,33 @@ namespace ClinicFlow.IntegrationTests.Tests.Admin
         }
 
         [Fact]
+        public async Task Update_DeactivateThenReactivate_HidesAndRestoresThePublicListing()
+        {
+            // REVIEW.md L6: an inactive specialty used to be unreachable (404) and could never be reactivated
+            var deactivate = await _client.PutAsJsonAsync($"{AdminUrl}/{_unusedId}", new SpecialtyRequest("Dermatology", null, null, IsActive: false));
+            deactivate.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await _client.GetAsync($"/api/Specialty/{_unusedId}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+            var reactivate = await _client.PutAsJsonAsync($"{AdminUrl}/{_unusedId}", new SpecialtyRequest("Dermatology", "Skin", null, IsActive: true));
+
+            reactivate.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await reactivate.Content.ReadFromJsonAsync<SpecialtyResponse>())!.IsActive.Should().BeTrue();
+            (await _client.GetAsync($"/api/Specialty/{_unusedId}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Fact]
+        public async Task Update_WithoutIsActive_KeepsAnInactiveSpecialtyInactive()
+        {
+            await _factory.SeedAsync(async db =>
+                await db.Specialties.Where(s => s.Id == _unusedId).ExecuteUpdateAsync(s => s.SetProperty(x => x.IsActive, false)));
+
+            var response = await _client.PutAsJsonAsync($"{AdminUrl}/{_unusedId}", new SpecialtyRequest("Dermatology", "Skin", null));
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await response.Content.ReadFromJsonAsync<SpecialtyResponse>())!.IsActive.Should().BeFalse();
+        }
+
+        [Fact]
         public async Task Delete_SpecialtyWithDoctors_Returns409AndKeepsIt()
         {
             var response = await _client.DeleteAsync($"{AdminUrl}/{_cardiologyId}");
