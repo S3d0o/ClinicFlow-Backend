@@ -11,7 +11,9 @@ namespace Persistence.Repositories
             return await context.DoctorProfiles
                 .Include(d => d.Specialty)
                 .Include(d => d.User)
-                .FirstOrDefaultAsync(d => d.Id == id && d.IsApprovedByAdmin, ct);
+                .AsNoTracking()
+                // Public profile: only approved doctors whose accounts are active (REVIEW.md M1)
+                .FirstOrDefaultAsync(d => d.Id == id && d.IsApprovedByAdmin && d.User.IsActive, ct);
 
         }
         public async Task<DoctorProfile?> GetByIdAsync(int id, CancellationToken ct)

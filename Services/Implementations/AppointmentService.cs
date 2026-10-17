@@ -29,6 +29,12 @@ namespace Services.Implementations
                 logger.LogWarning("Appointment slot not found for slot ID: {SlotId}", request.SlotId);
                 return AppointmentErrors.SlotNotFound(request.SlotId);
             }
+            // Slots of unapproved or suspended doctors aren't listed, so they can't be booked either (REVIEW.md M1)
+            if (!slot.DoctorProfile.IsApprovedByAdmin || !slot.DoctorProfile.User.IsActive)
+            {
+                logger.LogWarning("Slot {SlotId} belongs to doctor {DoctorId}, who is not approved or not active", request.SlotId, slot.DoctorProfileId);
+                return AppointmentErrors.SlotNotFound(request.SlotId);
+            }
             if (slot.Status == SlotStatus.Blocked || slot.Status == SlotStatus.Booked)
             {
                 logger.LogWarning("Appointment slot is not available for booking. Slot ID: {SlotId}, Status: {Status}", request.SlotId, slot.Status);

@@ -114,6 +114,51 @@ namespace ClinicFlow.IntegrationTests.Tests.Doctors
             slots.Should().OnlyContain(s => s.Status == SlotStatus.Available);
         }
 
+        // ---- visibility of unapproved and suspended doctors (REVIEW.md M1) ----
+
+        [Theory]
+        [InlineData(false, true)]  // not approved yet
+        [InlineData(true, false)]  // suspended
+        public async Task HiddenDoctor_ProfileReturns404SlotsAreEmptyAndBookingReturns404(bool approved, bool active)
+        {
+            int doctorId = 0, slotId = 0;
+            Guid patientUserId = default;
+            await _factory.SeedAsync(async db =>
+            {
+                (_, doctorId) = await SeedDataHelper.SeedDoctorAsync(db, "hidden", approved: approved, active: active);
+                (_, var slotIds) = await SeedDataHelper.SeedScheduleWithSlotsAsync(db, doctorId, DayOfWeek.Monday,
+                    (3, new TimeOnly(9, 0), SlotStatus.Available));
+                slotId = slotIds[0];
+                patientUserId = await SeedDataHelper.SeedPatientOnlyAsync(db, "seeker");
+            });
+            var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3)).ToString("yyyy-MM-dd");
+
+            var profile = await _client.GetAsync($"{BaseUrl}/{doctorId}");
+            var slots = await _client.GetFromJsonAsync<List<SlotResponse>>($"{BaseUrl}/{doctorId}/slots?date={date}", _json);
+            AuthenticateAs(patientUserId, "Patient");
+            var booking = await _client.PostAsJsonAsync("/api/appointments", new { slotId, reasonForVisit = "Checkup" });
+
+            profile.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await profile.Content.ReadAsStringAsync()).Should().Contain("Doctor.NotFound");
+            slots.Should().BeEmpty();
+            booking.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await booking.Content.ReadAsStringAsync()).Should().Contain("Appointment.SlotNotFound");
+            await _factory.SeedAsync(async db =>
+                (await db.AppointmentSlots.AsNoTracking().SingleAsync(s => s.Id == slotId)).Status.Should().Be(SlotStatus.Available));
+        }
+
+        [Fact]
+        public async Task ApprovedDoctor_ProfileReturns200WithSpecialty()
+        {
+            int doctorId = 0;
+            await _factory.SeedAsync(async db => (_, doctorId) = await SeedDataHelper.SeedDoctorAsync(db, "public", specialtyName: "Cardiology"));
+
+            var profile = await _client.GetFromJsonAsync<DoctorResponse>($"{BaseUrl}/{doctorId}", _json);
+
+            profile!.Id.Should().Be(doctorId);
+            profile.SpecialtyName.Should().Be("Cardiology");
+        }
+
         // ---- profile ----
 
         [Fact]

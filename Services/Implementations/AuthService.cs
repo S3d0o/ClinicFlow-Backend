@@ -79,7 +79,7 @@ namespace Services.Implementations
                     ConsultationFee = request.ConsultationFee,
                     ClinicAddress = request.ClinicAddress,
                     ClinicCity = request.ClinicCity,
-                    IsApprovedByAdmin = false, // doctors need to be approved by admin before they can log in
+                    IsApprovedByAdmin = false, // can log in and set up schedules, but stays hidden from patients until an admin approves (REVIEW.md M1)
                 };
 
                 await uow.Doctors.AddAsync(doctorProfile, ct);

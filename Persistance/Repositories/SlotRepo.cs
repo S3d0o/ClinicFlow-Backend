@@ -15,7 +15,10 @@ namespace Persistence.Repositories
             .AsNoTracking()
             .Where(s => s.DoctorProfileId == doctorProfileId
                  && s.Date == date
-                 && s.Status == SlotStatus.Available)
+                 && s.Status == SlotStatus.Available
+                 // Patients only see slots of approved doctors with active accounts (REVIEW.md M1)
+                 && s.DoctorProfile.IsApprovedByAdmin
+                 && s.DoctorProfile.User.IsActive)
             .OrderBy(s => s.StartTime)  
             .ToListAsync(ct);
 

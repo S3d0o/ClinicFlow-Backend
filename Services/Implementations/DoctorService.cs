@@ -25,7 +25,8 @@ namespace Services.Implementations
         }
         public async Task<Result<DoctorResponse>> GetByIdAsync(int id, CancellationToken ct)
         {
-            var doctorProfile = await uow.Doctors.GetByIdAsync(id, ct);
+            // Unapproved and suspended doctors are hidden from the public profile (REVIEW.md M1)
+            var doctorProfile = await uow.Doctors.GetDetailedByIdAsync(id, ct);
             if (doctorProfile == null)
             {
                 logger.LogWarning("Doctor with ID: {Id} not found", id);
