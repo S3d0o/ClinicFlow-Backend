@@ -14,13 +14,13 @@ namespace Shared.Errors
             Error.Forbidden("Doctor.Unauthorized", "You are not authorized to perform this action on this doctor");
 
         public static readonly Error ScheduleDayAlreadyExists =
-            Error.Failure("Doctor.ScheduleDayAlreadyExists", "A schedule for this day of the week already exists");
+            Error.Conflict("Doctor.ScheduleDayAlreadyExists", "A schedule for this day of the week already exists");
 
         public static Error ScheduleNotFound(int id) =>
             Error.NotFound("Doctor.ScheduleNotFound", $"Schedule with id {id} was not found");
 
         public static readonly Error CannotDeleteScheduleWithBookedSlots =
-            Error.Failure("Doctor.CannotDeleteScheduleWithBookedSlots", "Cannot delete a schedule that has booked appointments");
+            Error.Conflict("Doctor.CannotDeleteScheduleWithBookedSlots", "Cannot delete a schedule that has booked appointments");
 
         public static readonly Error InvalidScheduleTime =
             Error.Validation("Doctor.InvalidScheduleTime", "End time must be after start time");

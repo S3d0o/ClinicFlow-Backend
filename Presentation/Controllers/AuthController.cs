@@ -14,6 +14,7 @@ public class AuthController(IAuthService service) : ApiController
     [HttpPost("register/patient")]
     [ProducesResponseType(typeof(RegisterResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<RegisterResponse>> RegisterPatient(
         [FromBody] RegisterPatientRequest request, CancellationToken ct)
@@ -27,6 +28,8 @@ public class AuthController(IAuthService service) : ApiController
     [HttpPost("register/doctor")]
     [ProducesResponseType(typeof(RegisterResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<RegisterResponse>> RegisterDoctor(
         [FromBody] RegisterDoctorRequest request, CancellationToken ct)

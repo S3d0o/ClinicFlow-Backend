@@ -59,7 +59,7 @@ public class AdminController(
     [HttpPost("specialties")]
     [ProducesResponseType(typeof(SpecialtyResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<SpecialtyResponse>> CreateSpecialty(
         [FromBody] SpecialtyRequest dto, CancellationToken ct)
     {
@@ -73,6 +73,7 @@ public class AdminController(
     [ProducesResponseType(typeof(SpecialtyResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<SpecialtyResponse>> UpdateSpecialty(
         [FromRoute] int id, [FromBody] SpecialtyRequest dto, CancellationToken ct)
         => HandleResult(await specialtyService.UpdateAsync(id, dto, ct));
@@ -82,7 +83,7 @@ public class AdminController(
     [HttpDelete("specialties/{id}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> DeleteSpecialty(int id, CancellationToken ct)
         => HandleResult(await specialtyService.DeleteByIdAsync(id, ct));
 

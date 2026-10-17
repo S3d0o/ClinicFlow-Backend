@@ -25,6 +25,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
         public RegisterDoctorAsyncTests()
         {
             _userManager.FindByEmailAsync(_email).Returns((ApplicationUser?)null);
+            _uow.Specialties.GetByIdAsync(3, _ct).Returns(new Specialty { Id = 3, Name = "Cardiology", IsActive = true });
             _userManager.CreateAsync(Arg.Any<ApplicationUser>(), _password)
                 .Returns(IdentityResult.Success)
                 .AndDoes(ci =>
@@ -100,6 +101,18 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
         }
 
         [Fact]
+        public async Task RegisterDoctorAsync_WhenSpecialtyUnknown_ReturnsSpecialtyNotFoundWithoutCreatingAnything()
+        {
+            // REVIEW.md M3: this used to fail on the foreign key and return 500
+            var result = await _sut.RegisterDoctorAsync(_request with { SpecialtyId = 999 }, _ct);
+
+            Assert.True(result.IsFailure);
+            Assert.Contains(SpecialtyErrors.NotFound(999), result.Errors);
+            await _uow.DidNotReceive().BeginTransactionAsync(Arg.Any<CancellationToken>());
+            await _userManager.DidNotReceive().CreateAsync(Arg.Any<ApplicationUser>(), Arg.Any<string>());
+        }
+
+        [Fact]
         public async Task RegisterDoctorAsync_WhenIdentityRejectsUser_ReturnsRegistrationFailedAndRollsBack()
         {
             _userManager.CreateAsync(Arg.Any<ApplicationUser>(), _password).Returns(Failed("Email 'new.doctor@test.com' is already taken."));
@@ -114,21 +127,22 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
         }
 
         [Fact]
-        public async Task RegisterDoctorAsync_WhenRoleAssignmentFails_ReturnsRegistrationFailedAndRollsBack()
+        public async Task RegisterDoctorAsync_WhenRoleAssignmentFails_ReturnsRegistrationErrorAndRollsBack()
         {
             _userManager.AddToRoleAsync(Arg.Any<ApplicationUser>(), "Doctor").Returns(Failed("Role DOCTOR does not exist."));
 
             var result = await _sut.RegisterDoctorAsync(_request, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(AuthErrors.RegistrationFailed(["Role DOCTOR does not exist."]), result.Errors);
+            // A missing role is a server problem (500), not the caller's (REVIEW.md M3)
+            Assert.Contains(AuthErrors.RegistrationError, result.Errors);
             await _transaction.Received(1).RollbackAsync(Arg.Any<CancellationToken>());
             await _transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
             await _uow.Doctors.DidNotReceive().AddAsync(Arg.Any<DoctorProfile>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
-        public async Task RegisterDoctorAsync_WhenSavingProfileFails_ReturnsGenericRegistrationFailedAndRollsBack()
+        public async Task RegisterDoctorAsync_WhenSavingProfileFails_ReturnsRegistrationErrorAndRollsBack()
         {
             // e.g. an unknown SpecialtyId violates the foreign key
             _uow.SaveChangesAsync(Arg.Any<CancellationToken>()).ThrowsAsync(new DbUpdateException("FK_DoctorProfiles_Specialties"));
@@ -136,7 +150,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             var result = await _sut.RegisterDoctorAsync(_request, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(AuthErrors.RegistrationFailed(["An error occurred during registration. Please try again later."]), result.Errors);
+            Assert.Contains(AuthErrors.RegistrationError, result.Errors);
             await _transaction.Received(1).RollbackAsync(CancellationToken.None);
             await _transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
             await _emailService.DidNotReceive().SendEmailConfirmationAsync(

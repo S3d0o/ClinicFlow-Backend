@@ -8,9 +8,9 @@ namespace Shared.Errors
             Error.NotFound("Admin.DoctorNotFound", $"Doctor with id {id} was not found");
 
         public static readonly Error DoctorAlreadyApproved =
-            Error.Failure("Admin.DoctorAlreadyApproved", "This doctor is already approved");
+            Error.Conflict("Admin.DoctorAlreadyApproved", "This doctor is already approved");
 
         public static readonly Error DoctorAlreadySuspended =
-            Error.Failure("Admin.DoctorAlreadySuspended", "This doctor is already suspended");
+            Error.Conflict("Admin.DoctorAlreadySuspended", "This doctor is already suspended");
     }
 }

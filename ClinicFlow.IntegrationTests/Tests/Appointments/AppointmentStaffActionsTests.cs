@@ -176,15 +176,14 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         }
 
         [Fact]
-        public async Task Complete_CancelledAppointment_Returns500CannotCompleteCancelled()
+        public async Task Complete_CancelledAppointment_Returns409CannotCompleteCancelled()
         {
-            // 500 is the documented status today (REVIEW.md M3)
             await SetStatusAsync(AppointmentStatus.Cancelled);
             AuthenticateAs(_doctorUserId, "Doctor");
 
             var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/complete", null);
 
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Appointment.CannotCompleteCancelled");
         }
 
@@ -229,15 +228,14 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         }
 
         [Fact]
-        public async Task Notes_CancelledAppointment_Returns500DoctorNotesNotAllowed()
+        public async Task Notes_CancelledAppointment_Returns409DoctorNotesNotAllowed()
         {
-            // 500 is the documented status today (REVIEW.md M3)
             await SetStatusAsync(AppointmentStatus.Cancelled);
             AuthenticateAs(_doctorUserId, "Doctor");
 
             var response = await _client.PutAsJsonAsync($"{BaseUrl}/{_appointmentId}/notes", new { notes = "Too late" });
 
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Appointment.DoctorNotesNotAllowed");
         }
 

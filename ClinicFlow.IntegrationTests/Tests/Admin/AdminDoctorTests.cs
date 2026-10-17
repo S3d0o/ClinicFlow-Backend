@@ -82,16 +82,15 @@ namespace ClinicFlow.IntegrationTests.Tests.Admin
         }
 
         [Fact]
-        public async Task SuspendDoctor_AlreadySuspended_Returns500WithAlreadySuspendedCode()
+        public async Task SuspendDoctor_AlreadySuspended_Returns409WithAlreadySuspendedCode()
         {
-            // 500 is the documented status today (REVIEW.md M3, API_CONTRACT §39b)
             AuthenticateAs(_adminUserId, "Admin");
             (await _client.PostAsync($"{AdminUrl}/{_doctorProfileId}/suspend", null))
                 .StatusCode.Should().Be(HttpStatusCode.NoContent);
 
             var response = await _client.PostAsync($"{AdminUrl}/{_doctorProfileId}/suspend", null);
 
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Admin.DoctorAlreadySuspended");
         }
 
@@ -139,14 +138,13 @@ namespace ClinicFlow.IntegrationTests.Tests.Admin
         }
 
         [Fact]
-        public async Task ApproveDoctor_AlreadyApproved_Returns500WithAlreadyApprovedCode()
+        public async Task ApproveDoctor_AlreadyApproved_Returns409WithAlreadyApprovedCode()
         {
-            // 500 is the documented status today (REVIEW.md M3, API_CONTRACT §39)
             AuthenticateAs(_adminUserId, "Admin");
 
             var response = await _client.PostAsync($"{AdminUrl}/{_doctorProfileId}/approve", null);
 
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Admin.DoctorAlreadyApproved");
         }
 

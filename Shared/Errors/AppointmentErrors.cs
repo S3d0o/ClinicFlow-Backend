@@ -33,7 +33,7 @@ namespace Shared.Errors
                 "This appointment has already been completed");
 
         public static readonly Error CannotCancelCompleted =
-            Error.Failure("Appointment.CannotCancelCompleted",
+            Error.Conflict("Appointment.CannotCancelCompleted",
                 "Completed appointments cannot be cancelled");
 
         public static readonly Error CancellationWindowExpired =
@@ -45,7 +45,7 @@ namespace Shared.Errors
                 "You are not authorized to perform this action on this appointment");
 
         public static readonly Error CannotCompleteCancelled =
-            Error.Failure("Appointment.CannotCompleteCancelled",
+            Error.Conflict("Appointment.CannotCompleteCancelled",
                 "Cancelled appointments cannot be marked as completed");
 
         public static readonly Error CannotCompleteBeforeStart =
@@ -57,7 +57,7 @@ namespace Shared.Errors
                 "The appointment cannot transition to the requested status");
 
         public static readonly Error DoctorNotesNotAllowed =
-            Error.Failure("Appointment.DoctorNotesNotAllowed",
+            Error.Conflict("Appointment.DoctorNotesNotAllowed",
                 "Doctor notes cannot be added to a cancelled appointment");
 
         public static readonly Error ReviewAlreadyExists =

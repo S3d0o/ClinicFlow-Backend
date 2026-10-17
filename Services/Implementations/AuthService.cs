@@ -19,6 +19,13 @@ namespace Services.Implementations
                 return AuthErrors.EmailAlreadyExists;
             }
 
+            // An unknown or inactive specialty is the caller's mistake (404), not a server error from the foreign key (REVIEW.md M3)
+            if (await uow.Specialties.GetByIdAsync(request.SpecialtyId, ct) is null)
+            {
+                logger.LogWarning("Doctor registration for {Email} rejected: specialty {SpecialtyId} not found", request.Email, request.SpecialtyId);
+                return SpecialtyErrors.NotFound(request.SpecialtyId);
+            }
+
             // i did this cause i want to make sure that if any of the operations fail,
             // the entire registration process is rolled back to maintain data integrity.
             // if user is created and roles is assigned but doctor profile creation fails, we don't want to have a user without a profile.
@@ -59,8 +66,8 @@ namespace Services.Implementations
                         request.Email,
                         string.Join(", ", roleResult.Errors.Select(e => e.Description)));
 
-                    return AuthErrors.RegistrationFailed(
-                        roleResult.Errors.Select(e => e.Description));
+                    // A missing role is a server problem, not something the caller can fix
+                    return AuthErrors.RegistrationError;
                 }
 
                 var doctorProfile = new DoctorProfile
@@ -93,7 +100,7 @@ namespace Services.Implementations
             {
                 logger.LogError(ex, "An error occurred while registering doctor with email: {Email}", request.Email);
                 await transaction.RollbackAsync(CancellationToken.None); // must run even if the request was cancelled
-                return AuthErrors.RegistrationFailed(["An error occurred during registration. Please try again later."]);
+                return AuthErrors.RegistrationError;
             }
 
         }
@@ -140,7 +147,8 @@ namespace Services.Implementations
                     logger.LogWarning("Failed to add Patient role to user {Email}: {Errors}",
                         request.Email, string.Join(", ", roleResult.Errors.Select(e => e.Description)));
                     await transaction.RollbackAsync(ct);
-                    return AuthErrors.RegistrationFailed(roleResult.Errors.Select(e => e.Description));
+                    // A missing role is a server problem, not something the caller can fix
+                    return AuthErrors.RegistrationError;
                 }
 
 
@@ -171,7 +179,7 @@ namespace Services.Implementations
             {
                 logger.LogError(ex, "An error occurred while registering patient with email: {Email}", request.Email);
                 await transaction.RollbackAsync(CancellationToken.None); // must run even if the request was cancelled
-                return AuthErrors.RegistrationFailed(["An error occurred during registration. Please try again later."]);
+                return AuthErrors.RegistrationError;
             }
         }
 
