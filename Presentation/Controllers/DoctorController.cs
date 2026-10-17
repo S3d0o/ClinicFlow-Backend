@@ -115,8 +115,8 @@ public class DoctorController(IDoctorService service) : ApiController
     /// <summary>Update schedule day</summary>
     /// <remarks>
     /// Updates an existing schedule's hours, slot duration, or active status.
-    /// Future Available slots are deleted and regenerated with the new times.
-    /// Booked slots are untouched.
+    /// Future free slots are deleted and regenerated with the new times, in one transaction.
+    /// Booked slots, and slots a cancelled appointment points to, are kept; new slots skip times that overlap them.
     /// </remarks>
     [Authorize(Roles = "Doctor")]
     [HttpPut("schedule/{id}")]
@@ -132,11 +132,15 @@ public class DoctorController(IDoctorService service) : ApiController
     }
 
     /// <summary>Delete schedule day</summary>
-    /// <remarks>Removes the schedule. Stops future slot generation for that day.</remarks>
+    /// <remarks>
+    /// Removes the schedule and its free slots. Returns 409 while upcoming appointments are booked on it.
+    /// A schedule whose slots have past appointments is deactivated instead, to keep that history.
+    /// </remarks>
     [Authorize(Roles = "Doctor")]
     [HttpDelete("schedule/{id}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> DeleteSchedule(int id, CancellationToken ct)
     {
         var userId = User.GetUserId();

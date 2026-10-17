@@ -67,11 +67,25 @@ namespace Services.Implementations
             }
 
             var existingSchedule = await uow.Doctors.GetScheduleByUserIdAndDayAsync(userId, request.DayOfWeek, ct);
-            if (existingSchedule is not null)
+            if (existingSchedule is { IsActive: true })
             {
                 logger.LogWarning("Schedule for doctor {DoctorId} on {DayOfWeek} already exists",
                     doctor.Id, request.DayOfWeek);
                 return DoctorErrors.ScheduleDayAlreadyExists;
+            }
+
+            // An inactive schedule for this day (e.g. one kept for its appointment history when it was
+            // deleted) is reused, since there is one schedule per weekday (REVIEW.md H4)
+            if (existingSchedule is not null)
+            {
+                mapper.Map(request, existingSchedule);
+                existingSchedule.IsActive = true;
+                await uow.SaveChangesAsync(ct);
+                await GenerateSlotsAsync(existingSchedule, ct);
+
+                logger.LogInformation("Reactivated schedule {ScheduleId} for doctor {DoctorId} on {DayOfWeek}",
+                    existingSchedule.Id, doctor.Id, request.DayOfWeek);
+                return mapper.Map<ScheduleResponse>(existingSchedule);
             }
 
             var schedule = mapper.Map<DoctorSchedule>(request);
@@ -105,13 +119,15 @@ namespace Services.Implementations
                 return DoctorErrors.InvalidScheduleTime;
             }
 
+            // One transaction, so a failure can't leave the schedule changed but its slots half-replaced (REVIEW.md H4).
+            // Booked slots, and slots an appointment still points to, are kept; regeneration skips their times.
+            await using var transaction = await uow.BeginTransactionAsync(ct);
             await uow.SaveChangesAsync(ct);
-            logger.LogInformation("Updated schedule with ID: {ScheduleId} for doctor ID: {UserId}", scheduleId, userId);
-
             await uow.Slots.DeleteFutureAvailableByScheduleAsync(scheduleId, ct);
             await GenerateSlotsAsync(updatedSchedule, ct);
-            logger.LogInformation("Regenerated slots for updated schedule ID: {ScheduleId}", scheduleId);
+            await transaction.CommitAsync(ct);
 
+            logger.LogInformation("Updated schedule {ScheduleId} for doctor {UserId} and regenerated its free slots", scheduleId, userId);
             return mapper.Map<ScheduleResponse>(updatedSchedule);
         }
         public async Task<Result> DeleteScheduleAsync(int scheduleId, Guid userId, CancellationToken ct)
@@ -122,9 +138,31 @@ namespace Services.Implementations
                 logger.LogWarning("Schedule with ID: {ScheduleId} not found for doctor ID: {userId}", scheduleId, userId);
                 return DoctorErrors.ScheduleNotFound(scheduleId);
             }
-            uow.Doctors.DeleteSchedule(existing);
+
+            // Upcoming appointments would be orphaned: the doctor cancels them first (REVIEW.md H4)
+            if (await uow.Slots.HasUpcomingBookingsAsync(scheduleId, ct))
+            {
+                logger.LogWarning("Schedule {ScheduleId} has upcoming booked appointments and can't be deleted", scheduleId);
+                return DoctorErrors.CannotDeleteScheduleWithBookedSlots;
+            }
+
+            await using var transaction = await uow.BeginTransactionAsync(ct);
+            await uow.Slots.DeleteUnusedByScheduleAsync(scheduleId, ct);
+
+            // Slots that remain belong to past or cancelled appointments; the appointment→slot FK is NoAction,
+            // so the schedule is deactivated instead of deleted to keep that history
+            if (await uow.Slots.AnyForScheduleAsync(scheduleId, ct))
+            {
+                existing.IsActive = false;
+                logger.LogInformation("Deactivated schedule {ScheduleId} for doctor {UserId}: it has appointment history", scheduleId, userId);
+            }
+            else
+            {
+                uow.Doctors.DeleteSchedule(existing);
+                logger.LogInformation("Deleted schedule {ScheduleId} for doctor {UserId}", scheduleId, userId);
+            }
             await uow.SaveChangesAsync(ct);
-            logger.LogInformation("Deleted schedule with ID: {ScheduleId} for doctor ID: {userId}", scheduleId, userId);
+            await transaction.CommitAsync(ct);
             return Result.Ok();
 
         }
@@ -159,6 +197,10 @@ namespace Services.Implementations
             var slots = new List<AppointmentSlot>();
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
+            // Idempotent: a time that overlaps an existing slot (e.g. a booked one kept through an update) is skipped,
+            // instead of violating the unique index on (doctor, date, start) or double-booking the doctor (REVIEW.md H4)
+            var existing = await uow.Slots.GetSlotTimesAsync(schedule.DoctorProfileId, today, today.AddDays(13), ct);
+
             // Work in minutes since midnight: TimeOnly.AddMinutes wraps at midnight, which made
             // a late-evening schedule loop forever. Only whole slots that end by EndTime are created.
             var duration = schedule.SlotDurationMinutes;
@@ -175,10 +217,13 @@ namespace Services.Implementations
                 for (var minute = startMinutes; minute + duration <= endMinutes; minute += duration)
                 {
                     var slotStart = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(minute));
+                    var slotEnd = slotStart.AddMinutes(duration);
+                    if (existing.Any(e => e.Date == date && e.StartTime < slotEnd && slotStart < e.EndTime)) continue;
+
                     slots.Add(new AppointmentSlot
                     {
                         StartTime = slotStart,
-                        EndTime = slotStart.AddMinutes(duration),
+                        EndTime = slotEnd,
                         DoctorScheduleId = schedule.Id,
                         DoctorProfileId = schedule.DoctorProfileId,
                         Status = SlotStatus.Available,

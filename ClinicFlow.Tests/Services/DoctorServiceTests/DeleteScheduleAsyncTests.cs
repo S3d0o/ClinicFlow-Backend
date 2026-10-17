@@ -23,12 +23,43 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         }
 
         [Fact]
-        public async Task DeleteScheduleAsync_WhenCallerOwnsSchedule_DeletesAndSaves()
+        public async Task DeleteScheduleAsync_WhenCallerOwnsScheduleWithoutHistory_DeletesItAndItsSlots()
         {
             var result = await _sut.DeleteScheduleAsync(_scheduleId, _ownerUserId, _ct);
 
             Assert.True(result.IsSuccess);
+            await _uow.Slots.Received(1).DeleteUnusedByScheduleAsync(_scheduleId, _ct);
             _uow.Doctors.Received(1).DeleteSchedule(_schedule);
+            await _uow.Received(1).SaveChangesAsync(_ct);
+        }
+
+        [Fact]
+        public async Task DeleteScheduleAsync_WhenUpcomingAppointmentsAreBooked_ReturnsConflictAndChangesNothing()
+        {
+            // REVIEW.md H4: the doctor must cancel upcoming appointments before removing the schedule
+            _uow.Slots.HasUpcomingBookingsAsync(_scheduleId, _ct).Returns(true);
+
+            var result = await _sut.DeleteScheduleAsync(_scheduleId, _ownerUserId, _ct);
+
+            Assert.True(result.IsFailure);
+            Assert.Contains(DoctorErrors.CannotDeleteScheduleWithBookedSlots, result.Errors);
+            await _uow.Slots.DidNotReceive().DeleteUnusedByScheduleAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+            _uow.Doctors.DidNotReceive().DeleteSchedule(Arg.Any<DoctorSchedule>());
+            Assert.True(_schedule.IsActive);
+        }
+
+        [Fact]
+        public async Task DeleteScheduleAsync_WhenPastAppointmentsUseItsSlots_DeactivatesInsteadOfDeleting()
+        {
+            // REVIEW.md H4: slots with appointment history can't be deleted (NoAction FK), so the history is kept
+            _uow.Slots.AnyForScheduleAsync(_scheduleId, _ct).Returns(true);
+
+            var result = await _sut.DeleteScheduleAsync(_scheduleId, _ownerUserId, _ct);
+
+            Assert.True(result.IsSuccess);
+            Assert.False(_schedule.IsActive);
+            await _uow.Slots.Received(1).DeleteUnusedByScheduleAsync(_scheduleId, _ct);
+            _uow.Doctors.DidNotReceive().DeleteSchedule(Arg.Any<DoctorSchedule>());
             await _uow.Received(1).SaveChangesAsync(_ct);
         }
 

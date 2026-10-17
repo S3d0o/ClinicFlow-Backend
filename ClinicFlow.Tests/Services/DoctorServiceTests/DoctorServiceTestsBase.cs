@@ -37,6 +37,10 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
                     Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask);
 
+            // No existing slots unless a test says otherwise
+            _uow.Slots.GetSlotTimesAsync(Arg.Any<int>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+                .Returns(new List<(DateOnly, TimeOnly, TimeOnly)>());
+
             _sut = new DoctorService(_uow, _mapper, _logger);
         }
     }

@@ -37,11 +37,40 @@ namespace Persistence.Repositories
         {
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
+            // A cancelled appointment still points to its (now available) slot; the appointment→slot FK
+            // is NoAction, so those slots must stay (REVIEW.md H4)
             await context.AppointmentSlots
                 .Where(s => s.DoctorScheduleId == scheduleId
                          && s.Status == SlotStatus.Available
-                         && s.Date >= today)
+                         && s.Date >= today
+                         && !context.Appointments.Any(a => a.SlotId == s.Id))
                 .ExecuteDeleteAsync(ct);
+        }
+
+        public async Task DeleteUnusedByScheduleAsync(int scheduleId, CancellationToken ct)
+            => await context.AppointmentSlots
+                .Where(s => s.DoctorScheduleId == scheduleId && !context.Appointments.Any(a => a.SlotId == s.Id))
+                .ExecuteDeleteAsync(ct);
+
+        public async Task<bool> HasUpcomingBookingsAsync(int scheduleId, CancellationToken ct)
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            return await context.AppointmentSlots
+                .AnyAsync(s => s.DoctorScheduleId == scheduleId && s.Status == SlotStatus.Booked && s.Date >= today, ct);
+        }
+
+        public async Task<bool> AnyForScheduleAsync(int scheduleId, CancellationToken ct)
+            => await context.AppointmentSlots.AnyAsync(s => s.DoctorScheduleId == scheduleId, ct);
+
+        public async Task<List<(DateOnly Date, TimeOnly StartTime, TimeOnly EndTime)>> GetSlotTimesAsync(
+            int doctorProfileId, DateOnly from, DateOnly to, CancellationToken ct)
+        {
+            var slots = await context.AppointmentSlots
+                .AsNoTracking()
+                .Where(s => s.DoctorProfileId == doctorProfileId && s.Date >= from && s.Date <= to)
+                .Select(s => new { s.Date, s.StartTime, s.EndTime })
+                .ToListAsync(ct);
+            return slots.Select(s => (s.Date, s.StartTime, s.EndTime)).ToList();
         }
         public void Update(AppointmentSlot slot)
             => context.AppointmentSlots.Update(slot);
