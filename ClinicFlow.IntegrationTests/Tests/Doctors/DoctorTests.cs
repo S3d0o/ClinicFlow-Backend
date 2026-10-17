@@ -143,18 +143,22 @@ namespace ClinicFlow.IntegrationTests.Tests.Doctors
         }
 
         [Fact]
-        public async Task UpdateProfile_WithoutFee_Returns400AndChangesNothing()
+        public async Task UpdateProfile_WithoutFee_Returns204AndKeepsTheFee()
         {
-            // M15: the fee is required today, which is what keeps it from being overwritten with 0
+            // REVIEW.md M15: the fee is optional, and omitting it keeps the current value
             Guid userId = default;
             await _factory.SeedAsync(async db => (userId, _) = await SeedDataHelper.SeedDoctorAsync(db, "nofee", fee: 300));
             AuthenticateAs(userId, "Doctor");
 
             var response = await _client.PutAsJsonAsync($"{BaseUrl}/profile", new { bio = "Only the bio" });
 
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
             await _factory.SeedAsync(async db =>
-                (await db.DoctorProfiles.AsNoTracking().SingleAsync(d => d.UserId == userId)).ConsultationFee.Should().Be(300m));
+            {
+                var profile = await db.DoctorProfiles.AsNoTracking().SingleAsync(d => d.UserId == userId);
+                profile.ConsultationFee.Should().Be(300m);
+                profile.Bio.Should().Be("Only the bio");
+            });
         }
 
         // ---- delete schedule ----
