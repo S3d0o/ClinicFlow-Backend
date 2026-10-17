@@ -95,9 +95,10 @@ namespace Persistence.Repositories
         public void Update(Appointment appointment)
             => context.Appointments.Update(appointment);
 
-        public async Task<IReadOnlyList<Appointment>> GetAppointmentsNeedingReminderAsync(CancellationToken ct)
+        public async Task<IReadOnlyList<Appointment>> GetAppointmentsNeedingReminderAsync(DateTime clinicNow, CancellationToken ct)
         {
-            var now = DateTime.UtcNow;
+            // Slot times are clinic-local, so the 24-hour window is measured on the clinic's clock (REVIEW.md M2)
+            var now = clinicNow;
             var upperBound = now.AddHours(24);
             var today = DateOnly.FromDateTime(now);
             var lastDay = DateOnly.FromDateTime(upperBound);

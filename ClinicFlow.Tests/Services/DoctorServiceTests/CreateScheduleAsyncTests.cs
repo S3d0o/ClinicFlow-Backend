@@ -104,7 +104,7 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         public async Task CreateScheduleAsync_WhenDoctorAlreadyHasOverlappingSlots_SkipsThoseTimes()
         {
             // REVIEW.md H4: an existing (e.g. booked) 09:15–09:45 slot blocks both 09:00–09:30 and 09:30–10:00 that day
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var today = ClinicToday;
             var firstMonday = Enumerable.Range(0, 7).Select(today.AddDays).First(d => d.DayOfWeek == DayOfWeek.Monday);
             _uow.Slots.GetSlotTimesAsync(7, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), _ct)
                 .Returns(new List<(DateOnly, TimeOnly, TimeOnly)> { (firstMonday, new TimeOnly(9, 15), new TimeOnly(9, 45)) });

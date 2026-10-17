@@ -8,7 +8,8 @@ namespace Services.Implementations
 {
     public class DoctorService(IUnitOfWork uow
         , IMapper mapper
-        , ILogger<DoctorService> logger) : IDoctorService
+        , ILogger<DoctorService> logger
+        , IDateTimeProvider dateTimeProvider) : IDoctorService
     {
         public async Task<Result<IReadOnlyList<DoctorSummaryResponse>>> GetAllAsync(DoctorFilterRequest filter, CancellationToken ct)
         {
@@ -124,7 +125,7 @@ namespace Services.Implementations
             // Booked slots, and slots an appointment still points to, are kept; regeneration skips their times.
             await using var transaction = await uow.BeginTransactionAsync(ct);
             await uow.SaveChangesAsync(ct);
-            await uow.Slots.DeleteFutureAvailableByScheduleAsync(scheduleId, ct);
+            await uow.Slots.DeleteFutureAvailableByScheduleAsync(scheduleId, ClinicToday(), ct);
             await GenerateSlotsAsync(updatedSchedule, ct);
             await transaction.CommitAsync(ct);
 
@@ -141,7 +142,7 @@ namespace Services.Implementations
             }
 
             // Upcoming appointments would be orphaned: the doctor cancels them first (REVIEW.md H4)
-            if (await uow.Slots.HasUpcomingBookingsAsync(scheduleId, ct))
+            if (await uow.Slots.HasUpcomingBookingsAsync(scheduleId, ClinicToday(), ct))
             {
                 logger.LogWarning("Schedule {ScheduleId} has upcoming booked appointments and can't be deleted", scheduleId);
                 return DoctorErrors.CannotDeleteScheduleWithBookedSlots;
@@ -187,20 +188,48 @@ namespace Services.Implementations
             return mapper.Map<List<SlotResponse>>(existing);
         }
 
+        public async Task<int> GenerateUpcomingSlotsAsync(CancellationToken ct)
+        {
+            var schedules = await uow.Doctors.GetActiveSchedulesAsync(ct);
+            var created = 0;
+
+            foreach (var schedule in schedules)
+            {
+                try
+                {
+                    created += await GenerateSlotsAsync(schedule, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Most likely a doctor editing this schedule at the same moment (unique index on doctor, date, start).
+                    // The failed slots stay in the change tracker and would fail every later save, so stop here;
+                    // generation is idempotent and the next run fills the gap
+                    logger.LogError(ex, "Slot generation failed for schedule {ScheduleId}; the remaining schedules wait for the next run", schedule.Id);
+                    break;
+                }
+            }
+
+            logger.LogInformation("Generated {Count} slots for {ScheduleCount} active schedules", created, schedules.Count);
+            return created;
+        }
+
         #region Helpers
 
-        private async Task GenerateSlotsAsync(DoctorSchedule schedule, CancellationToken ct)
+        // Slots are published this many days ahead, counting today; SlotGenerationJob rolls the window forward daily (REVIEW.md H8)
+        private const int SlotWindowDays = 14;
+
+        private async Task<int> GenerateSlotsAsync(DoctorSchedule schedule, CancellationToken ct)
         {
             // Inactive schedules publish no bookable slots
             if (!schedule.IsActive || schedule.SlotDurationMinutes <= 0)
-                return;
+                return 0;
 
             var slots = new List<AppointmentSlot>();
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var today = ClinicToday();
 
             // Idempotent: a time that overlaps an existing slot (e.g. a booked one kept through an update) is skipped,
             // instead of violating the unique index on (doctor, date, start) or double-booking the doctor (REVIEW.md H4)
-            var existing = await uow.Slots.GetSlotTimesAsync(schedule.DoctorProfileId, today, today.AddDays(13), ct);
+            var existing = await uow.Slots.GetSlotTimesAsync(schedule.DoctorProfileId, today, today.AddDays(SlotWindowDays - 1), ct);
 
             // Work in minutes since midnight: TimeOnly.AddMinutes wraps at midnight, which made
             // a late-evening schedule loop forever. Only whole slots that end by EndTime are created.
@@ -208,7 +237,7 @@ namespace Services.Implementations
             var startMinutes = (int)schedule.StartTime.ToTimeSpan().TotalMinutes;
             var endMinutes = (int)schedule.EndTime.ToTimeSpan().TotalMinutes;
 
-            for (int dayOffset = 0; dayOffset < 14; dayOffset++)
+            for (int dayOffset = 0; dayOffset < SlotWindowDays; dayOffset++)
             {
                 var date = today.AddDays(dayOffset);
 
@@ -234,7 +263,11 @@ namespace Services.Implementations
             }
             await uow.Slots.AddRangeAsync(slots, ct);
             await uow.SaveChangesAsync(ct);
+            return slots.Count;
         }
+
+        // Slot dates are clinic-local, so "today" is the clinic's date, not the UTC one (REVIEW.md M2)
+        private DateOnly ClinicToday() => DateOnly.FromDateTime(dateTimeProvider.ClinicNow);
 
         #endregion
 

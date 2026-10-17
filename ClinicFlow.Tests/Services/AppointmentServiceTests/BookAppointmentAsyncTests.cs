@@ -28,7 +28,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 .GetPatientByUserIdAsync(_patientUserId, _ct)
                 .Returns(new PatientProfile());
 
-            _dateTimeProvider.UtcNow.Returns(_now);
+            _dateTimeProvider.ClinicNow.Returns(_now);
 
             _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
             {
@@ -135,7 +135,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 .GetPatientByUserIdAsync(_patientUserId, _ct)
                 .Returns(new PatientProfile());
 
-            _dateTimeProvider.UtcNow.Returns(_now);
+            _dateTimeProvider.ClinicNow.Returns(_now);
 
             var slotDateTime = _now.AddDays(daysOffset).AddHours(hoursOffset);
             _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
@@ -157,6 +157,27 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         }
 
         [Fact]
+        public async Task BookAppointmentAsync_WhenSlotStartedOnClinicClockButNotInUtc_ReturnsSlotInPastError()
+        {
+            // REVIEW.md M2: 10:00 clinic time (UTC+3) is 07:00 UTC. A 09:00 slot has started at the clinic,
+            // although 09:00 is still ahead of the UTC clock
+            _uow.Patients.GetPatientByUserIdAsync(_patientUserId, _ct).Returns(new PatientProfile());
+            _dateTimeProvider.ClinicNow.Returns(_now);
+            _dateTimeProvider.UtcNow.Returns(_now.AddHours(-3));
+            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
+            {
+                DoctorProfile = ApprovedDoctor(),
+                Status = SlotStatus.Available,
+                Date = DateOnly.FromDateTime(_now),
+                StartTime = new TimeOnly(9, 0),
+            });
+
+            var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
+
+            Assert.Contains(AppointmentErrors.SlotInPast, result.Errors);
+        }
+
+        [Fact]
         public async Task BookAppointmentAsync_WhenConcurrencyConflict_ReturnsSlotAlreadyBookedError()
         {
             // Arrange
@@ -164,7 +185,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 .GetPatientByUserIdAsync(_patientUserId, _ct)
                 .Returns(new PatientProfile());
 
-            _dateTimeProvider.UtcNow.Returns(_now);
+            _dateTimeProvider.ClinicNow.Returns(_now);
 
             var dateTime = _now.AddDays(1).AddHours(1);
             _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot

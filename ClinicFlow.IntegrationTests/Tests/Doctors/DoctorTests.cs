@@ -106,7 +106,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Doctors
                     (3, new TimeOnly(12, 0), SlotStatus.Blocked),
                     (4, new TimeOnly(9, 0), SlotStatus.Available)); // another day
             });
-            var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3)).ToString("yyyy-MM-dd");
+            var date = _factory.ClinicToday.AddDays(3).ToString("yyyy-MM-dd");
 
             var slots = await _client.GetFromJsonAsync<List<SlotResponse>>($"{BaseUrl}/{doctorId}/slots?date={date}", _json);
 
@@ -131,7 +131,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Doctors
                 slotId = slotIds[0];
                 patientUserId = await SeedDataHelper.SeedPatientOnlyAsync(db, "seeker");
             });
-            var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3)).ToString("yyyy-MM-dd");
+            var date = _factory.ClinicToday.AddDays(3).ToString("yyyy-MM-dd");
 
             var profile = await _client.GetAsync($"{BaseUrl}/{doctorId}");
             var slots = await _client.GetFromJsonAsync<List<SlotResponse>>($"{BaseUrl}/{doctorId}/slots?date={date}", _json);
@@ -284,7 +284,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Doctors
             // REVIEW.md H4: the past appointment keeps its slot, so the schedule is deactivated rather than deleted
             Guid userId = default;
             int scheduleId = 0, appointmentId = 0, pastSlotId = 0, freeSlotId = 0;
-            var day = DateTime.UtcNow.AddDays(3).DayOfWeek;
+            var day = _factory.ClinicToday.AddDays(3).DayOfWeek;
             await _factory.SeedAsync(async db =>
             {
                 (userId, var doctorId) = await SeedDataHelper.SeedDoctorAsync(db, "past");
@@ -326,8 +326,8 @@ namespace ClinicFlow.IntegrationTests.Tests.Doctors
             // the 09:30 slot a cancelled appointment still points to (NoAction FK), both as a 500 after a partial save
             Guid userId = default;
             int scheduleId = 0, bookedSlotId = 0, cancelledSlotId = 0, confirmedId = 0;
-            var day = DateTime.UtcNow.AddDays(3).DayOfWeek;
-            var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3));
+            var day = _factory.ClinicToday.AddDays(3).DayOfWeek;
+            var date = _factory.ClinicToday.AddDays(3);
             await _factory.SeedAsync(async db =>
             {
                 (userId, var doctorId) = await SeedDataHelper.SeedDoctorAsync(db, "update");

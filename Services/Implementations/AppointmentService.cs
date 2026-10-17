@@ -40,8 +40,8 @@ namespace Services.Implementations
                 logger.LogWarning("Appointment slot is not available for booking. Slot ID: {SlotId}, Status: {Status}", request.SlotId, slot.Status);
                 return AppointmentErrors.SlotNotAvailable;
             }
-            if (slot.Date < DateOnly.FromDateTime(dateTimeProvider.UtcNow)
-                || (slot.Date == DateOnly.FromDateTime(dateTimeProvider.UtcNow) && slot.StartTime < TimeOnly.FromDateTime(dateTimeProvider.UtcNow)))
+            // Slot times are clinic-local, so compare them with the clinic's wall clock (REVIEW.md M2)
+            if (slot.Date.ToDateTime(slot.StartTime) < dateTimeProvider.ClinicNow)
             {
                 logger.LogWarning("Appointment slot is in the past and cannot be booked. Slot ID: {SlotId}, Date: {Date}, StartTime: {StartTime}", request.SlotId, slot.Date, slot.StartTime);
                 return AppointmentErrors.SlotInPast;
@@ -150,7 +150,7 @@ namespace Services.Implementations
 
             var slotDateTime = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
 
-            if (dateTimeProvider.UtcNow > slotDateTime.AddHours(-2))
+            if (dateTimeProvider.ClinicNow > slotDateTime.AddHours(-2))
             {
                 logger.LogWarning("Appointment ID: {AppointmentId} cannot be cancelled within 2 hours of the scheduled time.", appointmentId);
                 return AppointmentErrors.CancellationWindowExpired;
@@ -322,7 +322,7 @@ namespace Services.Implementations
             }
             // A visit can only be completed once it has started (REVIEW.md M14); completing early would unlock a review
             var slotStart = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
-            if (dateTimeProvider.UtcNow < slotStart)
+            if (dateTimeProvider.ClinicNow < slotStart)
             {
                 logger.LogWarning("Appointment ID: {AppointmentId} cannot be completed before it starts at {SlotStart}.", appointmentId, slotStart);
                 return AppointmentErrors.CannotCompleteBeforeStart;

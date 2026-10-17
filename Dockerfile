@@ -31,7 +31,7 @@ WORKDIR /app
 
 # curl for the HEALTHCHECK below; the aspnet image doesn't ship it
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/publish .

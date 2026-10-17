@@ -32,6 +32,7 @@ try
     builder.Services.AddCoreServices(builder.Configuration);
 
     builder.Services.AddHostedService<AppointmentReminderJob>();
+    builder.Services.AddHostedService<SlotGenerationJob>();
 
     // Liveness probe for the Docker HEALTHCHECK (GET /health)
     builder.Services.AddHealthChecks();

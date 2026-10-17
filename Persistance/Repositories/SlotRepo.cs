@@ -36,10 +36,8 @@ namespace Persistence.Repositories
         public async Task AddRangeAsync(IEnumerable<AppointmentSlot> slots, CancellationToken ct)
             => await context.AppointmentSlots.AddRangeAsync(slots, ct);
 
-        public async Task DeleteFutureAvailableByScheduleAsync(int scheduleId, CancellationToken ct)
+        public async Task DeleteFutureAvailableByScheduleAsync(int scheduleId, DateOnly today, CancellationToken ct)
         {
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
-
             // A cancelled appointment still points to its (now available) slot; the appointment→slot FK
             // is NoAction, so those slots must stay (REVIEW.md H4)
             await context.AppointmentSlots
@@ -55,12 +53,9 @@ namespace Persistence.Repositories
                 .Where(s => s.DoctorScheduleId == scheduleId && !context.Appointments.Any(a => a.SlotId == s.Id))
                 .ExecuteDeleteAsync(ct);
 
-        public async Task<bool> HasUpcomingBookingsAsync(int scheduleId, CancellationToken ct)
-        {
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            return await context.AppointmentSlots
+        public async Task<bool> HasUpcomingBookingsAsync(int scheduleId, DateOnly today, CancellationToken ct)
+            => await context.AppointmentSlots
                 .AnyAsync(s => s.DoctorScheduleId == scheduleId && s.Status == SlotStatus.Booked && s.Date >= today, ct);
-        }
 
         public async Task<bool> AnyForScheduleAsync(int scheduleId, CancellationToken ct)
             => await context.AppointmentSlots.AnyAsync(s => s.DoctorScheduleId == scheduleId, ct);

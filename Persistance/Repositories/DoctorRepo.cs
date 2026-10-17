@@ -78,6 +78,13 @@ namespace Persistence.Repositories
                   .Include(s => s.DoctorProfile)
                   .FirstOrDefaultAsync(s => s.Id == scheduleId, ct);
 
+        public async Task<IReadOnlyList<DoctorSchedule>> GetActiveSchedulesAsync(CancellationToken ct)
+            => await context.DoctorSchedules
+                  .AsNoTracking()
+                  .Where(s => s.IsActive)
+                  .OrderBy(s => s.Id)
+                  .ToListAsync(ct);
+
         public void AddSchedule(DoctorSchedule schedule)
             => context.DoctorSchedules.Add(schedule);
 

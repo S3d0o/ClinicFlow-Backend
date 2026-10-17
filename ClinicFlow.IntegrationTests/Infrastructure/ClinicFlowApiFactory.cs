@@ -50,12 +50,13 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
                 // 3. (Optional) Disable hosted services that shouldn't run during tests
                 // e.g. background email reminders
 
-                var hostedServiceDescriptors = services.SingleOrDefault(
-                    d => d.ServiceType == typeof(IHostedService) && 
-                    d.ImplementationType == typeof(AppointmentReminderJob));
+                var hostedServiceDescriptors = services.Where(
+                    d => d.ServiceType == typeof(IHostedService) &&
+                    (d.ImplementationType == typeof(AppointmentReminderJob) || d.ImplementationType == typeof(SlotGenerationJob)))
+                    .ToList();
 
-                if (hostedServiceDescriptors != null)
-                    services.Remove(hostedServiceDescriptors);
+                foreach (var d in hostedServiceDescriptors)
+                    services.Remove(d);
 
                 // 4. Never send real email: appsettings.Development.json may hold real SMTP credentials
                 foreach (var d in services.Where(d => d.ServiceType == typeof(IEmailService)).ToList())
@@ -89,6 +90,11 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
         // Emails "sent" by the API under test
         public FakeEmailService Emails => Services.GetRequiredService<FakeEmailService>();
+
+        // The clinic's wall clock (Clinic:TimeZoneId). Slot dates and times are clinic-local, so seed
+        // time-sensitive slots relative to this, not to DateTime.UtcNow (REVIEW.md M2)
+        public DateTime ClinicNow => Services.GetRequiredService<IDateTimeProvider>().ClinicNow;
+        public DateOnly ClinicToday => DateOnly.FromDateTime(ClinicNow);
 
         public async Task ResetDataBaseAsync()
         {

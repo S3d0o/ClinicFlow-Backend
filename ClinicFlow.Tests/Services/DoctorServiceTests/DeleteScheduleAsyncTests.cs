@@ -37,7 +37,7 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         public async Task DeleteScheduleAsync_WhenUpcomingAppointmentsAreBooked_ReturnsConflictAndChangesNothing()
         {
             // REVIEW.md H4: the doctor must cancel upcoming appointments before removing the schedule
-            _uow.Slots.HasUpcomingBookingsAsync(_scheduleId, _ct).Returns(true);
+            _uow.Slots.HasUpcomingBookingsAsync(_scheduleId, ClinicToday, _ct).Returns(true);
 
             var result = await _sut.DeleteScheduleAsync(_scheduleId, _ownerUserId, _ct);
 

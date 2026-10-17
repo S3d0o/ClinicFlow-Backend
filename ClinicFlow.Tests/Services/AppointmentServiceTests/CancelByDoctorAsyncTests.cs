@@ -23,7 +23,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 
         public CancelByDoctorAsyncTests()
         {
-            _dateTimeProvider.UtcNow.Returns(_now);
+            _dateTimeProvider.ClinicNow.Returns(_now);
             _uow.Doctors.GetByUserIdAsync(_doctorUserId, _ct)
                 .Returns(new DoctorProfile { Id = _doctorId, UserId = _doctorUserId });
 

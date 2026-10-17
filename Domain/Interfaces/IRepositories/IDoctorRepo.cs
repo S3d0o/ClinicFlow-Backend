@@ -15,6 +15,7 @@ namespace Domain.Interfaces.IRepositories
         // Schedule
         Task<IReadOnlyList<DoctorSchedule>> GetSchedulesAsync(int doctorProfileId, CancellationToken ct);
         Task<DoctorSchedule?> GetScheduleByIdAsync(int scheduleId, CancellationToken ct);
+        Task<IReadOnlyList<DoctorSchedule>> GetActiveSchedulesAsync(CancellationToken ct);
         void AddSchedule(DoctorSchedule schedule);
         void UpdateSchedule(DoctorSchedule schedule);
         void DeleteSchedule(DoctorSchedule schedule);

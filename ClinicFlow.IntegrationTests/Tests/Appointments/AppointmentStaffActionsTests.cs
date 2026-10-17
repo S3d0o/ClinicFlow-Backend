@@ -244,7 +244,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         // The visit started an hour ago, so it can be completed
         private Task MoveSlotToThePastAsync() => _factory.SeedAsync(async db =>
         {
-            var started = DateTime.UtcNow.AddHours(-1);
+            var started = _factory.ClinicNow.AddHours(-1);
             await db.AppointmentSlots.Where(s => s.Id == _slotId).ExecuteUpdateAsync(s => s
                 .SetProperty(x => x.Date, DateOnly.FromDateTime(started))
                 .SetProperty(x => x.StartTime, TimeOnly.FromDateTime(started))
