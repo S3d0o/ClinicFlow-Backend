@@ -52,6 +52,14 @@ namespace Shared.Errors
             Error.Validation("Appointment.CannotCompleteBeforeStart",
                 "An appointment can only be marked as completed once it has started");
 
+        public static readonly Error AlreadyNoShow =
+            Error.Conflict("Appointment.AlreadyNoShow",
+                "This appointment has been marked as a no-show");
+
+        public static readonly Error NoShowTooEarly =
+            Error.Validation("Appointment.NoShowTooEarly",
+                "An appointment can only be marked as a no-show 15 minutes after it starts");
+
         public static readonly Error InvalidStatusTransition =
             Error.Validation("Appointment.InvalidStatusTransition",
                 "The appointment cannot transition to the requested status");

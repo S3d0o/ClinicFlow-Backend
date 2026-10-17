@@ -125,6 +125,21 @@ public class AppointmentController(IAppointmentService service) : ApiController
         return HandleResult(result);
     }
 
+    /// <summary>Mark an appointment as a no-show</summary>
+    /// <remarks>
+    /// The owning doctor or an admin marks a Confirmed appointment as missed, at least 15 minutes
+    /// after it was due to start. Cancelled, completed and already-marked appointments return 409.
+    /// </remarks>
+    [Authorize(Roles = "Doctor,Admin")]
+    [HttpPost("{id}/no-show")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> MarkNoShow(int id, CancellationToken ct)
+        => HandleResult(await service.MarkNoShowAsync(User.GetUserId(), User.GetRole(), id, ct));
+
     /// <summary>Add doctor notes</summary>
     /// <remarks>
     /// Doctor adds clinical notes to an appointment.

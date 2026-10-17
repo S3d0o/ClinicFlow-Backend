@@ -239,6 +239,79 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
             (await response.Content.ReadAsStringAsync()).Should().Contain("Appointment.DoctorNotesNotAllowed");
         }
 
+        // ---- no-show (REVIEW.md M14) ----
+
+        [Theory]
+        [InlineData("Doctor")]
+        [InlineData("Admin")]
+        public async Task NoShow_AfterGracePeriod_Returns204AndNotifiesThePatient(string role)
+        {
+            await MoveSlotToThePastAsync();
+            AuthenticateAs(role == "Doctor" ? _doctorUserId : _adminUserId, role);
+
+            var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/no-show", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            await AssertStatusAsync(AppointmentStatus.NoShow);
+            await _factory.SeedAsync(async db =>
+                (await db.Notifications.AsNoTracking()
+                    .Where(n => n.RelatedEntityId == _appointmentId)
+                    .Select(n => n.UserId).ToListAsync())
+                .Should().Equal(_patientUserId));
+        }
+
+        [Fact]
+        public async Task NoShow_BeforeTheAppointmentStarts_Returns400NoShowTooEarly()
+        {
+            AuthenticateAs(_doctorUserId, "Doctor");
+
+            var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/no-show", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Appointment.NoShowTooEarly");
+            await AssertStatusAsync(AppointmentStatus.Confirmed);
+        }
+
+        [Fact]
+        public async Task NoShow_AsAnotherDoctor_Returns403()
+        {
+            await MoveSlotToThePastAsync();
+            AuthenticateAs(_otherDoctorUserId, "Doctor");
+
+            var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/no-show", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            await AssertStatusAsync(AppointmentStatus.Confirmed);
+        }
+
+        [Fact]
+        public async Task NoShow_AsPatient_Returns403()
+        {
+            await MoveSlotToThePastAsync();
+            AuthenticateAs(_patientUserId, "Patient");
+
+            var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/no-show", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            await AssertStatusAsync(AppointmentStatus.Confirmed);
+        }
+
+        [Fact]
+        public async Task CancelAndComplete_NoShowAppointment_Return409AlreadyNoShow()
+        {
+            await MoveSlotToThePastAsync();
+            await SetStatusAsync(AppointmentStatus.NoShow);
+            AuthenticateAs(_doctorUserId, "Doctor");
+
+            var cancel = await _client.PostAsJsonAsync($"{BaseUrl}/{_appointmentId}/cancel", new { cancellationReason = "x" });
+            var complete = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/complete", null);
+
+            cancel.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await cancel.Content.ReadAsStringAsync()).Should().Contain("Appointment.AlreadyNoShow");
+            complete.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            await AssertStatusAsync(AppointmentStatus.NoShow);
+        }
+
         // ----------------------------------------------------------------
 
         // The visit started an hour ago, so it can be completed

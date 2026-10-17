@@ -147,6 +147,11 @@ namespace Services.Implementations
                 logger.LogWarning("Appointment ID: {AppointmentId} is already completed and cannot be cancelled.", appointmentId);
                 return AppointmentErrors.AlreadyCompleted;
             }
+            if (appointment.Status == AppointmentStatus.NoShow)
+            {
+                logger.LogWarning("Appointment ID: {AppointmentId} was marked as a no-show and cannot be cancelled.", appointmentId);
+                return AppointmentErrors.AlreadyNoShow;
+            }
 
             var slotDateTime = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
 
@@ -219,6 +224,11 @@ namespace Services.Implementations
                 logger.LogWarning("Appointment ID: {AppointmentId} is already completed and cannot be cancelled.", appointmentId);
                 return AppointmentErrors.AlreadyCompleted;
             }
+            if (appointment.Status == AppointmentStatus.NoShow)
+            {
+                logger.LogWarning("Appointment ID: {AppointmentId} was marked as a no-show and cannot be cancelled.", appointmentId);
+                return AppointmentErrors.AlreadyNoShow;
+            }
 
             appointment.Status = AppointmentStatus.Cancelled;
             appointment.CancelledAt = DateTime.UtcNow;
@@ -263,6 +273,11 @@ namespace Services.Implementations
             {
                 logger.LogWarning("Appointment ID: {AppointmentId} is already completed and cannot be cancelled.", appointmentId);
                 return AppointmentErrors.AlreadyCompleted;
+            }
+            if (appointment.Status == AppointmentStatus.NoShow)
+            {
+                logger.LogWarning("Appointment ID: {AppointmentId} was marked as a no-show and cannot be cancelled.", appointmentId);
+                return AppointmentErrors.AlreadyNoShow;
             }
             appointment.Status = AppointmentStatus.Cancelled;
             appointment.CancelledAt = DateTime.UtcNow;
@@ -320,6 +335,11 @@ namespace Services.Implementations
                 logger.LogWarning("Appointment ID: {AppointmentId} is already completed.", appointmentId);
                 return AppointmentErrors.AlreadyCompleted;
             }
+            if (appointment.Status == AppointmentStatus.NoShow)
+            {
+                logger.LogWarning("Appointment ID: {AppointmentId} was marked as a no-show and cannot be completed.", appointmentId);
+                return AppointmentErrors.AlreadyNoShow;
+            }
             // A visit can only be completed once it has started (REVIEW.md M14); completing early would unlock a review
             var slotStart = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
             if (dateTimeProvider.ClinicNow < slotStart)
@@ -372,6 +392,53 @@ namespace Services.Implementations
             return Result.Ok();
         }
 
+
+        public async Task<Result> MarkNoShowAsync(Guid userId, string role, int appointmentId, CancellationToken ct)
+        {
+            var appointment = await uow.Appointments.GetByIdAsync(appointmentId, ct);
+            if (appointment == null)
+            {
+                logger.LogWarning("Appointment not found for ID: {AppointmentId}", appointmentId);
+                return AppointmentErrors.NotFound(appointmentId);
+            }
+            if (role != "Admin" && appointment.Doctor.UserId != userId)
+            {
+                logger.LogWarning("User {UserId} ({Role}) attempted to mark appointment {AppointmentId} they do not own as a no-show", userId, role, appointmentId);
+                return AppointmentErrors.Unauthorized;
+            }
+            var statusError = appointment.Status switch
+            {
+                AppointmentStatus.Cancelled => AppointmentErrors.AlreadyCancelled,
+                AppointmentStatus.Completed => AppointmentErrors.AlreadyCompleted,
+                AppointmentStatus.NoShow => AppointmentErrors.AlreadyNoShow,
+                _ => null
+            };
+            if (statusError is not null)
+            {
+                logger.LogWarning("Appointment ID: {AppointmentId} is {Status} and cannot be marked as a no-show.", appointmentId, appointment.Status);
+                return statusError;
+            }
+            // The patient may just be late: wait out the grace period after the start (v2 FR-APT-07)
+            var slotStart = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
+            if (dateTimeProvider.ClinicNow < slotStart + NoShowGracePeriod)
+            {
+                logger.LogWarning("Appointment ID: {AppointmentId} cannot be marked as a no-show before {GraceEnd}.", appointmentId, slotStart + NoShowGracePeriod);
+                return AppointmentErrors.NoShowTooEarly;
+            }
+
+            appointment.Status = AppointmentStatus.NoShow;
+            await uow.SaveChangesAsync(ct);
+            logger.LogInformation("Appointment ID: {AppointmentId} marked as a no-show by user {UserId} ({Role})", appointmentId, userId, role);
+
+            await TryNotifyAsync(appointment.Id, [new CreateNotificationRequest(
+                 UserId: appointment.Patient.UserId,
+                 Title: "Missed Appointment",
+                 Message: $"Your appointment on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm} was marked as missed.",
+                 Type: NotificationType.SystemAlert,
+                 RelatedEntityId: appointment.Id)], ct);
+
+            return Result.Ok();
+        }
 
         public async Task<Result<AppointmentResponse>> GetAppointmentAsync(int appointmentId, Guid userId, string role, CancellationToken ct)
         {
@@ -426,6 +493,8 @@ namespace Services.Implementations
         }
 
         #region Helpers
+
+        private static readonly TimeSpan NoShowGracePeriod = TimeSpan.FromMinutes(15);
 
         // Runs after the appointment change is committed: a notification failure is logged
         // and must not turn the successful operation into an error response
