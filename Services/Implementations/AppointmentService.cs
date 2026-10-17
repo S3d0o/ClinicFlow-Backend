@@ -248,10 +248,15 @@ namespace Services.Implementations
                 logger.LogWarning("Appointment not found for ID: {AppointmentId}", appointmentId);
                 return AppointmentErrors.NotFound(appointmentId);
             }
-            if (appointment.Status == AppointmentStatus.Cancelled || appointment.Status == AppointmentStatus.Completed)
+            if (appointment.Status == AppointmentStatus.Cancelled)
             {
-                logger.LogWarning("Appointment ID: {AppointmentId} is already cancelled or completed.", appointmentId);
+                logger.LogWarning("Appointment ID: {AppointmentId} is already cancelled.", appointmentId);
                 return AppointmentErrors.AlreadyCancelled;
+            }
+            if (appointment.Status == AppointmentStatus.Completed)
+            {
+                logger.LogWarning("Appointment ID: {AppointmentId} is already completed and cannot be cancelled.", appointmentId);
+                return AppointmentErrors.AlreadyCompleted;
             }
             appointment.Status = AppointmentStatus.Cancelled;
             appointment.CancelledAt = DateTime.UtcNow;
@@ -308,6 +313,13 @@ namespace Services.Implementations
             {
                 logger.LogWarning("Appointment ID: {AppointmentId} is already completed.", appointmentId);
                 return AppointmentErrors.AlreadyCompleted;
+            }
+            // A visit can only be completed once it has started (REVIEW.md M14); completing early would unlock a review
+            var slotStart = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
+            if (dateTimeProvider.UtcNow < slotStart)
+            {
+                logger.LogWarning("Appointment ID: {AppointmentId} cannot be completed before it starts at {SlotStart}.", appointmentId, slotStart);
+                return AppointmentErrors.CannotCompleteBeforeStart;
             }
             appointment.Status = AppointmentStatus.Completed;
             await uow.SaveChangesAsync(ct);

@@ -107,16 +107,16 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         }
 
         [Fact]
-        public async Task Cancel_AsAdmin_CompletedAppointment_Returns409AlreadyCancelled()
+        public async Task Cancel_AsAdmin_CompletedAppointment_Returns409AlreadyCompleted()
         {
-            // Documents REVIEW.md M14 and the contract's error catalog: the wrong code, but the documented one
+            // REVIEW.md M14: this used to return AlreadyCancelled
             await SetStatusAsync(AppointmentStatus.Completed);
             AuthenticateAs(_adminUserId, "Admin");
 
             var response = await _client.PostAsJsonAsync($"{BaseUrl}/{_appointmentId}/cancel", new CancelAppointmentRequest(null));
 
             response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-            (await response.Content.ReadAsStringAsync()).Should().Contain("Appointment.AlreadyCancelled");
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Appointment.AlreadyCompleted");
             await AssertStatusAsync(AppointmentStatus.Completed);
         }
 
@@ -135,8 +135,22 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         // ---- complete ----
 
         [Fact]
+        public async Task Complete_BeforeTheAppointmentStarts_Returns400AndLeavesItConfirmed()
+        {
+            // REVIEW.md M14: the seeded slot is 3 days ahead
+            AuthenticateAs(_doctorUserId, "Doctor");
+
+            var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/complete", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Appointment.CannotCompleteBeforeStart");
+            await AssertStatusAsync(AppointmentStatus.Confirmed);
+        }
+
+        [Fact]
         public async Task Complete_AsOwningDoctor_Returns204AndNotifiesThePatient()
         {
+            await MoveSlotToThePastAsync();
             AuthenticateAs(_doctorUserId, "Doctor");
 
             var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/complete", null);
@@ -228,6 +242,16 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         }
 
         // ----------------------------------------------------------------
+
+        // The visit started an hour ago, so it can be completed
+        private Task MoveSlotToThePastAsync() => _factory.SeedAsync(async db =>
+        {
+            var started = DateTime.UtcNow.AddHours(-1);
+            await db.AppointmentSlots.Where(s => s.Id == _slotId).ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Date, DateOnly.FromDateTime(started))
+                .SetProperty(x => x.StartTime, TimeOnly.FromDateTime(started))
+                .SetProperty(x => x.EndTime, TimeOnly.FromDateTime(started.AddMinutes(30))));
+        });
 
         private Task SetStatusAsync(AppointmentStatus status) => _factory.SeedAsync(async db =>
             await db.Appointments.Where(a => a.Id == _appointmentId)

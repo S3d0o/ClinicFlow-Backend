@@ -114,16 +114,16 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         }
 
         [Fact]
-        public async Task CancelByAdminAsync_WhenCompleted_ReturnsAlreadyCancelledErrorAndKeepsStatus()
+        public async Task CancelByAdminAsync_WhenCompleted_ReturnsAlreadyCompletedErrorAndKeepsStatus()
         {
-            // Documented current behaviour (REVIEW.md M14, API_CONTRACT error catalog): admins get
-            // AlreadyCancelled, not AlreadyCompleted, for a completed appointment. Update when M14 is fixed.
+            // REVIEW.md M14: admins used to get AlreadyCancelled for a completed appointment
             _appointment.Status = AppointmentStatus.Completed;
 
             var result = await _sut.CancelByAdminAsync(_appointmentId, _request, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(AppointmentErrors.AlreadyCancelled, result.Errors);
+            Assert.Contains(AppointmentErrors.AlreadyCompleted, result.Errors);
+            Assert.DoesNotContain(AppointmentErrors.AlreadyCancelled, result.Errors);
             Assert.Equal(AppointmentStatus.Completed, _appointment.Status);
             Assert.Equal(SlotStatus.Booked, _appointment.Slot.Status);
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());

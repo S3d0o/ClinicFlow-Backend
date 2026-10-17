@@ -48,6 +48,10 @@ namespace Shared.Errors
             Error.Failure("Appointment.CannotCompleteCancelled",
                 "Cancelled appointments cannot be marked as completed");
 
+        public static readonly Error CannotCompleteBeforeStart =
+            Error.Validation("Appointment.CannotCompleteBeforeStart",
+                "An appointment can only be marked as completed once it has started");
+
         public static readonly Error InvalidStatusTransition =
             Error.Validation("Appointment.InvalidStatusTransition",
                 "The appointment cannot transition to the requested status");
