@@ -35,13 +35,13 @@ After the review, a fix pass was made on branch `docs/review-and-claude-md`. Its
 
 **Totals:**
 - Critical: 4 of 4 fixed.
-- High: 5 of 8 fixed (H4, H6 and H8 are open).
-- Medium: 6 fixed, 1 partly fixed, 8 open.
+- High: 6 of 8 fixed (H6 and H8 are open).
+- Medium: 9 fixed, 2 partly fixed, 4 open.
 - .NET High/Medium: 4 fixed, 2 partly fixed, 1 open.
 
 **Left open on purpose:**
-- **Product decisions:** H4, H8, M1, M2, M14.
-- **API changes the frontend would see:** H6, M3, M5, M13, M15, L6, NM5, NL2, NL9, NL11.
+- **Product decisions:** H8, M2, and NoShow handling in M14.
+- **API changes the frontend would see:** H6, M5, M13, L6, NM5, NL2, NL9, NL11.
 - **Larger work:** M12, NL14, NL21, §4.
 
 ---
@@ -133,7 +133,7 @@ HTTP request
 | A "TheftDetectionWindow invalidates the entire token family" | The theft-detection branch can never run, and reuse of a rotated token never revokes its descendants. See H7. |
 | Seeding creates "roles and a default admin account" | It seeds roles, 10 specialties, an admin, 7 doctors, 5 patients, schedules, slots, appointments, reviews and notifications, all with **published passwords**. See C2. |
 | Doctors "confirm" appointments | There is no confirm endpoint. Booking creates `Confirmed` directly, and `Pending` is never used. |
-| Doctors must be approved "then publish their schedules" | Nothing enforces approval. See M1. |
+| Doctors must be approved "then publish their schedules" | Unapproved doctors can set up schedules, but patients can't see or book them until they're approved (M1, fixed in `d63cdba`). |
 | Reminder covers "appointments scheduled for tomorrow" | It covers appointments starting within the next 24 hours (`AppointmentRepo.cs:97-111`). |
 | `ClinicFlow.sln` | The solution file is `ClinicFlow.slnx`. |
 | "Dependency flow: ClinicFlow → Presentation → Services.Abstraction / → Services → Persistance → Domain" | `Presentation` does not reference `Services`, and `Shared` references `Domain`. See §1.1. |
@@ -230,7 +230,7 @@ HTTP request
 - **Fix risk:** Low. Check `user.IsActive` in refresh, and revoke active refresh tokens on suspend.
 
 #### H4. Editing or deleting a schedule fails with 500 once it has bookings, and edits are left half-applied
-- **Status:** ⏸ Open. Needs a product decision about booked appointments.
+- **Status:** ✅ Fixed in `717f470` (contract 2.0.0). Decisions taken: deleting a schedule with upcoming booked appointments returns 409 `Doctor.CannotDeleteScheduleWithBookedSlots` (the doctor cancels them first); a schedule whose slots have only past or cancelled appointments is deactivated instead of deleted, and creating a schedule for that weekday reuses it. Updates run in one transaction, keep slots that any appointment points to, and regenerate only times that don't overlap an existing slot. Covered by `DeleteScheduleAsyncTests`, `CreateScheduleAsyncTests` and `DoctorTests`. Still open: a future free slot kept because a cancelled appointment points to it stays bookable even when it falls outside the schedule's new hours.
 - **Where:**
   - `DoctorService.cs:97-102` (update).
   - `DoctorService.cs:115-116` (delete).
@@ -275,7 +275,7 @@ HTTP request
 ### Medium
 
 #### M1. Doctor approval and suspension aren't enforced where it matters
-- **Status:** ⏸ Open. Needs a decision on where the approval gate belongs.
+- **Status:** ✅ Fixed in `d63cdba` (contract 2.0.0). Decision taken: the gate is on what patients see, not on login. Unapproved doctors can log in and set up schedules; until approved, and while suspended, their public profile returns 404, their slots list is empty, and booking their slots returns 404 `Appointment.SlotNotFound`. Covered by `BookAppointmentAsyncTests` and `DoctorTests`.
 - **Login:** `AuthService.cs:210-249` lets unapproved doctors log in, despite the comment at `:78`.
 - **Schedules:** `DoctorService.cs:60-88` lets unapproved doctors create schedules and slots.
 - **Public profile:** `DoctorController.cs:27-34` → `DoctorRepo.GetByIdAsync` (`DoctorRepo.cs:17-18`) returns unapproved doctors. The approval-filtered `GetDetailedByIdAsync` (`:9-16`) is never used.
@@ -293,7 +293,7 @@ HTTP request
 - **Fix risk:** Medium–High. Define a clinic time zone (config, or per doctor), convert at the boundaries, and route all "now" reads through `IDateTimeProvider` (see §4).
 
 #### M3. Business errors return 500
-- **Status:** ⏸ Open. Changes status codes the frontend may rely on (an API change).
+- **Status:** ✅ Fixed in `da53e0c` (contract 2.0.0). Conflicts are 409, bad tokens and Identity-rejected registrations are 400, and doctor registration with an unknown specialty is 404 `Specialty.NotFound` (checked before anything is created). `Failure` (500) is left for real server failures: `Auth.RegistrationError` (code `Auth.RegistrationFailed`) and `Profile.UpdateFailed`. Error codes are unchanged.
 - **Where:**
   - `Shared/Errors/AuthErrors.cs:16-17` (`EmailAlreadyExists`), `:22-26` (invalid confirmation/reset token), `:31-32` (`RegistrationFailed`, including Identity password-policy failures). All are `ErrorType.Failure`.
   - `DoctorErrors.cs:16` (`ScheduleDayAlreadyExists`; the controller documents 409).
@@ -373,14 +373,14 @@ HTTP request
 - **Fix risk:** Low.
 
 #### M14. Appointment state rules are incomplete
-- **Status:** ⏸ Open. Needs the state-machine and product decisions (§4.3).
+- **Status:** 🟡 Partly fixed in `38d8a85` (contract 2.0.0): completing before the slot starts returns 400 `Appointment.CannotCompleteBeforeStart`, and an admin cancelling a completed appointment gets `Appointment.AlreadyCompleted`. Still open: NoShow is never set (a feature, see §4.3).
 - **Early completion:** a doctor can mark an appointment `Completed` before it happens (`AppointmentService.cs:302-312`, no time check), which unlocks a review for a visit that never took place.
 - **NoShow:** never set by any code path, but cancel and complete both accept it.
 - **Wrong error:** `CancelByAdminAsync` returns `AlreadyCancelled` for a *completed* appointment (`:251-255`).
 - **Fix risk:** Medium. Centralise allowed transitions (see §4).
 
 #### M15. Doctor-profile update forces a fee
-- **Status:** ⏸ Open. Changes the request contract (`decimal?`).
+- **Status:** ✅ Fixed in `05cff27` (contract 2.0.0). The fee is `decimal?`, validated only when sent, and the mapping skips it with an explicit `PreCondition` (the generic null check would have written 0).
 - **Where:** `Shared/DTOs/Doctor/UpdateDoctorProfileRequest.cs:6` (non-nullable `decimal`) and `UpdateDoctorProfileRequestValidator.cs:11-13`.
 - **Impact:** a "partial" update without a fee is rejected (fee must be > 0). If the validator were relaxed, the fee would be overwritten with 0, because the null-check mapping condition never applies to value types.
 - **Fix risk:** Low. Make it `decimal?`.
@@ -471,7 +471,7 @@ What exists: unit tests for `AppointmentService.BookAppointmentAsync` and `Cance
 
 **Fix risk:** Low. Adding tests can't break production. Write tests for H4/H6/H7 *before* fixing them.
 
-**Status:** 🟡 Partly addressed. Added unit tests: `GetAppointmentAsyncTests` (C4), `DeleteReviewAsyncTests` (H2), `CreateScheduleAsyncTests` (H1) and `UpdateScheduleAsyncTests` (H5, L5, using the real AutoMapper configuration). Added integration tests: `AuthorizationTests` (C1, C4), `AuthSecurityTests` (H3, H7, M6, L7) and a names assertion in `GetPatientAppointmentsTests` (NM4). The three wrong cancel tests are ✅ corrected in `9035a7d`: already-cancelled now asserts 409, a cross-patient 403 test was added, the names were fixed, and the hardcoded id was replaced. Every `AppointmentService` method now has a unit test class: `CancelByDoctorAsyncTests`, `CancelByAdminAsyncTests`, `CompleteAppointmentAsyncTests`, `AddDoctorNotesAsyncTests`, `GetDoctorAppointmentsAsyncTests` and `GetPatientAppointmentsAsyncTests` (34 tests, branch `test/appointment-service-tests`). They cover ownership, each status error, the freed slot, notifications, and notification failures not failing the operation. `CancelByAdminAsyncTests` pins the M14 "wrong error" behaviour as documented in the contract; early completion (M14) is not tested until the rule is decided. The doctor and admin paths of `POST /api/appointments/{id}/cancel`, complete and notes still have no integration tests. `ReviewService` is now fully covered: `SubmitReviewAsyncTests` and `GetDoctorReviewsAsyncTests` (unit, using the real AutoMapper configuration) and `SubmitReviewTests` (integration: rating update, a duplicate and concurrent duplicates against the unique index, ownership, status, role and rating range). `AdminService` is now fully covered: unit tests for every method, plus `AdminDoctorTests` (integration). These show that suspending through the endpoint revokes the doctor's refresh tokens (H3) so refresh and login fail. They also cover approve and the pending list, unknown ids, non-admin callers, and the documented M3 500s. `AuthService` is now fully covered (branch `test/auth-service-tests`): unit tests for every method (41 tests) cover registration (transaction rollback on each failure, a failed confirmation email not failing registration), confirm email, login ordering (lockout before the password check, account state only revealed after a correct password), forgot and reset password (no email for unknown or suspended accounts, sessions revoked and the security stamp rotated). `RegistrationTests` and `PasswordResetTests` (integration) run the flows end to end with the token taken from the recorded email. They also show that a doctor registration whose profile insert fails rolls back the Identity user and role. Integration tests now replace `IEmailService` with a recording `FakeEmailService`; before this, they ran with the SMTP credentials in `appsettings.Development.json` and tried to send real email. `NotificationService` is now fully covered (branch `test/notification-service-tests`): unit tests for every method (12 tests, real AutoMapper configuration), plus `NotificationTests` (integration). These show that the inbox returns only the caller's notifications newest first, that the unread filter works, that marking one or all as read changes only the caller's rows, and that another user's notification gets 403 and stays unread. Branch `test/remaining-coverage` covers the rest: `DoctorService` (delete schedule with its ownership 404, profile update including the M15 fee behaviour, search, slots; plus `DoctorTests`, which show search excludes unapproved and suspended doctors and pin the H4 500 on deleting a schedule with appointment history), `AppointmentStaffActionsTests` (the doctor and admin cancel paths, complete and notes over HTTP), `AppointmentReminderJobTests` (the 24-hour window, no double reminders, a failed email retried on the next run without blocking the others), `SpecialtyService` (unit tests plus `AdminSpecialtyTests`, including case-insensitive duplicate names), `ProfileService` and `PatientService` (partial updates), every validator (71 tests; they also pin the M13 gaps), and the `EmailService` link format the frontend depends on. Two small production changes enable this: `AppointmentReminderJob.ProcessRemindersAsync` is `internal` (visible to the integration tests), and `EmailService` builds its links in two `internal` methods (visible to the unit tests). `TokenService` has no unit tests on purpose: the auth integration tests cover it against the real database.
+**Status:** 🟡 Partly addressed. Added unit tests: `GetAppointmentAsyncTests` (C4), `DeleteReviewAsyncTests` (H2), `CreateScheduleAsyncTests` (H1) and `UpdateScheduleAsyncTests` (H5, L5, using the real AutoMapper configuration). Added integration tests: `AuthorizationTests` (C1, C4), `AuthSecurityTests` (H3, H7, M6, L7) and a names assertion in `GetPatientAppointmentsTests` (NM4). The three wrong cancel tests are ✅ corrected in `9035a7d`: already-cancelled now asserts 409, a cross-patient 403 test was added, the names were fixed, and the hardcoded id was replaced. Every `AppointmentService` method now has a unit test class: `CancelByDoctorAsyncTests`, `CancelByAdminAsyncTests`, `CompleteAppointmentAsyncTests`, `AddDoctorNotesAsyncTests`, `GetDoctorAppointmentsAsyncTests` and `GetPatientAppointmentsAsyncTests` (34 tests, branch `test/appointment-service-tests`). They cover ownership, each status error, the freed slot, notifications, and notification failures not failing the operation. `CancelByAdminAsyncTests` pins the M14 "wrong error" behaviour as documented in the contract; early completion (M14) is not tested until the rule is decided. The doctor and admin paths of `POST /api/appointments/{id}/cancel`, complete and notes still have no integration tests. `ReviewService` is now fully covered: `SubmitReviewAsyncTests` and `GetDoctorReviewsAsyncTests` (unit, using the real AutoMapper configuration) and `SubmitReviewTests` (integration: rating update, a duplicate and concurrent duplicates against the unique index, ownership, status, role and rating range). `AdminService` is now fully covered: unit tests for every method, plus `AdminDoctorTests` (integration). These show that suspending through the endpoint revokes the doctor's refresh tokens (H3) so refresh and login fail. They also cover approve and the pending list, unknown ids, non-admin callers, and the documented M3 500s. `AuthService` is now fully covered (branch `test/auth-service-tests`): unit tests for every method (41 tests) cover registration (transaction rollback on each failure, a failed confirmation email not failing registration), confirm email, login ordering (lockout before the password check, account state only revealed after a correct password), forgot and reset password (no email for unknown or suspended accounts, sessions revoked and the security stamp rotated). `RegistrationTests` and `PasswordResetTests` (integration) run the flows end to end with the token taken from the recorded email. They also show that a doctor registration whose profile insert fails rolls back the Identity user and role. Integration tests now replace `IEmailService` with a recording `FakeEmailService`; before this, they ran with the SMTP credentials in `appsettings.Development.json` and tried to send real email. `NotificationService` is now fully covered (branch `test/notification-service-tests`): unit tests for every method (12 tests, real AutoMapper configuration), plus `NotificationTests` (integration). These show that the inbox returns only the caller's notifications newest first, that the unread filter works, that marking one or all as read changes only the caller's rows, and that another user's notification gets 403 and stays unread. Branch `test/remaining-coverage` covers the rest: `DoctorService` (delete schedule with its ownership 404, profile update including the M15 fee behaviour, search, slots; plus `DoctorTests`, which show search excludes unapproved and suspended doctors and pin the H4 500 on deleting a schedule with appointment history), `AppointmentStaffActionsTests` (the doctor and admin cancel paths, complete and notes over HTTP), `AppointmentReminderJobTests` (the 24-hour window, no double reminders, a failed email retried on the next run without blocking the others), `SpecialtyService` (unit tests plus `AdminSpecialtyTests`, including case-insensitive duplicate names), `ProfileService` and `PatientService` (partial updates), every validator (71 tests; they also pin the M13 gaps), and the `EmailService` link format the frontend depends on. Two small production changes enable this: `AppointmentReminderJob.ProcessRemindersAsync` is `internal` (visible to the integration tests), and `EmailService` builds its links in two `internal` methods (visible to the unit tests). `TokenService` has no unit tests on purpose: the auth integration tests cover it against the real database. Since contract 2.0.0 (H4, M1, M3, M15 and part of M14 fixed on branch `fix/review-open-items`), the tests that pinned those issues assert the fixed behaviour instead.
 
 ---
 
@@ -484,7 +484,7 @@ What exists: unit tests for `AppointmentService.BookAppointmentAsync` and `Cance
 5. **Slot materialisation is fragile.** A 14-day window with no roll-forward (H8), regeneration that collides with booked slots (H4), and only one schedule per weekday (`DoctorService.cs:69-75`; yet the seeder creates two per day: split shifts). Features like holidays, blocking individual slots or variable slot lengths will fight this design. Settle on idempotent "ensure slots exist until date X" generation first.
 6. **Layering leaks.** `Domain` depends on EF Core, `Services` references `Persistence`, `Shared` references `Domain`, and an interface sits in the wrong namespace (§1.1). The project boundaries don't stop shortcuts, so they will keep accumulating. Moving `IDbContextTransaction` behind a domain abstraction and dropping `Services → Persistence` would let the compiler enforce the architecture.
 7. **Hardcoded strings and config.** Role names appear as literals in 24 places across controllers and services. The frontend URL and CORS origin are hardcoded (M11). Adding a role (e.g. receptionist) or a second environment means a search-and-replace. Use constants and an options class.
-8. **The error-type convention is being misused** (M3: `Failure` for conflicts and not-found cases). New code copies existing errors, so the wrong status codes spread. Fix the catalog and document "Failure = unexpected server error only".
+8. **The error-type convention was being misused** (M3, fixed in `da53e0c`: `Failure` for conflicts and not-found cases). New code copies existing errors, so the wrong status codes spread. Fix the catalog and document "Failure = unexpected server error only".
 9. **Startup does migrations and seeding** (`Program.cs:55`). This blocks running more than one instance, makes production deploys risky (C2), and slows down integration tests (each test class drops and re-migrates the DB, `ClinicFlowApiFactory.cs:81-87`). Move migrations to a deploy step and gate seeding.
 10. **Little test coverage outside two `AppointmentService` methods, and no CI** (`.github/workflows` is empty). Any refactor in §3 (cancel deduplication, schedule rework, token family revocation) currently happens without a safety net.
 
@@ -493,8 +493,8 @@ What exists: unit tests for `AppointmentService.BookAppointmentAsync` and `Cance
 ## Suggested order of work
 1. **Same day, all low fix risk:** C1, C3, C4, M8, H2, H3, H1.
 2. **Gate seeding (C2)**, then add a global exception handler (M5) and paging defaults and validation (H6, M13).
-3. **Fix error types (M3)** together with the frontend.
-4. **Rework schedules and slots (H4, H5, H8, L5)** behind new tests.
+3. **Fix error types (M3)** together with the frontend. ✅ Done (`da53e0c`, contract 2.0.0).
+4. **Rework schedules and slots (H4, H5, H8, L5)** behind new tests. H4, H5 and L5 are done; H8 (slot roll-forward) is open.
 5. **Time-zone model (M2)** and an appointment state machine (§4.3).
 6. **Refresh-token family revocation (H7)** with integration tests.
 7. **README corrections (§2).**

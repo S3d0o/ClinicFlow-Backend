@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Contract version** | 1.0.2 |
+| **Contract version** | 2.0.0 |
 | **Last updated** | 2026-10-17 |
 | **Applies to** | ClinicFlow backend (`ClinicFlow.Backend`) and the ClinicFlow frontend (React) |
 | **Canonical copy** | `ClinicFlow.Backend/docs/API_CONTRACT.md`. The frontend repo keeps an identical copy at `docs/API_CONTRACT.md` |
@@ -76,7 +76,7 @@ Status-code notes marked *(REVIEW Mx)* refer to known issues in [REVIEW.md](REVI
 - **Account state is checked only after a correct password:**
   - suspended account → 401 `Auth.AccountNotActive`
   - email not confirmed → 401 `Auth.EmailNotConfirmed`
-- **Unapproved doctors can log in** (*REVIEW M1*). They just don't appear in search.
+- **Unapproved doctors can log in** and set up their schedules. Until an admin approves them (and while a doctor is suspended) they are hidden from patients: no search result, a 404 profile, no slots, and their slots can't be booked.
 
 ### 2.3 Refresh rules (frontend MUST follow these)
 1. **Refresh once at a time (single-flight).** When several requests get 401 at the same moment, make one refresh call and let the other requests wait for its result. Two parallel refreshes with the same token: one succeeds, the other gets 401.
@@ -150,7 +150,7 @@ Every non-2xx response is one of these shapes. Branch on the **error code** wher
 | 403 | Wrong role (E) or not the owner (A) | E or A |
 | 404 | Resource not found (A), or unknown route (E) | A or E |
 | 409 | Conflict with the current state (A) | A |
-| 500 | Unexpected server error. ⚠️ Some *expected* errors also return 500 today (*REVIEW M3*); they are marked in the catalog below | A or E |
+| 500 | Unexpected server error only. Expected business errors use 400, 404 or 409 (since 2.0.0) | A or E |
 
 ### 3.3 Error code catalog
 
@@ -164,14 +164,15 @@ Only codes the API can actually return are listed.
 | `Auth.EmailNotConfirmed` | 401 | Email not confirmed yet |
 | `Auth.InvalidRefreshToken` | 401 | Refresh token invalid, expired, revoked or rotated, or the user is suspended; on logout, also when the token is not the caller's |
 | `Auth.UserNotFound` | 404 | `userId` unknown (confirm email, reset password) |
-| `Auth.EmailAlreadyExists` | **500** *(M3)* | Registration with an email that is already used |
-| `Auth.RegistrationFailed` | **500** *(M3)* | Identity rejected the user, or registration failed; `detail` lists the reasons |
-| `Auth.InvalidEmailConfirmationToken` | **500** *(M3)* | Confirmation token invalid or expired |
-| `Auth.InvalidPasswordResetToken` | **500** *(M3)* | Reset token invalid or expired, **or** the new password fails the password policy |
+| `Auth.EmailAlreadyExists` | 409 | Registration with an email that is already used |
+| `Auth.RegistrationFailed` | 400 (shape C), or 500 | 400: Identity rejected the user (e.g. the password policy); the error lists the reasons. 500: an unexpected server failure while registering |
+| `Auth.InvalidEmailConfirmationToken` | 400 (shape C) | Confirmation token invalid or expired |
+| `Auth.InvalidPasswordResetToken` | 400 (shape C) | Reset token invalid or expired, **or** the new password fails the password policy |
 | `Doctor.NotFound` | 404 | Doctor profile id unknown |
 | `Doctor.ProfileNotFound` | 404 | The logged-in user has no doctor profile |
 | `Doctor.ScheduleNotFound` | 404 | Schedule unknown or owned by another doctor |
-| `Doctor.ScheduleDayAlreadyExists` | **500** *(M3)* | A schedule for that weekday already exists |
+| `Doctor.ScheduleDayAlreadyExists` | 409 | An active schedule for that weekday already exists |
+| `Doctor.CannotDeleteScheduleWithBookedSlots` | 409 | Deleting a schedule while upcoming appointments are booked on it |
 | `Doctor.InvalidScheduleTime` | 400 (shape C) | Schedule update would leave end ≤ start, or not fit one slot |
 | `Patient.ProfileNotFound` | 404 | The logged-in user has no patient profile |
 | `Appointment.NotFound` | 404 | Appointment id unknown |
@@ -180,10 +181,11 @@ Only codes the API can actually return are listed.
 | `Appointment.SlotAlreadyBooked` | 409 | Someone else booked the slot first |
 | `Appointment.SlotInPast` | 400 (shape C) | The slot has already started |
 | `Appointment.CancellationWindowExpired` | 400 (shape C) | Patient cancelling less than 2 hours before the start |
-| `Appointment.AlreadyCancelled` | 409 | Already cancelled. Also returned when an **admin** cancels a *completed* appointment *(M14)* |
+| `Appointment.AlreadyCancelled` | 409 | Already cancelled |
 | `Appointment.AlreadyCompleted` | 409 | Already completed |
-| `Appointment.CannotCompleteCancelled` | **500** *(M3)* | Completing a cancelled appointment |
-| `Appointment.DoctorNotesNotAllowed` | **500** *(M3)* | Notes on a cancelled appointment |
+| `Appointment.CannotCompleteCancelled` | 409 | Completing a cancelled appointment |
+| `Appointment.CannotCompleteBeforeStart` | 400 (shape C) | Completing an appointment before its start time |
+| `Appointment.DoctorNotesNotAllowed` | 409 | Notes on a cancelled appointment |
 | `Appointment.Unauthorized` | 403 | Not the owner of the appointment |
 | `Appointment.ReviewAlreadyExists` | 409 | Appointment already reviewed |
 | `Appointment.ReviewNotAllowed` | 400 (shape C) | Appointment not completed |
@@ -192,12 +194,12 @@ Only codes the API can actually return are listed.
 | `Notification.NotFound` | 404 | Notification id unknown |
 | `Notification.Unauthorized` | 403 | Notification belongs to another user |
 | `Profile.NotFound` | 404 | User not found |
-| `Profile.UpdateFailed` | **500** *(M3)* | Identity rejected the profile update |
+| `Profile.UpdateFailed` | 500 | Identity failed to save the profile (a server-side failure) |
 | `Specialty.NotFound` | 404 | Specialty unknown or inactive |
-| `Specialty.NameAlreadyExists` | **500** *(M3)* | Duplicate specialty name |
-| `Specialty.HasAssignedDoctors` | **500** *(M3)* | Deleting a specialty that doctors use |
-| `Admin.DoctorAlreadyApproved` | **500** *(M3)* | Approving an approved doctor |
-| `Admin.DoctorAlreadySuspended` | **500** *(M3)* | Suspending a suspended doctor |
+| `Specialty.NameAlreadyExists` | 409 | Duplicate specialty name (case-insensitive) |
+| `Specialty.HasAssignedDoctors` | 409 | Deleting a specialty that doctors use |
+| `Admin.DoctorAlreadyApproved` | 409 | Approving an approved doctor |
+| `Admin.DoctorAlreadySuspended` | 409 | Suspending a suspended doctor |
 
 Booking can also fail with a 500 whose `title` is `"An error occurred while booking the appointment."` (an unexpected database failure).
 
@@ -286,14 +288,18 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **200:** `RegisterResponse`. A confirmation email is sent; the link opens the frontend route `/#/confirm-email` ([§8](#8-frontend-routes-the-backend-depends-on)). If the email fails to send, registration still succeeds.
 - **Errors:**
   - 400 validation (B)
-  - 500 `Auth.EmailAlreadyExists`, `Auth.RegistrationFailed`
+  - 400 (C) `Auth.RegistrationFailed` (Identity rejected the user)
+  - 409 `Auth.EmailAlreadyExists`
+  - 500 `Auth.RegistrationFailed` (unexpected server failure)
 
 **2. `POST /api/auth/register/doctor`** (anonymous)
 - **Body:** `RegisterDoctorRequest`. Same rules for name, email, password, phone and date of birth. `specialtyId` must be an existing specialty. `yearsOfExperience`, `consultationFee`, `bio` (≤ 500), `clinicAddress` and `clinicCity` are not validated yet *(M13)*.
 - **200:** `RegisterResponse`. The doctor must confirm their email; an admin must approve them before they appear in search.
 - **Errors:**
   - 400 (B)
-  - 500 `Auth.EmailAlreadyExists`, `Auth.RegistrationFailed` (also for an invalid `specialtyId`)
+  - 404 `Specialty.NotFound` (unknown or inactive `specialtyId`)
+  - 409 `Auth.EmailAlreadyExists`
+  - 500 `Auth.RegistrationFailed` (unexpected server failure)
 
 **3. `POST /api/auth/login`** (anonymous)
 - **Body:** `{ "email": string, "password": string }`
@@ -315,7 +321,7 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **204**
 - **Errors:**
   - 404 `Auth.UserNotFound`
-  - 500 `Auth.InvalidEmailConfirmationToken`
+  - 400 (C) `Auth.InvalidEmailConfirmationToken`
 
 **7. `POST /api/auth/forgot-password`** (anonymous)
 - **Body:** `{ "email": string }`
@@ -327,7 +333,7 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **204.** All of the user's sessions are revoked, so they must log in again.
 - **Errors:**
   - 404 `Auth.UserNotFound` (also for a suspended account)
-  - 500 `Auth.InvalidPasswordResetToken` (also when `newPassword` fails the server policy: ≥ 8 chars, upper case, lower case, digit). Validate with the registration rules client-side.
+  - 400 (C) `Auth.InvalidPasswordResetToken` (also when `newPassword` fails the server policy: ≥ 8 chars, upper case, lower case, digit). Validate with the registration rules client-side.
 
 ### 5.2 Doctors (public)
 
@@ -348,11 +354,11 @@ Each entry lists the request, the success response, and the errors that endpoint
 **10. `GET /api/doctors/{id}`**
 - **200:** `DoctorResponse`
 - **Errors:** 404 `Doctor.NotFound`
-- ⚠️ This currently also returns doctors that are not approved *(M1)*.
+- Unapproved and suspended doctors return 404.
 
 **11. `GET /api/doctors/{id}/slots?date=yyyy-MM-dd`**
 - **200:** `SlotResponse[]` with only `Available` slots, ordered by start time.
-- An unknown doctor returns `[]`. A missing `date` returns `[]` instead of 400 *(NL11)*, so always send it.
+- An unknown, unapproved or suspended doctor returns `[]`. A missing `date` returns `[]` instead of 400 *(NL11)*, so always send it.
 - Slots exist only for the next 14 days.
 
 **12. `GET /api/doctors/{id}/reviews?pageNumber=&pageSize=`**
@@ -364,7 +370,7 @@ Each entry lists the request, the success response, and the errors that endpoint
 ### 5.3 Doctor (self-service)
 
 **13. `PUT /api/doctors/profile`** (Doctor)
-- **Body:** `UpdateDoctorProfileRequest`. `consultationFee` is **required** (> 0, ≤ 10 000) *(M15)*. `bio` ≤ 500, `clinicAddress` ≤ 300, `clinicCity` ≤ 100. A `null` text field keeps its current value.
+- **Body:** `UpdateDoctorProfileRequest`. `consultationFee` is optional (when sent: > 0, ≤ 10 000); omitting it keeps the current fee. `bio` ≤ 500, `clinicAddress` ≤ 300, `clinicCity` ≤ 100. A `null` text field keeps its current value.
 - **204**
 - **Errors:**
   - 400 (B)
@@ -380,25 +386,24 @@ Each entry lists the request, the success response, and the errors that endpoint
   - `startTime` and `endTime` are required, with `endTime` after `startTime`.
   - `slotDurationMinutes` is 10–120 (default 30).
   - The window must fit at least one slot.
-- **201:** `ScheduleResponse`. Slots for the next 14 days are generated.
+- **201:** `ScheduleResponse`. Slots for the next 14 days are generated, skipping times that overlap a slot the doctor already has. If that weekday has an *inactive* schedule (for example one kept for its history when deleted), it is reused: the response has its id and `isActive: true`.
 - **Errors:**
   - 400 (B)
   - 404 `Doctor.ProfileNotFound`
-  - 500 `Doctor.ScheduleDayAlreadyExists` *(M3: will become 409)*
+  - 409 `Doctor.ScheduleDayAlreadyExists` (an active schedule for that weekday exists)
 
 **16. `PUT /api/doctors/schedule/{id}`** (Doctor, own schedule)
 - **Body:** `UpdateScheduleRequest`. All fields are optional; omitted fields keep their value. `slotDurationMinutes` is 10–120. If both times are sent, `endTime` must be after `startTime`.
-- **200:** `ScheduleResponse`. Future *available* slots are regenerated. Setting `isActive: false` removes them and generates none.
+- **200:** `ScheduleResponse`. Future free slots are regenerated in one transaction. Booked slots, and slots a cancelled appointment points to, are kept; new slots skip times that overlap them. Setting `isActive: false` removes the free slots and generates none.
 - **Errors:**
   - 400 (B), or (C) `Doctor.InvalidScheduleTime`
   - 404 `Doctor.ScheduleNotFound` (also when the schedule is another doctor's)
-  - ⚠️ 500 when regenerated slots collide with booked ones *(H4)*
 
 **17. `DELETE /api/doctors/schedule/{id}`** (Doctor, own schedule)
-- **204**
+- **204.** The schedule and its free slots are removed. If past or cancelled appointments still point to its slots, the schedule is deactivated (`isActive: false`) instead, to keep that history; creating a schedule for that weekday later reuses it.
 - **Errors:**
-  - 404 `Doctor.ScheduleNotFound`
-  - ⚠️ 500 when any slot of the schedule ever had an appointment *(H4)*
+  - 404 `Doctor.ScheduleNotFound` (also when the schedule is another doctor's)
+  - 409 `Doctor.CannotDeleteScheduleWithBookedSlots` (upcoming appointments are booked on it; cancel them first)
 
 ### 5.4 Appointments
 
@@ -407,7 +412,7 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **201:** `AppointmentResponse`, with status `Confirmed`. Notifications and a confirmation email are sent.
 - **Errors:**
   - 400 (C) `Appointment.SlotInPast`
-  - 404 `Patient.ProfileNotFound`, `Appointment.SlotNotFound`
+  - 404 `Patient.ProfileNotFound`, `Appointment.SlotNotFound` (also for a slot of an unapproved or suspended doctor)
   - 409 `Appointment.SlotNotAvailable`, `Appointment.SlotAlreadyBooked`
   - 500
 - **Frontend:** on 409, refresh the slot list.
@@ -459,8 +464,8 @@ Each entry lists the request, the success response, and the errors that endpoint
   - 403 `Appointment.Unauthorized`
   - 404 `Appointment.NotFound`, `Doctor.ProfileNotFound`
   - 409 `Appointment.AlreadyCompleted`
-  - 500 `Appointment.CannotCompleteCancelled` *(M3)*
-- ⚠️ This can currently be called before the appointment time *(M14)*.
+  - 400 (C) `Appointment.CannotCompleteBeforeStart` (the appointment hasn't started yet)
+  - 409 `Appointment.CannotCompleteCancelled`
 
 **24. `PUT /api/appointments/{id}/notes`** (Doctor, own appointment)
 - **Body:** `{ "notes": string | null }`. This replaces the notes; `null` clears them.
@@ -468,7 +473,7 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **Errors:**
   - 403 `Appointment.Unauthorized`
   - 404 `Appointment.NotFound`, `Doctor.ProfileNotFound`
-  - 500 `Appointment.DoctorNotesNotAllowed` (cancelled) *(M3)*
+  - 409 `Appointment.DoctorNotesNotAllowed` (cancelled)
 
 ### 5.5 Reviews
 
@@ -567,13 +572,13 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **204.** The doctor is notified.
 - **Errors:**
   - 404 `Doctor.NotFound`
-  - 500 `Admin.DoctorAlreadyApproved` *(M3)*
+  - 409 `Admin.DoctorAlreadyApproved`
 
 **39b. `POST /api/admin/doctors/{id}/suspend`**
 - **204.** The doctor's refresh tokens are revoked; their current access token stays valid for up to 15 min.
 - **Errors:**
   - 404 `Doctor.NotFound`
-  - 500 `Admin.DoctorAlreadySuspended` *(M3)*
+  - 409 `Admin.DoctorAlreadySuspended`
 
 **40. `GET /api/admin/specialties`**
 - **200:** `SpecialtyResponse[]`, including inactive specialties.
@@ -586,7 +591,7 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **201:** `SpecialtyResponse`
 - **Errors:**
   - 400 (B)
-  - 500 `Specialty.NameAlreadyExists` *(M3)*
+  - 409 `Specialty.NameAlreadyExists`
 
 **42. `PUT /api/admin/specialties/{id}`**
 - **Body:** `SpecialtyRequest`
@@ -594,13 +599,13 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **Errors:**
   - 400 (B)
   - 404 `Specialty.NotFound` (also for inactive specialties *(L6)*)
-  - 500 `Specialty.NameAlreadyExists`
+  - 409 `Specialty.NameAlreadyExists`
 
 **43. `DELETE /api/admin/specialties/{id}`**
 - **204**
 - **Errors:**
   - 404 `Specialty.NotFound`
-  - 500 `Specialty.HasAssignedDoctors` *(M3)*
+  - 409 `Specialty.HasAssignedDoctors`
 
 **44. `GET /api/admin/stats/overview`**
 - **200:** `OverviewStatsResponse`
@@ -623,7 +628,7 @@ Types use TypeScript-style notation. `?` means the field may be omitted in a req
 | `ConfirmEmailRequest` | `userId: string`, `token: string` |
 | `ForgotPasswordRequest` | `email: string` |
 | `ResetPasswordRequest` | `userId: string`, `token: string`, `newPassword: string` |
-| `UpdateDoctorProfileRequest` | `bio?: string \| null`, `consultationFee: number`, `clinicAddress?: string \| null`, `clinicCity?: string \| null` |
+| `UpdateDoctorProfileRequest` | `bio?: string \| null`, `consultationFee?: number \| null`, `clinicAddress?: string \| null`, `clinicCity?: string \| null` |
 | `CreateScheduleRequest` | `dayOfWeek: DayOfWeek`, `startTime: TimeOnly`, `endTime: TimeOnly`, `slotDurationMinutes?: number` (default 30) |
 | `UpdateScheduleRequest` | `startTime?: TimeOnly`, `endTime?: TimeOnly`, `slotDurationMinutes?: number`, `isActive?: boolean` |
 | `BookAppointmentRequest` | `slotId: number`, `reasonForVisit?: string \| null` |
@@ -686,12 +691,10 @@ These are known issues ([REVIEW.md](REVIEW.md)) whose fix **will change the cont
 
 | Review | Change | Frontend impact |
 |---|---|---|
-| M3 | Expected errors move from 500 to 409 (duplicates, already-approved/suspended, schedule day exists, specialty in use or name taken, email exists) or 400 (bad confirmation/reset token, registration rejected) | Key on the error **code** (`title`), not the status; this already works today |
 | H6 | `pageNumber`/`pageSize` get defaults (1/10) and validation (400 for out-of-range values) on appointment lists | Already safe if you always send both |
 | M5 + NL9 | All errors, including 401/403/404/500, get a ProblemDetails body; validation errors gain `type` and `traceId` | Handle an empty or a JSON body on any error |
 | NM5 | Every endpoint requires authentication unless explicitly public | None, if the frontend only calls endpoints as listed in §4 |
 | M13 | New validators for booking, cancel, notes, login, reset password and doctor registration (lengths, ranges) | Some requests accepted today will return 400 (B) |
-| M15 | `UpdateDoctorProfileRequest.consultationFee` becomes optional | Can stop always sending the fee |
 | L6 | Specialties can be reactivated (`isActive` in `SpecialtyRequest`) | New optional field |
 | NL11 | `GET /api/doctors/{id}/slots` without `date` returns 400 | Already safe if you always send `date` |
 | NL2 | Paging for notifications and pending doctors, and list responses with a total count | Response shape changes; will be versioned |
@@ -704,6 +707,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) whose fix **will change the cont
 | 1.0.0 | 2026-10-09 | First version of the contract. Behaviour changes that shipped the same day and that the frontend may notice: specialty write routes require Admin (C1); `GET /api/appointments/{id}` returns 403 for non-owners (C4); doctors can no longer delete reviews (H2); refresh fails for suspended users (H3); reuse of a rotated refresh token can revoke all sessions (H7); login lockout after 5 failures with the new code `Auth.AccountLockedOut` (M6); logout only accepts the caller's own refresh token (L7); new code `Appointment.SlotNotFound` replaces `Appointment.NotFound` for an unknown slot (L4); `PUT /api/doctors/schedule/{id}` no longer resets omitted fields (H5); appointment lists now fill `doctorName`/`patientName` (NM4); email links use `Frontend:BaseUrl` |
 | 1.0.1 | 2026-10-17 | Bug fix (NL22): `POST /api/reviews` for another patient's appointment now always returns 403 `Appointment.Unauthorized`. Before, it returned 409 `Appointment.ReviewAlreadyExists` when that appointment already had a review, which revealed whether it had been reviewed. 409 now applies only to the caller's own appointment. No change for a frontend that only offers reviews on the patient's own completed appointments |
 | 1.0.2 | 2026-10-17 | Bug fix (NL24): `POST /api/auth/forgot-password` returns 204 even when the reset email fails to send. Before, it returned 500 in that case, which only happened for registered, active emails and so revealed them. No frontend change is needed if it already shows the same message for every 204 |
+| 2.0.0 | 2026-10-17 | **Breaking: status codes.** Expected business errors no longer return 500 (M3): duplicates and state conflicts are 409 (`Auth.EmailAlreadyExists`, `Doctor.ScheduleDayAlreadyExists`, `Admin.DoctorAlreadyApproved`/`Suspended`, `Specialty.NameAlreadyExists`/`HasAssignedDoctors`, `Appointment.CannotCompleteCancelled`, `Appointment.DoctorNotesNotAllowed`); bad confirmation and reset tokens and a registration Identity rejects are 400 (shape C); doctor registration with an unknown specialty is 404 `Specialty.NotFound`. `Auth.RegistrationFailed` is 500 only for real server failures. Error codes are unchanged. **Behaviour:** unapproved and suspended doctors are hidden from patients (profile 404, empty slots, booking 404 `Appointment.SlotNotFound`) (M1); completing an appointment before it starts is 400 `Appointment.CannotCompleteBeforeStart`, and an admin cancelling a completed appointment gets `Appointment.AlreadyCompleted` (M14); deleting a schedule with upcoming bookings is 409 `Doctor.CannotDeleteScheduleWithBookedSlots`, one with only past history is deactivated, and schedule updates no longer fail with 500 (H4). **Request:** `UpdateDoctorProfileRequest.consultationFee` is optional (M15). **Frontend:** errors were already mapped by code, so messages keep working; a check on `status === 500` for these codes would need changing |
 
 ## 11. How to change this contract
 
@@ -784,7 +788,7 @@ export interface DoctorResponse {
   clinicAddress: string | null; clinicCity: string | null;
 }
 export interface UpdateDoctorProfileRequest {
-  bio?: string | null; consultationFee: number; clinicAddress?: string | null; clinicCity?: string | null;
+  bio?: string | null; consultationFee?: number | null; clinicAddress?: string | null; clinicCity?: string | null;
 }
 export interface SlotResponse { id: number; date: DateOnly; startTime: TimeOnly; endTime: TimeOnly; status: SlotStatus; }
 export interface ScheduleResponse {
