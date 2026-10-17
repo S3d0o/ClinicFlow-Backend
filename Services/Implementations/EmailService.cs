@@ -18,6 +18,14 @@ public class EmailService(
     private readonly EmailSettings _settings = emailOptions.Value;
     private readonly string _frontendBaseUrl = frontendOptions.Value.BaseUrl.TrimEnd('/');
 
+    // Frontend routes the emails link to (API contract §8). The frontend uses hash routing, so the
+    // query string sits after "#/". The token is inserted as given: AuthService has already escaped it
+    internal string ConfirmEmailUrl(Guid userId, string token) =>
+        $"{_frontendBaseUrl}/#/confirm-email?userId={userId}&token={token}";
+
+    internal string ResetPasswordUrl(Guid userId, string token) =>
+        $"{_frontendBaseUrl}/#/reset-password?userId={userId}&token={token}";
+
     // ── SendEmailConfirmationAsync ─────────────────────────────────────────
     // Called after registration.
     // Token is passed raw — browser encoding + frontend decodeURIComponent
@@ -28,7 +36,7 @@ public class EmailService(
         // Raw token in URL — do NOT Uri.EscapeDataString here.
         // The browser will encode it naturally; ConfirmEmailPage.tsx calls
         // decodeURIComponent before posting to /auth/confirm-email.
-        var confirmUrl = $"{_frontendBaseUrl}/#/confirm-email?userId={userId}&token={token}";
+        var confirmUrl = ConfirmEmailUrl(userId, token);
 
         var subject = "Confirm your ClinicFlow account";
         var body = BuildEmailTemplate(
@@ -59,7 +67,7 @@ public class EmailService(
     public async Task SendPasswordResetAsync(
         string email, Guid userId, string token, CancellationToken ct = default)
     {
-        var resetUrl = $"{_frontendBaseUrl}/#/reset-password?userId={userId}&token={token}";
+        var resetUrl = ResetPasswordUrl(userId, token);
 
         var subject = "Reset your ClinicFlow password";
         var body = BuildEmailTemplate(
