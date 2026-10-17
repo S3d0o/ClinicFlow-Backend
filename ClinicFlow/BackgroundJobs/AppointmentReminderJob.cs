@@ -31,7 +31,8 @@ public sealed class AppointmentReminderJob(
         logger.LogInformation("Appointment Reminder Background Job stopped.");
     }
 
-    private async Task ProcessRemindersAsync(CancellationToken cancellationToken)
+    // internal so integration tests can run one pass without waiting for the hourly timer
+    internal async Task ProcessRemindersAsync(CancellationToken cancellationToken)
     {
         try
         {
