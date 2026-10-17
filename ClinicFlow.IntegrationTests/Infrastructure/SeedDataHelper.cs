@@ -143,6 +143,78 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
             return patientUser.Id;
         }
 
+        // A doctor with control over the fields that search and approval depend on
+        public static async Task<(Guid userId, int doctorProfileId)> SeedDoctorAsync(
+            ClinicDbContext db, string suffix, bool approved = true, bool active = true,
+            string specialtyName = "General Practice", string? city = null, decimal fee = 200, int yearsOfExperience = 5)
+        {
+            var specialty = db.Specialties.FirstOrDefault(s => s.Name == specialtyName)
+                ?? db.Specialties.Add(new Specialty { Name = specialtyName, IsActive = true }).Entity;
+
+            var user = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                FirstName = "Doctor",
+                LastName = suffix,
+                UserName = $"doctor{suffix}@test.com",
+                NormalizedUserName = $"DOCTOR{suffix}@TEST.COM".ToUpperInvariant(),
+                Email = $"doctor{suffix}@test.com",
+                NormalizedEmail = $"DOCTOR{suffix}@TEST.COM".ToUpperInvariant(),
+                EmailConfirmed = true,
+                Gender = Gender.Male,
+                SecurityStamp = Guid.NewGuid().ToString(),
+                IsActive = active
+            };
+            user.PasswordHash = new PasswordHasher<ApplicationUser>().HashPassword(user, "Test@1234!");
+            db.Users.Add(user);
+
+            var profile = new DoctorProfile
+            {
+                UserId = user.Id,
+                Specialty = specialty,
+                ClinicCity = city,
+                ConsultationFee = fee,
+                YearsOfExperience = yearsOfExperience,
+                IsApprovedByAdmin = approved
+            };
+            db.DoctorProfiles.Add(profile);
+            await db.SaveChangesAsync();
+
+            return (user.Id, profile.Id);
+        }
+
+        // A schedule plus one slot per (date offset, start time, status); returns the schedule and slot ids in order
+        public static async Task<(int scheduleId, List<int> slotIds)> SeedScheduleWithSlotsAsync(
+            ClinicDbContext db, int doctorProfileId, DayOfWeek day,
+            params (int daysFromToday, TimeOnly start, SlotStatus status)[] slots)
+        {
+            var schedule = new DoctorSchedule
+            {
+                DoctorProfileId = doctorProfileId,
+                DayOfWeek = day,
+                StartTime = new TimeOnly(9, 0),
+                EndTime = new TimeOnly(17, 0),
+                SlotDurationMinutes = 30,
+                IsActive = true
+            };
+            db.DoctorSchedules.Add(schedule);
+            await db.SaveChangesAsync();
+
+            var entities = slots.Select(s => new AppointmentSlot
+            {
+                DoctorProfileId = doctorProfileId,
+                DoctorScheduleId = schedule.Id,
+                Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(s.daysFromToday)),
+                StartTime = s.start,
+                EndTime = s.start.AddMinutes(30),
+                Status = s.status
+            }).ToList();
+            db.AppointmentSlots.AddRange(entities);
+            await db.SaveChangesAsync();
+
+            return (schedule.Id, entities.Select(e => e.Id).ToList());
+        }
+
         // ResetDataBaseAsync migrates without the startup seed, so registration needs the roles seeded
         public static async Task SeedRolesAsync(ClinicDbContext db)
         {
