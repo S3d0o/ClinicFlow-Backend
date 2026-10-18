@@ -243,14 +243,14 @@ sequenceDiagram
     participant Mail as SMTP
 
     P->>FE: Fill in the sign-up form
-    FE->>API: POST /api/auth/register/patient (#1)
+    FE->>API: POST /api/auth/register/patient (endpoint 1)
     API->>API: Validate (password policy, phone, age ≥ 18)
     API->>DB: Email already used? → 409
     API->>DB: BEGIN: create user, add Patient role, create PatientProfile, COMMIT
     API->>Mail: Confirmation email with a link (after commit)
     API-->>FE: 200 "check your email"
-    P->>FE: Opens /#/confirm-email?userId=…&token=…
-    FE->>API: POST /api/auth/confirm-email (#6)
+    P->>FE: Opens the confirm-email link from the email
+    FE->>API: POST /api/auth/confirm-email (endpoint 6)
     API->>DB: Confirm the email
     API-->>FE: 204
 ```
@@ -269,19 +269,19 @@ sequenceDiagram
     actor A as Admin
     participant API as Backend
 
-    D->>API: POST /api/auth/register/doctor (#2)
+    D->>API: POST /api/auth/register/doctor (endpoint 2)
     Note over API: Same as patient registration, plus:<br/>specialty must exist and be active (else 404),<br/>profile created with IsApprovedByAdmin = false
-    D->>API: POST /api/auth/confirm-email (#6)
+    D->>API: POST /api/auth/confirm-email (endpoint 6)
     D->>API: Log in, set up schedules (allowed before approval)
     Note over D,API: Hidden from patients: not in search,<br/>profile 404, no slots, booking 404
-    A->>API: GET /api/admin/doctors/pending (#38)
-    A->>API: POST /api/admin/doctors/{id}/approve (#39)
+    A->>API: GET /api/admin/doctors/pending (endpoint 38)
+    A->>API: POST /api/admin/doctors/{id}/approve (endpoint 39)
     API-->>D: Notification "Profile Approved"
     Note over D,API: Now visible in search and bookable
-    A->>API: POST /api/admin/doctors/{id}/suspend (#39b)
+    A->>API: POST /api/admin/doctors/{id}/suspend (endpoint 39b)
     API->>API: Account deactivated, all refresh tokens revoked
     API-->>D: Notification "Profile Suspended"
-    Note over D,API: Hidden again; can't log in or refresh.<br/>Current access token works ≤ 15 min
+    Note over D,API: Hidden again, and can no longer log in or refresh.<br/>Current access token works ≤ 15 min
 ```
 
 - Doctor registration adds: specialty id (must be an existing **active** specialty), years of experience 0–70, consultation fee > 0 and ≤ 10 000, bio ≤ 500, clinic address ≤ 300, city ≤ 100.
@@ -297,7 +297,7 @@ sequenceDiagram
     participant FE as Frontend
     participant API as Backend
 
-    FE->>API: POST /api/auth/login (#3)
+    FE->>API: POST /api/auth/login (endpoint 3)
     API->>API: Locked out? → 401 AccountLockedOut
     API->>API: Wrong password? → 401 InvalidCredentials (counts toward lockout)
     API->>API: Suspended? → 401 AccountNotActive
@@ -305,9 +305,9 @@ sequenceDiagram
     API-->>FE: 200 accessToken (15 min) + refreshToken (7 days) + role
     Note over FE: Calls APIs with "Authorization: Bearer <accessToken>"
     FE->>API: Any call after 15 min → 401 (no error code)
-    FE->>API: POST /api/auth/refresh-token (#4) with the refresh token
+    FE->>API: POST /api/auth/refresh-token (endpoint 4) with the refresh token
     API-->>FE: 200 NEW access token + NEW refresh token (old one is now dead)
-    FE->>API: POST /api/auth/logout (#5) with the refresh token
+    FE->>API: POST /api/auth/logout (endpoint 5) with the refresh token
     API-->>FE: 204 (refresh token revoked)
 ```
 
@@ -341,15 +341,15 @@ sequenceDiagram
     participant Mail as SMTP
 
     U->>FE: "Forgot password", enters email
-    FE->>API: POST /api/auth/forgot-password (#7)
+    FE->>API: POST /api/auth/forgot-password (endpoint 7)
     alt registered and active
         API->>Mail: Reset email with a link
     else unknown or suspended
         API->>API: Do nothing
     end
     API-->>FE: 204 in every case
-    U->>FE: Opens /#/reset-password?userId=…&token=…
-    FE->>API: POST /api/auth/reset-password (#8) with the new password
+    U->>FE: Opens the reset-password link from the email
+    FE->>API: POST /api/auth/reset-password (endpoint 8) with the new password
     API->>API: Reset, revoke ALL refresh tokens, rotate security stamp
     API-->>FE: 204 → user logs in again everywhere
 ```
@@ -375,7 +375,7 @@ A **schedule** is a weekly template ("Mondays 09:00–17:00, 30-minute slots"). 
 
 ```mermaid
 flowchart TD
-    S[Doctor creates/updates a schedule<br/>#15 / #16] --> G[Generate slots for the next 14 days<br/>for that weekday]
+    S[Doctor creates/updates a schedule<br/>endpoints 15 and 16] --> G[Generate slots for the next 14 days<br/>for that weekday]
     J[SlotGenerationJob<br/>at startup + every 24 h] --> G
     G --> R{Time already covered<br/>by an existing slot?}
     R -- yes --> Skip[Skip it<br/>idempotent]
@@ -427,7 +427,7 @@ sequenceDiagram
     participant API as Backend
     participant DB as Database
 
-    P->>API: POST /api/appointments { slotId, reasonForVisit } (#18)
+    P->>API: POST /api/appointments { slotId, reasonForVisit } (endpoint 18)
     API->>DB: Load slot (+ doctor)
     alt slot missing, or doctor unapproved/suspended
         API-->>P: 404 Appointment.SlotNotFound
@@ -488,7 +488,7 @@ sequenceDiagram
     participant API as Backend
     participant DB as Database
 
-    P->>API: POST /api/reviews { appointmentId, rating 1–5, comment } (#25)
+    P->>API: POST /api/reviews { appointmentId, rating 1–5, comment } (endpoint 25)
     API->>API: Own appointment? (else 403) Completed? (else 400 ReviewNotAllowed)
     API->>API: Already reviewed? → 409 ReviewAlreadyExists
     API->>DB: BEGIN: insert review, recompute doctor's AverageRating + TotalReviews in one UPDATE, COMMIT
