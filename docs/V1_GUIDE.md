@@ -817,7 +817,7 @@ Deployment is the next step after V1 and hasn't been done yet. What is ready:
 | `backend` | The API on `http://localhost:5001`, `ASPNETCORE_ENVIRONMENT=Production`, connects as `clinicflow_app`, restarts on failure, healthcheck on `/health` |
 | `frontend` | The React app on `http://localhost:3000` (image built from the frontend repo) |
 
-**`.env`** (copy from `.env.example`): `DB_PASSWORD`, `APP_DB_PASSWORD` (required; compose refuses to start without it), `JWT_SECRET`, `EMAIL_USERNAME`, `EMAIL_PASSWORD`, `EMAIL_FROM_ADDRESS`, and optionally `ADMIN_EMAIL` / `ADMIN_PASSWORD` for the first admin. Production creates no demo data.
+**`.env`** (copy from `.env.example`): `DB_PASSWORD`, `APP_DB_PASSWORD` (required; compose refuses to start without it), `JWT_SECRET`, `EMAIL_USERNAME`, `EMAIL_PASSWORD`, `EMAIL_FROM_ADDRESS`, and optionally `ADMIN_EMAIL` / `ADMIN_PASSWORD` for the first admin. Production creates no demo data; `SEED_DEMO_DATA=true` loads the demo clinic for a local demo (never on a real deployment).
 
 **Before going live**, walk through the production checklist in [SETUP_AND_DEPLOYMENT.md §7](SETUP_AND_DEPLOYMENT.md#7-production-checklist): secrets, the real frontend URL, JWT issuer/audience, complete email settings, the reverse proxy in `KnownProxies`, HTTPS, a single instance, logging, and restarts.
 

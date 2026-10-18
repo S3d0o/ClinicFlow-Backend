@@ -114,7 +114,7 @@ docker build -t clinicflow-backend .      # Dockerfile is at the repo root
 | Backend | http://localhost:5001 |
 | SQL Server | `127.0.0.1:1433` (host only) |
 
-Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data**. Set `ADMIN_EMAIL` / `ADMIN_PASSWORD` to get a first admin.
+Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data** by default. Set `ADMIN_EMAIL` / `ADMIN_PASSWORD` to get a first admin. For a local demo, set `SEED_DEMO_DATA=true` in `.env` to load the demo clinic (published passwords: never on a real deployment).
 
 **Database login.** The backend doesn't connect as `sa`. Before it starts, the one-shot `db-init` service runs [`docker/db-init.sql`](../docker/db-init.sql) as `sa`. The script creates the `ClinicFlow` database and the login `clinicflow_app` with the password `APP_DB_PASSWORD`. That login is `db_owner` of `ClinicFlow` only, with no server-level rights. It needs DDL because the app applies migrations at startup. The script is idempotent, and it re-applies `APP_DB_PASSWORD`, so a changed password takes effect on the next `docker compose up`. **Upgrading from an `.env` without `APP_DB_PASSWORD`:** add it (and `EMAIL_FROM_ADDRESS`). Compose refuses to start without it. The existing database volume is kept, and the script adds the login to it.
 

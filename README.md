@@ -11,6 +11,8 @@ ClinicFlow lets patients find doctors and book appointment slots, doctors publis
 
 This repository is the backend. The React frontend lives in its own repository, and both apps follow the shared **[API contract](docs/API_CONTRACT.md)**.
 
+> **Status: V1 complete.** Tagged `v1.0.0-rc1` in both repositories (API contract 3.1.2, 325 unit and 151 integration tests passing). Deployment is the next step; V2 is planned in [docs/v2](docs/v2/README.md).
+
 **→ [Frontend Repository](https://github.com/S3d0o/ClinicFlow-Frontend) · [Live API Docs](https://registry.scalar.com/@default-team-2gu37/apis/clinicflow-v1@1.0.0) · [Live Demo on LinkedIn](https://www.linkedin.com/posts/saad-mohamed-li_dotnet-csharp-react-ugcPost-7483058574588379136-R35x/?utm_source=social_share_send&utm_medium=member_desktop_web&rcm=ACoAAFtidxABr0vs0HxJVu7Xnwvp_d1T8J8FNdM)** *(video walkthrough)*
 
 ---
@@ -31,6 +33,8 @@ This repository is the backend. The React frontend lives in its own repository, 
 ### Admin Panel
 ![Admin Panel](docs/screenshots/admin-panel.png)
 *Approve pending doctors, view platform statistics*
+
+> The screenshots show the original UI, which the frontend keeps on its [`legacy-ui`](https://github.com/S3d0o/ClinicFlow-Frontend/tree/legacy-ui) branch. The frontend's `main` now has a redesigned UI.
 
 ### Scalar API Docs
 ![Scalar Docs](docs/screenshots/scalar-docs.png)
@@ -59,18 +63,22 @@ This repository is the backend. The React frontend lives in its own repository, 
   - **Admin:** approves or suspends doctors, manages specialties, sees stats.
 - **Doctor onboarding:** doctors register and confirm their email; an admin approves them before they appear in search.
 - **Schedules and slots:** one weekly schedule per weekday. Bookable slots are generated automatically for the next 14 days, and a daily job keeps that window rolling.
+- **Clinic time zone:** slot times are the clinic's wall-clock time (`Clinic:TimeZoneId`, default `Africa/Cairo`), and every time rule uses the clinic's clock.
 - **Safe booking:** a conditional database update inside a transaction guarantees a slot is booked only once.
 - **Cancellation rules:**
   - Patients can cancel up to 2 hours before the appointment.
   - Doctors and admins can cancel at any time.
-  - The slot becomes bookable again.
-- **Reviews:** one review per completed appointment, 1–5 stars. The doctor's rating is recalculated.
+  - The slot becomes bookable again, unless the doctor's hours no longer cover it (then it is blocked).
+- **Completion and no-shows:** the doctor completes a visit and adds notes; the doctor or an admin marks a missed visit as a no-show 15 minutes after its start.
+- **Reviews:** one review per completed appointment, 1–5 stars. The doctor's rating is updated in the same transaction.
 - **Reminders:** an hourly background job emails and notifies patients about appointments in the next 24 hours.
 - **Security:**
+  - Every endpoint requires a login unless it is explicitly public.
   - Refresh tokens are stored hashed and rotated on every use. Reusing an old token revokes the user's sessions.
-  - Login locks the account after 5 failures.
+  - Login locks the account after 5 failures, and the auth endpoints are rate limited per IP.
   - Owner-only access to appointment details.
-- **Result pattern:** services return `Result`/`Result<T>`, which map to consistent ProblemDetails responses.
+- **Consistent errors:** services return `Result`/`Result<T>`, and every error response is ProblemDetails with an error code and a trace id.
+- **Large demo clinic:** in Development, 60 doctors, 80 patients and about 2,450 appointments with reviews and notifications, generated the same way every time.
 - **Observability:** Serilog with console, rolling-file and Seq sinks; every request is logged with its trace id.
 - **OpenAPI and Scalar:** interactive docs at `/scalar` in Development.
 
@@ -85,7 +93,7 @@ ClinicFlow.slnx
 ├── Services.Abstraction   service interfaces                                     → Shared
 ├── Services               business logic, AutoMapper, email, JWT                 → Domain, Persistence, Services.Abstraction
 ├── Presentation           controllers, FluentValidation validators, filter       → Services.Abstraction
-├── ClinicFlow             host: DI, middleware, reminder job, startup seeding    → Persistence, Presentation, Services
+├── ClinicFlow             host: DI, middleware, reminder and slot jobs, seeding  → Persistence, Presentation, Services
 ├── ClinicFlow.Tests               unit tests (xUnit + NSubstitute)
 └── ClinicFlow.IntegrationTests    API tests (WebApplicationFactory + Testcontainers SQL Server)
 ```
@@ -114,10 +122,11 @@ More detail is in [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md#5-architec
 |---|---|
 | Framework | React 19 + TypeScript |
 | Routing | React Router v7 |
-| Styling | Tailwind CSS + shadcn/ui |
-| Animations | Framer Motion |
+| Build | Vite 7 |
+| Styling | Tailwind CSS 3 + shadcn/ui (Radix) |
 | HTTP client | Axios |
 | Date handling | date-fns |
+| Tests | Vitest + Testing Library |
 
 ## 🚀 Getting started
 
@@ -136,7 +145,15 @@ dotnet user-secrets set "JwtSettings:Secret" "<at least 32 random characters>" -
 dotnet run --project ClinicFlow/ClinicFlow.csproj
 ```
 
-Open http://localhost:5143/scalar. For the demo logins, email settings and all options, see [docs/SETUP_AND_DEPLOYMENT.md](docs/SETUP_AND_DEPLOYMENT.md).
+Open http://localhost:5143/scalar. The first start seeds the demo clinic (about 30 seconds). Some logins:
+
+| Role | Email | Password |
+|---|---|---|
+| Admin | `admin@clinicflow.com` | `Admin@1234` |
+| Doctor | `ahmed.elsayed@clinicflow.com`, or `doctor01@clinicflow.test` … `doctor53@clinicflow.test` | `Doctor@1234` |
+| Patient | `mohamed.ali@gmail.com`, or `patient01@clinicflow.test` … `patient75@clinicflow.test` | `Patient@1234` |
+
+For every demo account, email settings and all options, see [docs/SETUP_AND_DEPLOYMENT.md](docs/SETUP_AND_DEPLOYMENT.md).
 
 ```bash
 dotnet test ClinicFlow.Tests               # unit tests
@@ -146,10 +163,13 @@ dotnet test ClinicFlow.IntegrationTests    # integration tests (Docker must be r
 ## 🐳 Docker
 
 ```bash
-docker build -t clinicflow-backend .   # Dockerfile is at the repo root
-cp .env.example .env                   # fill in DB_PASSWORD, JWT_SECRET, EMAIL_*, ADMIN_*
-docker compose up -d                   # frontend :3000, backend :5001
+docker build -t clinicflow-backend .                        # Dockerfile is at the repo root
+docker build -t clinicflow-frontend -f DockerFile .         # run in the frontend repo
+cp .env.example .env    # fill in DB_PASSWORD, APP_DB_PASSWORD, JWT_SECRET, EMAIL_*, optionally ADMIN_*
+docker compose up -d    # frontend http://localhost:3000, backend http://localhost:5001
 ```
+
+Compose runs SQL Server, a one-shot `db-init` that creates the app's own database login (the backend doesn't connect as `sa`), the backend and the frontend. It runs in Production mode with no demo accounts; set `SEED_DEMO_DATA=true` in `.env` to load the demo clinic on a local machine (never on a real deployment).
 
 ## 🔐 Authentication flow
 
@@ -159,10 +179,10 @@ POST /api/auth/confirm-email      → account confirmed
 POST /api/auth/login              → { accessToken (15 min), refreshToken (7 days), role, ... }
 Authorization: Bearer <accessToken>
 POST /api/auth/refresh-token      → new token pair; the old refresh token stops working
-POST /api/auth/logout             → revokes the caller's refresh token
+POST /api/auth/logout             → revokes the refresh token (works even after the access token expired)
 ```
 
-The frontend's session rules (single-flight refresh, reuse detection, lockout) are in [API_CONTRACT.md §2](docs/API_CONTRACT.md#2-authentication-and-sessions).
+The frontend's session rules (single-flight refresh, reuse detection, lockout, the 429 rate limit) are in [API_CONTRACT.md §2](docs/API_CONTRACT.md#2-authentication-and-sessions).
 
 ## 🤝 Contributing
 
