@@ -2,6 +2,7 @@ using ClinicFlow.IntegrationTests.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Shared.DTOs.Auth;
 using Shared.Settings;
@@ -54,6 +55,26 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
             problem.GetProperty("title").GetString().Should().Be("RateLimit.Exceeded");
             problem.GetProperty("status").GetInt32().Should().Be(429);
             problem.TryGetProperty("traceId", out _).Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task Login_RateLimitedFromTheFrontendOrigin_ExposesRetryAfterToTheBrowser()
+        {
+            // A cross-origin frontend can only read Retry-After if CORS exposes it (contract 3.1.2)
+            await using var limited = CreateLimitedFactory();
+            var client = limited.CreateClient();
+            var origin = (limited.Services.GetRequiredService<IConfiguration>()["Frontend:BaseUrl"] ?? "http://localhost:3000").TrimEnd('/');
+            client.DefaultRequestHeaders.Add("Origin", origin);
+            var login = new LoginRequest("nobody@test.com", "Wrong@1234");
+
+            for (var i = 0; i < PermitLimit; i++)
+                await client.PostAsJsonAsync("/api/auth/login", login);
+            var rejected = await client.PostAsJsonAsync("/api/auth/login", login);
+
+            rejected.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+            rejected.Headers.GetValues("Access-Control-Allow-Origin").Should().Equal(origin);
+            rejected.Headers.GetValues("Access-Control-Expose-Headers").SelectMany(v => v.Split(','))
+                .Select(h => h.Trim()).Should().Contain("Retry-After");
         }
 
         [Fact]

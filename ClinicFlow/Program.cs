@@ -55,7 +55,9 @@ try
                 .AllowAnyHeader()
                 .AllowAnyMethod()
                 .AllowCredentials()
-                .WithExposedHeaders("X-Total-Count"); // paged lists (REVIEW.md NL2); the browser hides it otherwise
+                // The browser hides other response headers from a cross-origin frontend: X-Total-Count for
+                // paged lists (REVIEW.md NL2), Retry-After for the auth rate limit (contract §2.7)
+                .WithExposedHeaders("X-Total-Count", "Retry-After");
         });
     });
 
