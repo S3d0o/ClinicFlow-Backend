@@ -42,6 +42,7 @@ This repository is the backend. The React frontend lives in its own repository, 
 
 | Document | What's in it |
 |---|---|
+| [docs/V1_GUIDE.md](docs/V1_GUIDE.md) | **Start here:** the complete V1 guide: every flow end to end, rules, architecture, API, errors, security, configuration, tests, deployment and what is open |
 | [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) | Roles, features, domain model, business rules, architecture |
 | [docs/API_CONTRACT.md](docs/API_CONTRACT.md) | **Shared backend ↔ frontend contract:** endpoints, payloads, errors, auth and session rules, TypeScript types |
 | [docs/openapi.json](docs/openapi.json) | OpenAPI 3.1 document generated from the API |
