@@ -31,7 +31,6 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
         // A separate host, so its limiter starts empty and the shared factory keeps its raised limit
         private WebApplicationFactory<Program> CreateLimitedFactory() => _factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Seeding:DemoData", "false");
             builder.ConfigureServices(services =>
                 services.PostConfigure<RateLimitSettings>(s => { s.PermitLimit = PermitLimit; s.WindowSeconds = 60; }));
         });

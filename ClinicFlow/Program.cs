@@ -2,6 +2,7 @@
 using ClinicFlow.BackgroundJobs;
 using Microsoft.Extensions.Options;
 using Persistence.AppData;
+using Services.Abstraction.Contracts;
 using Scalar.AspNetCore;
 using Shared.Settings;
 
@@ -72,9 +73,12 @@ try
 
     // Demo accounts use published passwords: only seed them in Development unless explicitly enabled.
     var seedDemoData = app.Configuration.GetValue<bool?>("Seeding:DemoData") ?? app.Environment.IsDevelopment();
+    var clock = app.Services.GetRequiredService<IDateTimeProvider>(); // demo slot dates follow the clinic's clock
     await DataSeeder.SeedAsync(
         app.Services,
         seedDemoData,
+        clock.ClinicNow,
+        clock.UtcNow,
         app.Configuration["Seeding:AdminEmail"],
         app.Configuration["Seeding:AdminPassword"]);
 

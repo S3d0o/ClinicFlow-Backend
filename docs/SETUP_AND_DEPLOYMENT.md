@@ -64,6 +64,10 @@ dotnet run --project ClinicFlow/ClinicFlow.csproj --launch-profile https   # htt
 | Admin | `admin@clinicflow.com` | `Admin@1234` |
 | Doctor | `ahmed.elsayed@clinicflow.com` | `Doctor@1234` |
 | Patient | `mohamed.ali@gmail.com` | `Patient@1234` |
+| Generated doctors | `doctor01@clinicflow.test` … `doctor53@clinicflow.test` | `Doctor@1234` |
+| Generated patients | `patient01@clinicflow.test` … `patient75@clinicflow.test` | `Patient@1234` |
+
+The demo clinic has 60 doctors, 80 patients and about 2,450 appointments over 60 days of history and 21 ahead (details in [V1_GUIDE.md §12](V1_GUIDE.md#12-running-demo-data-and-tests)). The first start on an empty database takes about 30 seconds longer while it is seeded.
 
 **API docs:** Scalar at `/scalar` and the OpenAPI document at `/openapi/v1.json` (Development only).
 
@@ -139,7 +143,7 @@ Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data**. Set 
 | `A network-related or instance-specific error … wait operation timed out` with `Server=localhost,<port>` | `localhost` may resolve to IPv6 while SQL Server is bound to IPv4. Use `127.0.0.1` |
 | Integration tests fail to start | Docker isn't running |
 | Log shows `Database not ready (SQL error 1801 …). Retrying migration` | Normal when SQL Server and the API start together: SQL Server is still recovering the database. Startup retries for about a minute; if it still fails, check that SQL Server is up |
-| Demo appointments are all in the past | The demo dataset is created once and keeps its dates (slots are topped up on every start). Drop the database and restart to reseed |
+| Demo appointments are all in the past | The demo dataset is created once and keeps its dates (slots are topped up on every start). Drop the database and restart to reseed. A database seeded before the large demo clinic existed gets the generated doctors, patients and their appointments on its next start; no drop needed |
 | Login returns `Auth.AccountLockedOut` | 5 wrong passwords: wait 15 minutes, or clear `LockoutEnd` for the user |
 | Login returns `Auth.EmailNotConfirmed` | Confirm the email, or set `EmailConfirmed = 1` in `Users` for local testing |
 | No slots for a doctor | The doctor has no active schedule for that weekday, is not approved or is suspended, or the date is more than 14 days ahead. The daily `SlotGenerationJob` extends the window at startup and then every 24 hours |
