@@ -62,6 +62,8 @@ services:
       # Optional: creates a real admin on first start (demo accounts are not seeded in Production)
       Seeding__AdminEmail: ${ADMIN_EMAIL:-}
       Seeding__AdminPassword: ${ADMIN_PASSWORD:-}
+      # Local demos only: SEED_DEMO_DATA=true loads the demo clinic (published passwords). Never on a real deployment
+      Seeding__DemoData: ${SEED_DEMO_DATA:-false}
     ports:
       - "5001:8080"
 
