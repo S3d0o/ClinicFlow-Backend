@@ -6,6 +6,7 @@ This repository is the **backend**: a .NET 10 REST API. A separate React app is 
 
 | Document | Purpose |
 |---|---|
+| [V1_GUIDE.md](V1_GUIDE.md) | **The complete V1 guide:** every flow end to end, with diagrams; start here |
 | **PROJECT_OVERVIEW.md** (this file) | What the system does, its rules, and how it is built |
 | [API_CONTRACT.md](API_CONTRACT.md) | The shared backend ↔ frontend contract: endpoints, payloads, errors, auth |
 | [openapi.json](openapi.json) | Machine-readable OpenAPI 3.1 document generated from the running API |
@@ -44,7 +45,7 @@ Every account has exactly one role.
 **Cancellation:**
 - A patient can cancel up to 2 hours before the start time.
 - The doctor and admins can cancel at any time.
-- The slot becomes bookable again.
+- The slot becomes bookable again, unless the doctor's schedule no longer covers it (then it is blocked).
 
 **Completion and reviews:**
 - The doctor marks a visit as completed and can add notes.
@@ -93,7 +94,7 @@ Specialty     Name (unique), Description, IconUrl, IsActive
  [slot Available] ───────────────► Confirmed ──── complete (doctor) ───► Completed ──► review (patient, once)
                                        │
                                        ├── cancel (patient ≥2h before start; doctor or admin anytime) ──► Cancelled
-                                       │                                                     (slot → Available)
+                                       │                       (slot → Available, or Blocked if the schedule no longer covers it)
                                        └── mark no-show (doctor or admin, ≥15 min after start) ──► NoShow
 ```
 
@@ -140,7 +141,7 @@ Shared                   DTOs, Result/Error types, error catalogues, settings
 ### Request flow
 
 ```
-HTTP → forwarded headers → Serilog request log → HTTPS redirect → CORS → JWT auth → authorization
+HTTP → forwarded headers → exception handler / status pages → Serilog request log → HTTPS redirect → CORS → rate limiter → JWT auth → authorization
      → controller (Presentation)
         → ValidationFilter: runs the matching IValidator<T>; 400 on failure
         → service (Services): returns Result / Result<T>; expected failures are Errors, never exceptions
