@@ -20,6 +20,10 @@ namespace Presentation.Extensions
             return Guid.Parse(value);
         }
 
+        // For [AllowAnonymous] actions that behave differently for a logged-in caller; null when anonymous
+        public static Guid? FindUserId(this ClaimsPrincipal user)
+            => Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
+
         public static string GetRole(this ClaimsPrincipal user)
             => user.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
     }

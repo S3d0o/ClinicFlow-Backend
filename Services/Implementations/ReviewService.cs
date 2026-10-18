@@ -47,9 +47,8 @@ namespace Services.Implementations
                 CreatedAt = DateTime.UtcNow
             };
 
-            var doctor = await uow.Doctors.GetByIdAsync(appointment.DoctorProfileId, ct);
-            if (doctor == null)
-                return DoctorErrors.NotFound(appointment.DoctorProfileId);
+            // The review and the doctor's rating cache are saved together (REVIEW.md L8)
+            await using var transaction = await uow.BeginTransactionAsync(ct);
 
             await uow.Reviews.AddAsync(review, ct);
             try
@@ -66,7 +65,8 @@ namespace Services.Implementations
                 logger.LogWarning(ex, "Concurrent review submission for appointment {AppointmentId}", request.AppointmentId);
                 return AppointmentErrors.ReviewAlreadyExists;
             }
-            await RecalculateAvgRatingAndTotalReviewsForDoctor(doctor, ct);
+            await uow.Doctors.RefreshRatingCacheAsync(appointment.DoctorProfileId, ct);
+            await transaction.CommitAsync(ct);
 
             logger.LogInformation("Review submitted for appointment {AppointmentId} by user {UserId}", request.AppointmentId, patientUserId);
             return mapper.Map<ReviewResponse>(review);
@@ -89,17 +89,13 @@ namespace Services.Implementations
                 return ReviewErrors.Unauthorized;
             }
 
-            var doctor = await uow.Doctors.GetByIdAsync(review.DoctorProfileId, ct);
-            if (doctor == null)
-            {
-                logger.LogWarning("Doctor not found for ID: {DoctorProfileId}", review.DoctorProfileId);
-                return DoctorErrors.NotFound(review.DoctorProfileId);
-            }
+            await using var transaction = await uow.BeginTransactionAsync(ct);
 
-             uow.Reviews.Delete(review);
+            uow.Reviews.Delete(review);
             await uow.SaveChangesAsync(ct);
 
-            await RecalculateAvgRatingAndTotalReviewsForDoctor(doctor, ct);
+            await uow.Doctors.RefreshRatingCacheAsync(review.DoctorProfileId, ct);
+            await transaction.CommitAsync(ct);
             return Result.Ok();
         }
 
@@ -119,20 +115,5 @@ namespace Services.Implementations
             var (reviews, total) = await uow.Reviews.GetByDoctorIdAsync(doctorProfileId, filters, ct);
             return mapper.Map<List<ReviewResponse>>(reviews);
         }
-
-        #region Helpers
-
-        private async Task RecalculateAvgRatingAndTotalReviewsForDoctor(Domain.Entities.AppModule.DoctorProfile doctor, CancellationToken ct)
-        {
-            var average = await uow.Reviews.GetAverageRatingAsync(doctor.Id, ct);
-            var total = await uow.Reviews.GetTotalReviewsAsync(doctor.Id, ct);
-
-            doctor.AverageRating = average;
-            doctor.TotalReviews = total;
-            uow.Doctors.UpdateRatingCache(doctor); // marks only those 2 props as modified
-            await uow.SaveChangesAsync(ct);
-        }
-
-        #endregion
     }
 }

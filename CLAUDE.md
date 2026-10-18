@@ -41,6 +41,7 @@ Nothing secret lives in `appsettings.json`, and nothing secret should be added t
 | `JwtSettings:Secret` | Yes | HMAC-SHA256 key, at least 32 bytes. **Validated at startup** (`ValidateOnStart`), along with issuer, audience and lifetimes, which live in `appsettings.json` |
 | `EmailSettings:Username`, `EmailSettings:Password`, `EmailSettings:FromAddress` | For email | SMTP (Gmail, port 587, StartTLS). Host, port and from-name are in `appsettings.json` |
 | `Frontend:BaseUrl` | No | Default `http://localhost:3000`. Used for the CORS origin and for links in emails |
+| `RateLimiting:Auth` | No | `PermitLimit` / `WindowSeconds`, default 10 / 60 (in `appsettings.json`): per-client-IP limit on the credential and email endpoints (`RateLimitPolicies.Auth`). Integration tests lift it in `ClinicFlowApiFactory` |
 | `Clinic:TimeZoneId` | No | IANA zone of the clinic, default `Africa/Cairo` (in `appsettings.json`). Slot dates and times are wall-clock times in this zone. **Validated at startup** |
 | `Seeding:DemoData` | No | Seeds the demo accounts with published passwords. Default: `true` in Development, `false` otherwise. Never enable in production |
 | `Seeding:AdminEmail`, `Seeding:AdminPassword` | No | When both are set, an admin with these credentials is created on startup if one doesn't exist |
@@ -53,7 +54,7 @@ dotnet user-secrets set "EmailSettings:Password" "<smtp app password>" --project
 dotnet user-secrets set "EmailSettings:FromAddress" "<from address>" --project ClinicFlow
 ```
 
-- `docker-compose.yml` reads `DB_PASSWORD`, `JWT_SECRET`, `EMAIL_USERNAME`, `EMAIL_PASSWORD` and optionally `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env` (git-ignored, also excluded from the Docker build context). It runs with `ASPNETCORE_ENVIRONMENT=Production`, so it creates no demo data. SQL Server is published on `127.0.0.1:1433` only.
+- `docker-compose.yml` reads `DB_PASSWORD`, `APP_DB_PASSWORD`, `JWT_SECRET`, `EMAIL_USERNAME`, `EMAIL_PASSWORD`, `EMAIL_FROM_ADDRESS` and optionally `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env` (git-ignored, also excluded from the Docker build context). It runs with `ASPNETCORE_ENVIRONMENT=Production`, so it creates no demo data. SQL Server is published on `127.0.0.1:1433` only. The backend connects as `clinicflow_app`, which the one-shot `db-init` service creates with `docker/db-init.sql`; only `db` and `db-init` use `sa`.
 - Serilog writes to the console, `logs/log-.txt` and Seq at `http://localhost:5341`. Seq is optional; if it isn't running, that sink simply drops events.
 - Client IPs come from `Connection.RemoteIpAddress`. `X-Forwarded-For` is applied by `UseForwardedHeaders`, which trusts loopback only; add the proxy to `ForwardedHeadersOptions.KnownProxies` (`WebApiExtensions.cs`) when deploying behind one.
 - Demo logins (Development, or `Seeding:DemoData=true`) are listed in the doc comment at the top of `Persistance/AppData/DataSeeder.cs`, e.g. `admin@clinicflow.com / Admin@1234`.

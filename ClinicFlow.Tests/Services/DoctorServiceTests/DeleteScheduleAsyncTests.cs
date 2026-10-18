@@ -59,6 +59,7 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
             Assert.True(result.IsSuccess);
             Assert.False(_schedule.IsActive);
             await _uow.Slots.Received(1).DeleteUnusedByScheduleAsync(_scheduleId, _ct);
+            await _uow.Slots.Received(1).SyncKeptSlotsWithScheduleAsync(_schedule, ClinicToday, _ct);
             _uow.Doctors.DidNotReceive().DeleteSchedule(Arg.Any<DoctorSchedule>());
             await _uow.Received(1).SaveChangesAsync(_ct);
         }

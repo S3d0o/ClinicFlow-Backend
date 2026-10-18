@@ -156,7 +156,8 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             {
                 Id = 1,
                 Date = DateOnly.FromDateTime(slotDateTime),
-                StartTime = TimeOnly.FromDateTime(slotDateTime)
+                StartTime = TimeOnly.FromDateTime(slotDateTime),
+                DoctorSchedule = new DoctorSchedule { StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MaxValue }
             };
             _uow.Appointments.GetByIdAsync(_appointmentId, _ct)
                 .Returns(new Appointment
@@ -223,7 +224,8 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             {
                 Id = 1,
                 Date = DateOnly.FromDateTime(slotDateTime),
-                StartTime = TimeOnly.FromDateTime(slotDateTime)
+                StartTime = TimeOnly.FromDateTime(slotDateTime),
+                DoctorSchedule = new DoctorSchedule { StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MaxValue }
             };
             _uow.Appointments.GetByIdAsync(_appointmentId, _ct)
                 .Returns(new Appointment

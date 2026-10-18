@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Contract version** | 3.0.0 |
-| **Last updated** | 2026-10-17 |
+| **Contract version** | 3.1.0 |
+| **Last updated** | 2026-10-18 |
 | **Applies to** | ClinicFlow backend (`ClinicFlow.Backend`) and the ClinicFlow frontend (React) |
 | **Canonical copy** | `ClinicFlow.Backend/docs/API_CONTRACT.md`. The frontend repo keeps an identical copy at `docs/API_CONTRACT.md` |
 | **Machine-readable companion** | [`openapi.json`](openapi.json) (OpenAPI 3.1, generated from the running API) |
@@ -93,7 +93,13 @@ A protected endpoint called with a missing, invalid or expired access token retu
 - A **right role but not the owner** of the resource (e.g. another patient's appointment) returns **403 with a ProblemDetails body** whose `title` is the error code (e.g. `Appointment.Unauthorized`).
 
 ### 2.6 Logout
-`POST /api/auth/logout` requires a valid access token **and** the refresh token in the body. It revokes only the caller's own refresh token. If the access token has already expired, refresh first. Whatever the response, clear the local tokens.
+`POST /api/auth/logout` takes the refresh token in the body and revokes it. The access token is optional (since 3.1.0), so logout works after the 15-minute access token has expired, without refreshing first. If a valid access token is sent, the refresh token must belong to that user, or the response is 401. Whatever the response, clear the local tokens.
+
+### 2.7 Rate limiting
+Since 3.1.0, these endpoints share **one limit per client IP**: register patient (#1), register doctor (#2), login (#3), confirm email (#6), forgot password (#7) and reset password (#8). The limit is 10 requests per 60 seconds by default; the backend configures it (`RateLimiting:Auth`). It is a fixed window, and the endpoints count together, so 10 failed logins leave no attempts for a password reset in the same window.
+- Over the limit: **429** ProblemDetails (shape A) with the code `RateLimit.Exceeded`, and a `Retry-After` header giving the seconds until the window resets. Show "Too many attempts, try again in N seconds" and don't retry automatically.
+- Refresh (#4) and logout (#5) are **not** rate limited, so users behind one clinic IP don't lose their sessions.
+- Account lockout ([§2.2](#22-login-rules)) applies independently, per account.
 
 ## 3. Errors
 
@@ -165,6 +171,7 @@ Every error body is JSON with `Content-Type: application/problem+json`; quote `t
 | 403 | Wrong role (E) or not the owner (A) | E or A |
 | 404 | Resource not found (A), or unknown route for a logged-in user (E) | A or E |
 | 409 | Conflict with the current state (A) | A |
+| 429 | Too many requests to a rate-limited auth endpoint (since 3.1.0, [§2.7](#27-rate-limiting)) | A (`RateLimit.Exceeded`) |
 | 500 | Unexpected server error only. Expected business errors use 400, 404 or 409 (since 2.0.0) | A or E |
 
 ### 3.3 Error code catalog
@@ -177,7 +184,7 @@ Only codes the API can actually return are listed.
 | `Auth.AccountLockedOut` | 401 | Too many failed logins; locked for 15 min |
 | `Auth.AccountNotActive` | 401 | Account suspended |
 | `Auth.EmailNotConfirmed` | 401 | Email not confirmed yet |
-| `Auth.InvalidRefreshToken` | 401 | Refresh token invalid, expired, revoked or rotated, or the user is suspended; on logout, also when the token is not the caller's |
+| `Auth.InvalidRefreshToken` | 401 | Refresh token invalid, expired, revoked or rotated, or the user is suspended; on logout with an access token, also when the token is not the caller's |
 | `Auth.UserNotFound` | 404 | `userId` unknown (confirm email, reset password) |
 | `Auth.EmailAlreadyExists` | 409 | Registration with an email that is already used |
 | `Auth.RegistrationFailed` | 400 (shape C), or 500 | 400: Identity rejected the user (e.g. the password policy); the error lists the reasons. 500: an unexpected server failure while registering |
@@ -217,6 +224,7 @@ Only codes the API can actually return are listed.
 | `Specialty.HasAssignedDoctors` | 409 | Deleting a specialty that doctors use |
 | `Admin.DoctorAlreadyApproved` | 409 | Approving an approved doctor |
 | `Admin.DoctorAlreadySuspended` | 409 | Suspending a suspended doctor |
+| `RateLimit.Exceeded` | 429 | Too many requests from one client to the rate-limited auth endpoints ([§2.7](#27-rate-limiting)). A `Retry-After` header gives the seconds to wait |
 
 Booking can also fail with a 500 whose `title` is `"An error occurred while booking the appointment."` (an unexpected database failure).
 
@@ -231,7 +239,7 @@ Auth column: **—** means anonymous; **Any** means any logged-in user.
 | 2 | POST | `/api/auth/register/doctor` | — | 200 `RegisterResponse` |
 | 3 | POST | `/api/auth/login` | — | 200 `LoginResponse` |
 | 4 | POST | `/api/auth/refresh-token` | — | 200 `LoginResponse` |
-| 5 | POST | `/api/auth/logout` | Any | 204 |
+| 5 | POST | `/api/auth/logout` | — | 204 |
 | 6 | POST | `/api/auth/confirm-email` | — | 204 |
 | 7 | POST | `/api/auth/forgot-password` | — | 204 |
 | 8 | POST | `/api/auth/reset-password` | — | 204 |
@@ -308,6 +316,7 @@ Each entry lists the request, the success response, and the errors that endpoint
   - 400 validation (B)
   - 400 (C) `Auth.RegistrationFailed` (Identity rejected the user)
   - 409 `Auth.EmailAlreadyExists`
+  - 429 `RateLimit.Exceeded` ([§2.7](#27-rate-limiting))
   - 500 `Auth.RegistrationFailed` (unexpected server failure)
 
 **2. `POST /api/auth/register/doctor`** (anonymous)
@@ -326,6 +335,7 @@ Each entry lists the request, the success response, and the errors that endpoint
   - 400 (B)
   - 404 `Specialty.NotFound` (unknown or inactive `specialtyId`)
   - 409 `Auth.EmailAlreadyExists`
+  - 429 `RateLimit.Exceeded` ([§2.7](#27-rate-limiting))
   - 500 `Auth.RegistrationFailed` (unexpected server failure)
 
 **3. `POST /api/auth/login`** (anonymous)
@@ -334,16 +344,17 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **Errors:**
   - 400 (B) for an empty or malformed field
   - 401 `Auth.InvalidCredentials`, `Auth.AccountLockedOut`, `Auth.AccountNotActive`, `Auth.EmailNotConfirmed`
+  - 429 `RateLimit.Exceeded` ([§2.7](#27-rate-limiting))
 
 **4. `POST /api/auth/refresh-token`** (anonymous)
 - **Body:** `{ "refreshToken": string }`
 - **200:** `LoginResponse` with a **new** access and refresh token. Follow the rules in [§2.3](#23-refresh-rules-frontend-must-follow-these).
 - **Errors:** 401 `Auth.InvalidRefreshToken`
 
-**5. `POST /api/auth/logout`** (any logged-in user)
+**5. `POST /api/auth/logout`** (anonymous; an access token is optional)
 - **Body:** `{ "refreshToken": string }`
 - **204**
-- **Errors:** 401 `Auth.InvalidRefreshToken` (the token is unknown or isn't the caller's)
+- **Errors:** 401 `Auth.InvalidRefreshToken` (the token is unknown, or an access token was sent and the refresh token isn't that user's)
 
 **6. `POST /api/auth/confirm-email`** (anonymous)
 - **Body:** `{ "userId": "<guid>", "token": string }`, both taken from the link query string as they are ([§8](#8-frontend-routes-the-backend-depends-on)).
@@ -351,11 +362,12 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **Errors:**
   - 404 `Auth.UserNotFound`
   - 400 (C) `Auth.InvalidEmailConfirmationToken`
+  - 429 `RateLimit.Exceeded` ([§2.7](#27-rate-limiting))
 
 **7. `POST /api/auth/forgot-password`** (anonymous)
 - **Body:** `{ "email": string }`
 - **204** whether or not the email exists, so callers can't discover registered emails. The email links to `/#/reset-password`.
-- **Errors:** none for a well-formed body. If the email fails to send, the failure is logged and the response is still 204, so a mail outage doesn't reveal which emails are registered.
+- **Errors:** 429 `RateLimit.Exceeded` ([§2.7](#27-rate-limiting)); otherwise none for a well-formed body. If the email fails to send, the failure is logged and the response is still 204, so a mail outage doesn't reveal which emails are registered.
 
 **8. `POST /api/auth/reset-password`** (anonymous)
 - **Body:** `{ "userId": "<guid>", "token": string, "newPassword": string }`. `userId` and `token` are required; `newPassword` follows the registration password rules (≥ 8 chars, upper case, lower case, a digit and a special character).
@@ -364,6 +376,7 @@ Each entry lists the request, the success response, and the errors that endpoint
   - 400 (B) for a missing field or a weak password
   - 404 `Auth.UserNotFound` (also for a suspended account)
   - 400 (C) `Auth.InvalidPasswordResetToken`
+  - 429 `RateLimit.Exceeded` ([§2.7](#27-rate-limiting))
 
 ### 5.2 Doctors (public)
 
@@ -768,6 +781,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) whose fix **will change the cont
 | 1.0.2 | 2026-10-17 | Bug fix (NL24): `POST /api/auth/forgot-password` returns 204 even when the reset email fails to send. Before, it returned 500 in that case, which only happened for registered, active emails and so revealed them. No frontend change is needed if it already shows the same message for every 204 |
 | 2.0.0 | 2026-10-17 | **Breaking: status codes.** Expected business errors no longer return 500 (M3): duplicates and state conflicts are 409 (`Auth.EmailAlreadyExists`, `Doctor.ScheduleDayAlreadyExists`, `Admin.DoctorAlreadyApproved`/`Suspended`, `Specialty.NameAlreadyExists`/`HasAssignedDoctors`, `Appointment.CannotCompleteCancelled`, `Appointment.DoctorNotesNotAllowed`); bad confirmation and reset tokens and a registration Identity rejects are 400 (shape C); doctor registration with an unknown specialty is 404 `Specialty.NotFound`. `Auth.RegistrationFailed` is 500 only for real server failures. Error codes are unchanged. **Behaviour:** unapproved and suspended doctors are hidden from patients (profile 404, empty slots, booking 404 `Appointment.SlotNotFound`) (M1); completing an appointment before it starts is 400 `Appointment.CannotCompleteBeforeStart`, and an admin cancelling a completed appointment gets `Appointment.AlreadyCompleted` (M14); deleting a schedule with upcoming bookings is 409 `Doctor.CannotDeleteScheduleWithBookedSlots`, one with only past history is deactivated, and schedule updates no longer fail with 500 (H4). **Request:** `UpdateDoctorProfileRequest.consultationFee` is optional (M15). **Frontend:** errors were already mapped by code, so messages keep working; a check on `status === 500` for these codes would need changing |
 | 3.0.0 | 2026-10-17 | **Breaking: error bodies (M5, NL9).** Every error is now `application/problem+json`. 401 from the auth middleware, 403 for a wrong role, 404 for an unknown route and unhandled 500s used to have an empty body and now carry ProblemDetails without an error code (shape E); every 400 (validation, business rule or binding) has `type`, `status` and `traceId`. **Breaking: authentication by default (NM5).** Endpoints without an explicit rule now require a logged-in user; every endpoint §4 lists as anonymous still is, and an anonymous request to an unknown route gets 401 instead of 404. **Breaking: new 400s (H6, M13, NL11).** Appointment lists (#19, #20) default to page 1 of 10 (before: `[]` for patients and one item for doctors) and reject `pageNumber` < 1 or `pageSize` outside 1–50 (before: 500); new validation on booking (`slotId` > 0, `reasonForVisit` ≤ 500), cancel (`cancellationReason` ≤ 500), notes (≤ 4000), login (valid email, non-empty password), reset password (registration password rules) and doctor registration (`specialtyId`, `yearsOfExperience` 0–70, `consultationFee` > 0 and ≤ 10 000, text lengths); profile phone fields use the registration E.164 rule, and every phone field now needs 7–15 digits; `GET /api/doctors/{id}/slots` without `date` is 400 (before: `[]`). **Paging (NL2):** notifications (#32) default to the newest 50 (`pageSize` ≤ 100) and pending doctors (#38) accept optional paging; both send the total in an `X-Total-Count` header, which CORS exposes. **New:** `POST /api/appointments/{id}/no-show` (#24b) for the owning doctor or an admin, 15 minutes after the start; codes `Appointment.NoShowTooEarly` (400) and `Appointment.AlreadyNoShow` (409, also from cancel and complete) (M14). `SpecialtyRequest.isActive` deactivates or reactivates a specialty, and the admin update and delete routes reach inactive specialties (L6). **Behaviour:** time rules use the clinic's time zone instead of UTC, so past slots are no longer bookable for 2–3 hours and the 2-hour cancellation window is exact (M2); slots are rolled forward daily and no longer run out after 14 days (H8); `pendingApprovals` leaves out suspended applicants, like the pending list (NL23). **Frontend:** handle a JSON body on 401/403/404/500 and branch on `status` when `title` isn't an error code; send valid paging; read `X-Total-Count` if you need totals; add the no-show action |
+| 3.1.0 | 2026-10-18 | No breaking changes: every request that worked before still gets the same response. **New: rate limiting (M6).** Register (#1, #2), login (#3), confirm email (#6), forgot password (#7) and reset password (#8) share a per-client-IP limit, 10 requests per 60 s by default ([§2.7](#27-rate-limiting)). Over it: 429 with the new code `RateLimit.Exceeded` and a `Retry-After` header. Refresh and logout are not limited. **Relaxed auth rule: logout (L7).** `POST /api/auth/logout` (#5) no longer requires an access token, so it works after the access token has expired; with an access token, the refresh token must still be the caller's. **Behaviour (H4):** a free slot kept because a cancelled appointment points to it is now `Blocked` while the doctor's schedule no longer covers it (hours moved away, or the schedule deactivated), so it no longer appears in `GET /api/doctors/{id}/slots` and booking it returns 409 `Appointment.SlotNotAvailable`. It is reopened if the hours cover it again. Cancelling an appointment outside the doctor's current hours blocks its slot instead of freeing it. **Behaviour (L8):** a doctor's `averageRating` and `totalReviews` are updated in the same transaction as the review insert or delete, so concurrent reviews can't leave them stale. **Frontend:** show a "try again in N seconds" message for 429 `RateLimit.Exceeded` on the auth forms; logout can be called without refreshing first |
 
 ## 11. How to change this contract
 

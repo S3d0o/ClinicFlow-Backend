@@ -48,6 +48,28 @@ namespace Persistence.Repositories
                 .ExecuteDeleteAsync(ct);
         }
 
+        public async Task SyncKeptSlotsWithScheduleAsync(DoctorSchedule schedule, DateOnly today, CancellationToken ct)
+        {
+            var kept = context.AppointmentSlots
+                .Where(s => s.DoctorScheduleId == schedule.Id && s.Date >= today && s.Status != SlotStatus.Booked);
+
+            // Same rule as DoctorSchedule.Covers, in SQL
+            if (!schedule.IsActive)
+            {
+                await kept.Where(s => s.Status == SlotStatus.Available)
+                    .ExecuteUpdateAsync(u => u.SetProperty(s => s.Status, SlotStatus.Blocked), ct);
+                return;
+            }
+
+            await kept.Where(s => s.Status == SlotStatus.Available
+                               && (s.StartTime < schedule.StartTime || s.EndTime > schedule.EndTime))
+                .ExecuteUpdateAsync(u => u.SetProperty(s => s.Status, SlotStatus.Blocked), ct);
+
+            await kept.Where(s => s.Status == SlotStatus.Blocked
+                               && s.StartTime >= schedule.StartTime && s.EndTime <= schedule.EndTime)
+                .ExecuteUpdateAsync(u => u.SetProperty(s => s.Status, SlotStatus.Available), ct);
+        }
+
         public async Task DeleteUnusedByScheduleAsync(int scheduleId, CancellationToken ct)
             => await context.AppointmentSlots
                 .Where(s => s.DoctorScheduleId == scheduleId && !context.Appointments.Any(a => a.SlotId == s.Id))

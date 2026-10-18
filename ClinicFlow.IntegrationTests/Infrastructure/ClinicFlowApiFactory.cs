@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Persistence.AppData;
 using Services.Abstraction.Contracts;
+using Shared.Settings;
 using Testcontainers.MsSql;
 
 namespace ClinicFlow.IntegrationTests.Infrastructure
@@ -64,6 +65,10 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
                 services.AddSingleton<FakeEmailService>();
                 services.AddSingleton<IEmailService>(sp => sp.GetRequiredService<FakeEmailService>());
+
+                // 5. Every test client shares one (unknown) IP, so the auth rate limit would trip across tests.
+                //    RateLimitTests lowers it again on its own host
+                services.PostConfigure<RateLimitSettings>(s => s.PermitLimit = int.MaxValue);
 
 
                 // this will ovberride the default authentication scheme to use our TestAuthHandler

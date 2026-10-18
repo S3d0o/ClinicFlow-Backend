@@ -35,7 +35,8 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                     Id = 1,
                     Date = DateOnly.FromDateTime(slotStart),
                     StartTime = TimeOnly.FromDateTime(slotStart),
-                    Status = SlotStatus.Booked
+                    Status = SlotStatus.Booked,
+                    DoctorSchedule = new DoctorSchedule { StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MaxValue }
                 },
                 Doctor = new DoctorProfile { UserId = _doctorUserId },
                 Patient = new PatientProfile
@@ -59,6 +60,18 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             Assert.NotNull(_appointment.CancelledAt);
             Assert.Equal(SlotStatus.Available, _appointment.Slot.Status);
             await _uow.Received(1).SaveChangesAsync(_ct);
+        }
+
+        [Fact]
+        public async Task CancelByAdminAsync_WhenScheduleDeactivated_BlocksSlot()
+        {
+            // REVIEW.md H4: a freed slot of a deactivated schedule must not become bookable
+            _appointment.Slot.DoctorSchedule.IsActive = false;
+
+            var result = await _sut.CancelByAdminAsync(_appointmentId, _request, _ct);
+
+            Assert.True(result.IsSuccess);
+            Assert.Equal(SlotStatus.Blocked, _appointment.Slot.Status);
         }
 
         [Fact]

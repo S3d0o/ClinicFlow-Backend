@@ -25,6 +25,7 @@ namespace Domain.Interfaces.IRepositories
         // Write
         Task AddAsync(DoctorProfile doctor, CancellationToken ct);
         void Update(DoctorProfile doctor);
-        void UpdateRatingCache(DoctorProfile doctor);
+        // Recomputes AverageRating and TotalReviews from the doctor's visible reviews
+        Task RefreshRatingCacheAsync(int doctorProfileId, CancellationToken ct);
     }
 }

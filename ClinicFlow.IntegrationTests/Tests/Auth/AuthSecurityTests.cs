@@ -174,5 +174,25 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
             _client.DefaultRequestHeaders.Clear();
             (await RefreshAsync(login.RefreshToken)).StatusCode.Should().Be(HttpStatusCode.OK);
         }
+
+        [Fact]
+        public async Task Logout_WithoutAccessToken_Returns204AndRevokesTheToken()
+        {
+            // REVIEW.md L7: once the 15-minute access token has expired, logout must still work
+            var login = await LoginAsync();
+
+            var response = await _client.PostAsJsonAsync(LogoutUrl, new RefreshTokenRequest(login.RefreshToken));
+
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            (await RefreshAsync(login.RefreshToken)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Fact]
+        public async Task Logout_WithoutAccessTokenAndUnknownToken_Returns401()
+        {
+            var response = await _client.PostAsJsonAsync(LogoutUrl, new RefreshTokenRequest("not-a-real-token"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
     }
 }

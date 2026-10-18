@@ -18,6 +18,9 @@
         void Update(AppointmentSlot slot);
         void Block(AppointmentSlot slot);
         Task DeleteFutureAvailableByScheduleAsync(int scheduleId, DateOnly today, CancellationToken ct);
+        // Free slots kept from today on (a cancelled appointment points to them, so they can't be deleted) are
+        // blocked when the schedule no longer covers them, and reopened when it covers them again (REVIEW.md H4)
+        Task SyncKeptSlotsWithScheduleAsync(DoctorSchedule schedule, DateOnly today, CancellationToken ct);
         // Deletes the schedule's slots that no appointment (of any status) points to
         Task DeleteUnusedByScheduleAsync(int scheduleId, CancellationToken ct);
     }

@@ -372,6 +372,46 @@ namespace ClinicFlow.IntegrationTests.Tests.Doctors
             });
         }
 
+        [Fact]
+        public async Task UpdateSchedule_HoursMovedAwayFromKeptSlot_BlocksItUntilTheHoursCoverItAgain()
+        {
+            // REVIEW.md H4: the free 09:30 slot is kept because a cancelled appointment points to it.
+            // Once the hours start at 13:00 it must not be bookable; moving them back reopens it
+            Guid userId = default;
+            int doctorId = 0, scheduleId = 0, keptSlotId = 0;
+            var date = _factory.ClinicToday.AddDays(3);
+            await _factory.SeedAsync(async db =>
+            {
+                (userId, doctorId) = await SeedDataHelper.SeedDoctorAsync(db, "narrow");
+                (scheduleId, var slotIds) = await SeedDataHelper.SeedScheduleWithSlotsAsync(db, doctorId, date.DayOfWeek,
+                    (3, new TimeOnly(9, 30), SlotStatus.Available));
+                keptSlotId = slotIds[0];
+                await AddAppointmentAsync(db, doctorId, keptSlotId, AppointmentStatus.Cancelled, "narrow");
+            });
+            AuthenticateAs(userId, "Doctor");
+
+            var narrowed = await _client.PutAsJsonAsync($"{BaseUrl}/schedule/{scheduleId}",
+                new UpdateScheduleRequest { StartTime = new TimeOnly(13, 0) });
+
+            narrowed.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await GetSlotIdsAsync(doctorId, date)).Should().NotContain(keptSlotId);
+            await _factory.SeedAsync(async db =>
+                (await db.AppointmentSlots.AsNoTracking().SingleAsync(s => s.Id == keptSlotId)).Status.Should().Be(SlotStatus.Blocked));
+
+            var restored = await _client.PutAsJsonAsync($"{BaseUrl}/schedule/{scheduleId}",
+                new UpdateScheduleRequest { StartTime = new TimeOnly(9, 0) });
+
+            restored.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await GetSlotIdsAsync(doctorId, date)).Should().Contain(keptSlotId);
+        }
+
+        private async Task<List<int>> GetSlotIdsAsync(int doctorId, DateOnly date)
+        {
+            var response = await _client.GetAsync($"{BaseUrl}/{doctorId}/slots?date={date:yyyy-MM-dd}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            return (await response.Content.ReadFromJsonAsync<List<SlotResponse>>(_json))!.Select(s => s.Id).ToList();
+        }
+
         private static async Task<int> AddAppointmentAsync(Persistence.AppData.ClinicDbContext db, int doctorId, int slotId,
             AppointmentStatus status, string patientSuffix)
         {

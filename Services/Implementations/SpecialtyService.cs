@@ -10,7 +10,7 @@ namespace Services.Implementations
     {
         public async Task<Result<SpecialtyResponse>> CreateAsync(SpecialtyRequest specialtyDTO, CancellationToken ct)
         {
-            var existing = await uow.Specialties.GetByNameAsync(specialtyDTO.Name!, ct);
+            var existing = await uow.Specialties.GetByNameAsync(specialtyDTO.Name, ct);
             if (existing is not null)
             {
                 logger.LogWarning("Attempted to create duplicate specialty with name {Name}", specialtyDTO.Name);
@@ -75,7 +75,7 @@ namespace Services.Implementations
                 return SpecialtyErrors.NotFound(id);
             }
 
-            var nameConflict = await uow.Specialties.GetByNameAsync(specialtyDTO.Name!, ct);
+            var nameConflict = await uow.Specialties.GetByNameAsync(specialtyDTO.Name, ct);
             if (nameConflict is not null && nameConflict.Id != id)
             {
                 logger.LogWarning("Attempted to rename specialty {Id} to existing name {Name}", id, specialtyDTO.Name);

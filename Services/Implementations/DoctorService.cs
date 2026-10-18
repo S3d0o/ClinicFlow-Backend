@@ -83,6 +83,7 @@ namespace Services.Implementations
                 mapper.Map(request, existingSchedule);
                 existingSchedule.IsActive = true;
                 await uow.SaveChangesAsync(ct);
+                await uow.Slots.SyncKeptSlotsWithScheduleAsync(existingSchedule, ClinicToday(), ct);
                 await GenerateSlotsAsync(existingSchedule, ct);
 
                 logger.LogInformation("Reactivated schedule {ScheduleId} for doctor {DoctorId} on {DayOfWeek}",
@@ -123,9 +124,11 @@ namespace Services.Implementations
 
             // One transaction, so a failure can't leave the schedule changed but its slots half-replaced (REVIEW.md H4).
             // Booked slots, and slots an appointment still points to, are kept; regeneration skips their times.
+            // Kept free slots outside the new hours are blocked so patients can't book them.
             await using var transaction = await uow.BeginTransactionAsync(ct);
             await uow.SaveChangesAsync(ct);
             await uow.Slots.DeleteFutureAvailableByScheduleAsync(scheduleId, ClinicToday(), ct);
+            await uow.Slots.SyncKeptSlotsWithScheduleAsync(updatedSchedule, ClinicToday(), ct);
             await GenerateSlotsAsync(updatedSchedule, ct);
             await transaction.CommitAsync(ct);
 
@@ -156,6 +159,8 @@ namespace Services.Implementations
             if (await uow.Slots.AnyForScheduleAsync(scheduleId, ct))
             {
                 existing.IsActive = false;
+                // Future free slots of cancelled appointments stay, but are no longer bookable
+                await uow.Slots.SyncKeptSlotsWithScheduleAsync(existing, ClinicToday(), ct);
                 logger.LogInformation("Deactivated schedule {ScheduleId} for doctor {UserId}: it has appointment history", scheduleId, userId);
             }
             else

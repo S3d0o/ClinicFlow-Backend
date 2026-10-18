@@ -1,7 +1,9 @@
 
 using ClinicFlow.BackgroundJobs;
+using Microsoft.Extensions.Options;
 using Persistence.AppData;
 using Scalar.AspNetCore;
+using Shared.Settings;
 
 Log.Logger = new LoggerConfiguration() // capture startup errors
     .MinimumLevel.Information()
@@ -26,6 +28,7 @@ try
     #region Add services to the container.
 
     builder.Services.AddWebApiServices();
+    builder.Services.AddAuthRateLimiting(builder.Configuration);
 
     builder.Services.AddInfraStructureServices(builder.Configuration);
 
@@ -57,6 +60,13 @@ try
     });
 
     var app = builder.Build();
+
+    // The app runs without email, so missing SMTP settings are a warning rather than a startup failure;
+    // without it they only surfaced at the first send (REVIEW.md NL12)
+    var missingEmailSettings = app.Services.GetRequiredService<IOptions<EmailSettings>>().Value.MissingSettings();
+    if (missingEmailSettings.Count > 0)
+        Log.Warning("Email is not configured (missing EmailSettings: {MissingSettings}); confirmation, password-reset and reminder emails will fail to send",
+            missingEmailSettings);
 
     // Demo accounts use published passwords: only seed them in Development unless explicitly enabled.
     var seedDemoData = app.Configuration.GetValue<bool?>("Seeding:DemoData") ?? app.Environment.IsDevelopment();
@@ -97,6 +107,8 @@ try
 
     app.UseHttpsRedirection();
     app.UseCors("React");
+    // After CORS, so the browser can read a 429; per client IP, so it doesn't need the authenticated user
+    app.UseRateLimiter();
     app.UseAuthentication();
     app.UseAuthorization();
 

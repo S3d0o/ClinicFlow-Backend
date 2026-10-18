@@ -38,7 +38,8 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                     Id = 1,
                     Date = DateOnly.FromDateTime(slotStart),
                     StartTime = TimeOnly.FromDateTime(slotStart),
-                    Status = SlotStatus.Booked
+                    Status = SlotStatus.Booked,
+                    DoctorSchedule = new DoctorSchedule { StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MaxValue }
                 },
                 Doctor = new DoctorProfile { Id = _doctorId, UserId = _doctorUserId },
                 Patient = new PatientProfile
@@ -62,6 +63,28 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             Assert.NotNull(_appointment.CancelledAt);
             Assert.Equal(SlotStatus.Available, _appointment.Slot.Status);
             await _uow.Received(1).SaveChangesAsync(_ct);
+        }
+
+        [Theory]
+        [InlineData(true, 13, 17)]   // the doctor moved their hours away from the slot
+        [InlineData(false, 0, 23)]   // the schedule was deactivated
+        public async Task CancelByDoctorAsync_WhenScheduleNoLongerCoversSlot_BlocksSlot(bool isActive, int startHour, int endHour)
+        {
+            // REVIEW.md H4: a freed slot outside the doctor's current hours must not become bookable
+            _appointment.Slot.StartTime = new TimeOnly(10, 0);
+            _appointment.Slot.EndTime = new TimeOnly(10, 30);
+            _appointment.Slot.DoctorSchedule = new DoctorSchedule
+            {
+                IsActive = isActive,
+                StartTime = new TimeOnly(startHour, 0),
+                EndTime = new TimeOnly(endHour, 0)
+            };
+
+            var result = await _sut.CancelByDoctorAsync(_doctorUserId, _appointmentId, _request, _ct);
+
+            Assert.True(result.IsSuccess);
+            Assert.Equal(AppointmentStatus.Cancelled, _appointment.Status);
+            Assert.Equal(SlotStatus.Blocked, _appointment.Slot.Status);
         }
 
         [Fact]

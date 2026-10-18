@@ -165,7 +165,7 @@ namespace Services.Implementations
             appointment.CancelledAt = DateTime.UtcNow;
             appointment.CancellationReason = request.CancellationReason;
             appointment.CancelledBy = CancelledBy.Patient;
-            appointment.Slot.Status = SlotStatus.Available;
+            appointment.Slot.Status = FreedSlotStatus(appointment.Slot);
             await uow.SaveChangesAsync(ct);
 
             logger.LogInformation("Appointment ID: {AppointmentId} cancelled by patient ID: {PatientId}.", appointmentId, patientProfile.Id);
@@ -234,7 +234,7 @@ namespace Services.Implementations
             appointment.CancelledAt = DateTime.UtcNow;
             appointment.CancellationReason = request.CancellationReason;
             appointment.CancelledBy = CancelledBy.Doctor;
-            appointment.Slot.Status = SlotStatus.Available;
+            appointment.Slot.Status = FreedSlotStatus(appointment.Slot);
             await uow.SaveChangesAsync(ct);
             logger.LogInformation("Appointment ID: {AppointmentId} cancelled by doctor ID: {DoctorId}.", appointmentId, doctorProfile.Id);
 
@@ -283,7 +283,7 @@ namespace Services.Implementations
             appointment.CancelledAt = DateTime.UtcNow;
             appointment.CancellationReason = request.CancellationReason;
             appointment.CancelledBy = CancelledBy.Admin;
-            appointment.Slot.Status = SlotStatus.Available;
+            appointment.Slot.Status = FreedSlotStatus(appointment.Slot);
             await uow.SaveChangesAsync(ct);
             logger.LogInformation("Appointment ID: {AppointmentId} cancelled by admin.", appointmentId);
 
@@ -495,6 +495,11 @@ namespace Services.Implementations
         #region Helpers
 
         private static readonly TimeSpan NoShowGracePeriod = TimeSpan.FromMinutes(15);
+
+        // A cancelled appointment frees its slot, unless the doctor has since moved their hours away
+        // from it or deactivated the schedule (REVIEW.md H4)
+        private static SlotStatus FreedSlotStatus(AppointmentSlot slot)
+            => slot.DoctorSchedule.Covers(slot) ? SlotStatus.Available : SlotStatus.Blocked;
 
         // Runs after the appointment change is committed: a notification failure is logged
         // and must not turn the successful operation into an error response

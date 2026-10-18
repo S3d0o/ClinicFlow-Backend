@@ -24,6 +24,18 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
         }
 
         [Fact]
+        public async Task LogoutAsync_WhenAnonymous_RevokesWithoutAnOwnerCheck()
+        {
+            // REVIEW.md L7: a caller whose access token expired can still log out with the refresh token alone
+            _tokenService.RevokeRefreshTokenAsync((Guid?)null, "refresh-token", _ip, "Logout", _ct).Returns(Result.Ok());
+
+            var result = await _sut.LogoutAsync(null, _request, _ip, _ct);
+
+            Assert.True(result.IsSuccess);
+            await _tokenService.Received(1).RevokeRefreshTokenAsync((Guid?)null, "refresh-token", _ip, "Logout", _ct);
+        }
+
+        [Fact]
         public async Task LogoutAsync_WhenRevokeFails_ReturnsTheSameError()
         {
             _tokenService.RevokeRefreshTokenAsync(_userId, "refresh-token", _ip, "Logout", _ct).Returns(Result.Fail(AuthErrors.InvalidRefreshToken));

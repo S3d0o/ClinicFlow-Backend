@@ -6,7 +6,8 @@ namespace Persistence.Repositories
     {
         public async Task<Appointment?> GetByIdAsync(int id, CancellationToken ct)
             => await context.Appointments
-            .Include(x=>x.Slot)
+            .Include(x => x.Slot)
+                .ThenInclude(s => s.DoctorSchedule) // a freed slot is only reopened if its schedule still covers it
             .Include(x => x.Doctor)
                 .ThenInclude(d => d.User)
             .Include(x => x.Patient)

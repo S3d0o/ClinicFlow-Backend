@@ -63,6 +63,8 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
             Assert.True(result.IsSuccess);
             Assert.False(_schedule.IsActive);
             await _uow.Slots.Received(1).DeleteFutureAvailableByScheduleAsync(_scheduleId, ClinicToday, _ct);
+            // Kept free slots (cancelled appointments point to them) are blocked, not left bookable (REVIEW.md H4)
+            await _uow.Slots.Received(1).SyncKeptSlotsWithScheduleAsync(_schedule, ClinicToday, _ct);
             Assert.Null(_generatedSlots);
         }
 

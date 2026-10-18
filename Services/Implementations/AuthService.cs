@@ -260,11 +260,11 @@ namespace Services.Implementations
                 );
         }
 
-        public async Task<Result> LogoutAsync(Guid userId, RefreshTokenRequest request, string ipAddress, CancellationToken ct)
+        public async Task<Result> LogoutAsync(Guid? userId, RefreshTokenRequest request, string ipAddress, CancellationToken ct)
         {
             var result = await tokenService.RevokeRefreshTokenAsync(userId, request.RefreshToken, ipAddress, "Logout", ct);
             if (result.IsSuccess)
-                logger.LogInformation("User {UserId} logged out — refresh token revoked from {IpAddress}", userId, ipAddress);
+                logger.LogInformation("Logout revoked a refresh token from {IpAddress} (caller {UserId}; null when anonymous)", ipAddress, userId);
             return result;
         }
 

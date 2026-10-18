@@ -110,17 +110,19 @@ namespace Persistence.Repositories
         public void Update(DoctorProfile doctor)
             => context.DoctorProfiles.Update(doctor);
 
-        // this method is called after a new review is added or an existing review is updated/deleted to recalculate the average rating
-        // and total reviews for the doctor. We mark only these two properties as modified to avoid unnecessary updates to other fields.
-        public void UpdateRatingCache(DoctorProfile doctor)
-        {
-            context.Entry(doctor).Property(d => d.AverageRating).IsModified = true;
-            context.Entry(doctor).Property(d => d.TotalReviews).IsModified = true;
-        }
+        // One UPDATE with subqueries, so the cached values are computed from the stored reviews by the same
+        // statement that writes them. Called inside the review insert/delete transaction (REVIEW.md L8)
+        public Task RefreshRatingCacheAsync(int doctorProfileId, CancellationToken ct)
+            => context.DoctorProfiles
+                .Where(d => d.Id == doctorProfileId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(d => d.AverageRating, d => context.Reviews
+                        .Where(r => r.DoctorProfileId == d.Id && r.IsVisible)
+                        .Average(r => (double?)r.Rating) ?? 0.0)
+                    .SetProperty(d => d.TotalReviews, d => context.Reviews
+                        .Count(r => r.DoctorProfileId == d.Id && r.IsVisible)), ct);
 
-
-
-        #region Helpers 
+        #region Helpers
 
         private IQueryable<DoctorProfile> ApplyFilters(IQueryable<DoctorProfile> query, DoctorFilterParams filters)
         {

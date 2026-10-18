@@ -119,13 +119,14 @@ namespace Services.Implementations
             );
         }
 
-        public async Task<Result> RevokeRefreshTokenAsync(Guid userId, string refreshToken, string ipAddress, string? reason, CancellationToken ct)
+        public async Task<Result> RevokeRefreshTokenAsync(Guid? userId, string refreshToken, string ipAddress, string? reason, CancellationToken ct)
         {
             var tokenHash = HashRefreshToken(refreshToken);
             var existingToken = await uow.RefreshTokens.GetRefreshTokenByHashAsync(tokenHash, ct);
 
-            // A user may only revoke their own tokens
-            if (existingToken is null || existingToken.UserId != userId)
+            // A logged-in user may only revoke their own tokens. An anonymous caller (whose access token
+            // may have expired) proves ownership by holding the token, which could refresh anyway (REVIEW.md L7)
+            if (existingToken is null || (userId is not null && existingToken.UserId != userId))
             {
                 logger.LogWarning("Revoke failed: refresh token not found for user {UserId}", userId);
                 return AuthErrors.InvalidRefreshToken;

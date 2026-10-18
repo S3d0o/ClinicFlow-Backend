@@ -1,5 +1,6 @@
 ﻿// Presentation/Controllers/AuthController.cs
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Presentation.Extensions;
 using Services.Abstraction.Contracts;
 using Shared.DTOs.Auth;
@@ -13,9 +14,11 @@ public class AuthController(IAuthService service) : ApiController
     /// <remarks>Creates a patient account. Email confirmation required before login.</remarks>
     [AllowAnonymous]
     [HttpPost("register/patient")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [ProducesResponseType(typeof(RegisterResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<RegisterResponse>> RegisterPatient(
         [FromBody] RegisterPatientRequest request, CancellationToken ct)
@@ -28,10 +31,12 @@ public class AuthController(IAuthService service) : ApiController
     /// <remarks>Creates a doctor account. Requires admin approval before appearing in search.</remarks>
     [AllowAnonymous]
     [HttpPost("register/doctor")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [ProducesResponseType(typeof(RegisterResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<RegisterResponse>> RegisterDoctor(
         [FromBody] RegisterDoctorRequest request, CancellationToken ct)
@@ -44,9 +49,11 @@ public class AuthController(IAuthService service) : ApiController
     /// <remarks>Returns JWT access token and refresh token. Email must be confirmed first.</remarks>
     [AllowAnonymous]
     [HttpPost("login")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<LoginResponse>> Login(
         [FromBody] LoginRequest request, CancellationToken ct)
     {
@@ -70,8 +77,11 @@ public class AuthController(IAuthService service) : ApiController
     }
 
     /// <summary>Logout</summary>
-    /// <remarks>Revokes the refresh token. Requires a valid access token.</remarks>
-    [Authorize]
+    /// <remarks>
+    /// Revokes the refresh token. Works without an access token, so a user whose access token has expired
+    /// can still log out; with a valid access token, the refresh token must belong to the caller.
+    /// </remarks>
+    [AllowAnonymous]
     [HttpPost("logout")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -79,7 +89,7 @@ public class AuthController(IAuthService service) : ApiController
         [FromBody] RefreshTokenRequest request, CancellationToken ct)
     {
         var ip = HttpContext.GetClientIpAddress();
-        var result = await service.LogoutAsync(User.GetUserId(), request, ip, ct);
+        var result = await service.LogoutAsync(User.FindUserId(), request, ip, ct);
         return HandleResult(result);
     }
 
@@ -87,9 +97,11 @@ public class AuthController(IAuthService service) : ApiController
     /// <remarks>Validates the email confirmation token sent after registration.</remarks>
     [AllowAnonymous]
     [HttpPost("confirm-email")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> ConfirmEmail(
         [FromBody] ConfirmEmailRequest request, CancellationToken ct)
     {
@@ -104,8 +116,10 @@ public class AuthController(IAuthService service) : ApiController
     /// </remarks>
     [AllowAnonymous]
     [HttpPost("forgot-password")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> ForgotPassword(
         [FromBody] ForgotPasswordRequest request, CancellationToken ct)
     {
@@ -117,9 +131,11 @@ public class AuthController(IAuthService service) : ApiController
     /// <remarks>Resets the password using the token from the reset email. Revokes all active sessions.</remarks>
     [AllowAnonymous]
     [HttpPost("reset-password")]
+    [EnableRateLimiting(RateLimitPolicies.Auth)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> ResetPassword(
         [FromBody] ResetPasswordRequest request, CancellationToken ct)
     {

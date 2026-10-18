@@ -96,6 +96,8 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
             Assert.Equal(new TimeOnly(9, 0), inactive.StartTime);
             Assert.Equal(new TimeOnly(10, 0), inactive.EndTime);
             Assert.Equal(30, inactive.SlotDurationMinutes);
+            // Blocked slots of cancelled appointments that fit the new hours are reopened
+            await _uow.Slots.Received(1).SyncKeptSlotsWithScheduleAsync(inactive, ClinicToday, _ct);
             _uow.Doctors.DidNotReceive().AddSchedule(Arg.Any<DoctorSchedule>());
             Assert.Equal(2 * MatchingDaysInWindow, _generatedSlots!.Count);
         }
