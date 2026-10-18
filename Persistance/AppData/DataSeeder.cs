@@ -27,8 +27,13 @@ namespace Persistence.AppData;
 ///              hassan.mahmoud@gmail.com    / Patient@1234
 ///              rana.khalil@gmail.com       / Patient@1234
 ///              youssef.badawi@gmail.com    / Patient@1234
+///
+/// On top of these, DataSeeder.LargeDemo.cs generates a large, repeatable clinic for load-style testing:
+///   doctor01…doctor53@clinicflow.test   / Doctor@1234   (60 doctors in total; 5 pending, 3 suspended)
+///   patient01…patient75@clinicflow.test / Patient@1234  (80 patients in total)
+/// plus about 2,500 appointments over 60 days of history and 21 days ahead, reviews and notifications.
 /// </summary>
-public static class DataSeeder
+public static partial class DataSeeder
 {
     // ── Fixed GUIDs ───────────────────────────────────────────────────────────
     // Using fixed IDs makes the seeder idempotent: re-running never duplicates rows.
@@ -55,16 +60,28 @@ public static class DataSeeder
     private static readonly DayOfWeek[] WorkDays =
         [DayOfWeek.Sunday, DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday];
 
-    // Demo slots cover this window around today; it is topped up on every start (see SeedAppointmentSlotsAsync)
-    private const int SlotHistoryDays = 14;
+    // Demo slots cover this window around today; it is topped up on every start (see SeedAppointmentSlotsAsync).
+    // 60 days of history gives the generated clinic enough past visits for statistics and paging.
+    private const int SlotHistoryDays = 60;
     private const int SlotBookingWindowDays = 21;
+
+    // Slot dates and times are clinic-local wall-clock values; stored timestamps (BookedAt, CancelledAt,
+    // CreatedAt, …) are UTC. Seeding with UTC dates put demo data a day off around midnight (REVIEW.md M2).
+    private sealed record SeedClock(DateTime ClinicNow, DateTime UtcNow)
+    {
+        private TimeSpan Offset { get; } = TimeSpan.FromMinutes(Math.Round((ClinicNow - UtcNow).TotalMinutes));
+        public DateOnly Today => DateOnly.FromDateTime(ClinicNow);
+        public DateTime ToUtc(DateTime clinicLocal) => DateTime.SpecifyKind(clinicLocal - Offset, DateTimeKind.Utc);
+    }
 
     // ── Entry point ───────────────────────────────────────────────────────────
     // Roles and specialties are always seeded. The demo dataset (accounts with the published
     // passwords above) is only seeded when seedDemoData is true — never enable it in production.
     // A real admin can be bootstrapped from configuration (Seeding:AdminEmail / Seeding:AdminPassword).
+    // clinicNow and utcNow come from IDateTimeProvider (Persistence can't reference it).
     public static async Task SeedAsync(
-        IServiceProvider service, bool seedDemoData, string? adminEmail = null, string? adminPassword = null)
+        IServiceProvider service, bool seedDemoData, DateTime clinicNow, DateTime utcNow,
+        string? adminEmail = null, string? adminPassword = null)
     {
         using var scope = service.CreateScope();
 
@@ -85,12 +102,18 @@ public static class DataSeeder
         if (!seedDemoData)
             return;
 
+        var clock = new SeedClock(clinicNow, utcNow);
+
+        // The hand-written demo stories (the accounts listed above) first, then the generated clinic.
+        // Each step only runs if its data is missing, so restarts don't duplicate anything.
         await SeedUsersAsync(userManager, context);
         await SeedDoctorSchedulesAsync(context);
-        await SeedAppointmentSlotsAsync(context);
-        await SeedAppointmentsAsync(context);
-        await SeedReviewsAsync(context);
-        await SeedNotificationsAsync(context);
+        await SeedGeneratedPeopleAsync(context, clock, logger);
+        await SeedAppointmentSlotsAsync(context, clock);
+        await SeedAppointmentsAsync(context, clock);
+        await SeedReviewsAsync(context, clock);
+        await SeedNotificationsAsync(context, clock);
+        await SeedGeneratedActivityAsync(context, clock, logger);
     }
 
     // SQL Server accepts connections before it has finished recovering existing databases (e.g. when
@@ -550,9 +573,9 @@ public static class DataSeeder
     // Runs on every start, not just the first: it adds any missing slots from SlotHistoryDays ago to
     // SlotBookingWindowDays ahead, so a long-lived demo database keeps bookable slots. Existing slots
     // (available, booked or blocked) are never touched.
-    private static async Task SeedAppointmentSlotsAsync(ClinicDbContext context)
+    private static async Task SeedAppointmentSlotsAsync(ClinicDbContext context, SeedClock clock)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = clock.Today;
         var from = today.AddDays(-SlotHistoryDays);
         var to = today.AddDays(SlotBookingWindowDays);
 
@@ -612,12 +635,12 @@ public static class DataSeeder
     // Dates are counted in working days from today (see WorkDay), so every appointment lands on a day
     // the doctor works, whatever weekday the database is seeded on. Each (patient, doctor, status)
     // combination is used once, which is how SeedReviewsAsync finds the visit a review belongs to.
-    private static async Task SeedAppointmentsAsync(ClinicDbContext context)
+    private static async Task SeedAppointmentsAsync(ClinicDbContext context, SeedClock clock)
     {
         if (await context.Appointments.AnyAsync()) return;
 
-        var now = DateTime.UtcNow;
-        var today = DateOnly.FromDateTime(now);
+        var now = clock.UtcNow;
+        var today = clock.Today;
         var firstSlotDate = today.AddDays(-SlotHistoryDays);
 
         var doctorIds = await context.DoctorProfiles.ToDictionaryAsync(d => d.UserId, d => d.Id);
@@ -640,7 +663,7 @@ public static class DataSeeder
                 s.DoctorProfileId == doctorProfileId && s.Date == date && s.StartTime == time);
             if (slot is null || slot.Status != SlotStatus.Available) return;
 
-            var start = date.ToDateTime(time, DateTimeKind.Utc);
+            var start = clock.ToUtc(date.ToDateTime(time));
             var appointment = new Appointment
             {
                 SlotId = slot.Id,
@@ -696,7 +719,7 @@ public static class DataSeeder
         Add(DrDinaId, PatMohamedId, -2, new TimeOnly(9, 0), AppointmentStatus.Completed,
             "Child's 18-month routine checkup and vaccination.", bookedDaysBefore: 3);
 
-        Add(DrAhmedId, PatSaraId, -2, new TimeOnly(9, 30), AppointmentStatus.Completed,
+        Add(DrAhmedId, PatSaraId, -2, new TimeOnly(11, 0), AppointmentStatus.Completed, // Sara sees Dr. Nour at 09:30 that day
             "Palpitations and irregular heartbeat noticed for two days.");
 
         // ── Past: Confirmed but not yet completed (Dr. Ahmed can mark it Completed) ──
@@ -745,12 +768,12 @@ public static class DataSeeder
     // ── 7. Reviews ────────────────────────────────────────────────────────────
     // Sara's completed visit with Dr. Ahmed is left unreviewed so the "leave a review" flow can be
     // demoed. Doctor ratings are then derived from the seeded reviews, as ReviewService does.
-    private static async Task SeedReviewsAsync(ClinicDbContext context)
+    private static async Task SeedReviewsAsync(ClinicDbContext context, SeedClock clock)
     {
         if (await context.Reviews.AnyAsync()) return;
 
         var appointments = await LoadAppointmentsAsync(context);
-        var now = DateTime.UtcNow;
+        var now = clock.UtcNow;
 
         var reviewData = new[]
         {
@@ -770,7 +793,7 @@ public static class DataSeeder
                 a.Patient.UserId == patient && a.Doctor.UserId == doctor && a.Status == AppointmentStatus.Completed);
             if (appointment is null) continue;
 
-            var reviewedAt = SlotEnd(appointment).AddHours(6);
+            var reviewedAt = SlotEndUtc(appointment, clock).AddHours(6);
             reviews.Add(new Review
             {
                 AppointmentId = appointment.Id,
@@ -801,17 +824,31 @@ public static class DataSeeder
     // Mirrors what the app sends, with the same titles and wording as AppointmentService: the patient
     // and the doctor hear about every booking and cancellation, the patient about completions. Anything
     // older than two days is marked read.
-    private static async Task SeedNotificationsAsync(ClinicDbContext context)
+    private static async Task SeedNotificationsAsync(ClinicDbContext context, SeedClock clock)
     {
         if (await context.Notifications.AnyAsync()) return;
 
         var appointments = await LoadAppointmentsAsync(context);
         if (appointments.Count == 0) return;
 
-        var now = DateTime.UtcNow;
         var notifications = new List<Notification>();
+        foreach (var appointment in appointments)
+            AddAppointmentNotifications(notifications, appointment, clock);
 
-        void Notify(Guid userId, Appointment appointment, string title, string message, NotificationType type, DateTime at)
+        await context.Notifications.AddRangeAsync(notifications);
+        await context.SaveChangesAsync();
+    }
+
+    // ── Demo data helpers ─────────────────────────────────────────────────────
+
+    // The notifications the app would have sent for this appointment so far. Every upcoming confirmed visit
+    // gets ReminderSentAt, so AppointmentReminderJob never emails demo addresses (some look like real Gmail
+    // accounts); visits starting within 24 hours also get the reminder notification the job would have created.
+    private static void AddAppointmentNotifications(List<Notification> notifications, Appointment a, SeedClock clock)
+    {
+        var now = clock.UtcNow;
+
+        void Notify(Guid userId, string title, string message, NotificationType type, DateTime at)
         {
             var createdAt = at < now ? at : now;
             notifications.Add(new Notification
@@ -822,68 +859,56 @@ public static class DataSeeder
                 Type = type,
                 IsRead = createdAt < now.AddDays(-2),
                 CreatedAt = createdAt,
-                RelatedEntityId = appointment.Id,
+                RelatedEntityId = a.Id,
             });
         }
 
         static string Name(ApplicationUser user) => $"{user.FirstName} {user.LastName}";
 
-        foreach (var a in appointments)
+        var patient = a.Patient.User;
+        var doctor = a.Doctor.User;
+        var when = $"on {a.Slot.Date} at {a.Slot.StartTime:HH:mm}";
+
+        Notify(patient.Id, "Appointment Confirmed",
+            $"Your appointment with Dr. {Name(doctor)} {when} has been booked.",
+            NotificationType.AppointmentConfirmed, a.BookedAt);
+        Notify(doctor.Id, "New Appointment Booked",
+            $"You have a new appointment with {Name(patient)} {when}.",
+            NotificationType.SystemAlert, a.BookedAt);
+
+        switch (a.Status)
         {
-            var patient = a.Patient.User;
-            var doctor = a.Doctor.User;
-            var when = $"on {a.Slot.Date} at {a.Slot.StartTime:HH:mm}";
+            case AppointmentStatus.Completed:
+                Notify(patient.Id, "Appointment Completed",
+                    "Your appointment has been completed. You can now leave a review.",
+                    NotificationType.AppointmentCompleted, SlotEndUtc(a, clock));
+                break;
 
-            Notify(patient.Id, a, "Appointment Confirmed",
-                $"Your appointment with Dr. {Name(doctor)} {when} has been booked.",
-                NotificationType.AppointmentConfirmed, a.BookedAt);
-            Notify(doctor.Id, a, "New Appointment Booked",
-                $"You have a new appointment with {Name(patient)} {when}.",
-                NotificationType.SystemAlert, a.BookedAt);
+            case AppointmentStatus.Cancelled:
+                var cancelledAt = a.CancelledAt ?? now;
+                Notify(patient.Id, "Appointment Cancelled",
+                    $"Your appointment {when} has been cancelled.",
+                    NotificationType.AppointmentCancelled, cancelledAt);
+                Notify(doctor.Id, "Appointment Cancelled",
+                    $"Your appointment with {Name(patient)} {when} has been cancelled.",
+                    NotificationType.AppointmentCancelled, cancelledAt);
+                break;
 
-            switch (a.Status)
-            {
-                case AppointmentStatus.Completed:
-                    Notify(patient.Id, a, "Appointment Completed",
-                        "Your appointment has been completed. You can now leave a review.",
-                        NotificationType.AppointmentCompleted, SlotEnd(a));
-                    break;
+            case AppointmentStatus.NoShow:
+                Notify(patient.Id, "Missed Appointment",
+                    $"Your appointment {when} was marked as missed.",
+                    NotificationType.SystemAlert, SlotEndUtc(a, clock).AddMinutes(15));
+                break;
 
-                case AppointmentStatus.Cancelled:
-                    var cancelledAt = a.CancelledAt ?? now;
-                    Notify(patient.Id, a, "Appointment Cancelled",
-                        $"Your appointment {when} has been cancelled.",
-                        NotificationType.AppointmentCancelled, cancelledAt);
-                    Notify(doctor.Id, a, "Appointment Cancelled",
-                        $"Your appointment with {Name(patient)} {when} has been cancelled.",
-                        NotificationType.AppointmentCancelled, cancelledAt);
-                    break;
-
-                case AppointmentStatus.NoShow:
-                    Notify(patient.Id, a, "No-Show Recorded",
-                        $"You missed your appointment with Dr. {Name(doctor)} {when}. Please book a new appointment if needed.",
-                        NotificationType.SystemAlert, SlotEnd(a));
-                    break;
-            }
+            case AppointmentStatus.Confirmed when SlotStart(a) > clock.ClinicNow:
+                a.ReminderSentAt = now;
+                if (SlotStart(a) <= clock.ClinicNow.AddHours(24))
+                    Notify(patient.Id, "Appointment Reminder",
+                        $"Reminder: You have an appointment {when}.",
+                        NotificationType.AppointmentReminder, now.AddHours(-1));
+                break;
         }
-
-        // Reminder for the next upcoming visit. ReminderSentAt stops AppointmentReminderJob sending it again.
-        var next = appointments
-            .Where(a => a.Status == AppointmentStatus.Confirmed && SlotEnd(a) > now)
-            .MinBy(SlotEnd);
-        if (next is not null)
-        {
-            next.ReminderSentAt = now.AddHours(-1);
-            Notify(next.Patient.UserId, next, "Appointment Reminder",
-                $"Reminder: You have an appointment on {next.Slot.Date} at {next.Slot.StartTime:HH:mm}.",
-                NotificationType.AppointmentReminder, next.ReminderSentAt.Value);
-        }
-
-        await context.Notifications.AddRangeAsync(notifications);
-        await context.SaveChangesAsync();
     }
-
-    // ── Demo data helpers ─────────────────────────────────────────────────────
 
     // The date `offset` working days from today: -1 is the last working day before today, 1 the next one after it.
     private static DateOnly WorkDay(DateOnly today, int offset)
@@ -897,8 +922,13 @@ public static class DataSeeder
         return date;
     }
 
-    private static DateTime SlotEnd(Appointment appointment) =>
-        appointment.Slot.Date.ToDateTime(appointment.Slot.EndTime, DateTimeKind.Utc);
+    // Clinic-local slot start, for comparing with clock.ClinicNow
+    private static DateTime SlotStart(Appointment appointment) =>
+        appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
+
+    // UTC slot end, for timestamps
+    private static DateTime SlotEndUtc(Appointment appointment, SeedClock clock) =>
+        clock.ToUtc(appointment.Slot.Date.ToDateTime(appointment.Slot.EndTime));
 
     private static Task<List<Appointment>> LoadAppointmentsAsync(ClinicDbContext context) =>
         context.Appointments

@@ -33,6 +33,10 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
         // Override the ConfigureWebHost method to configure the test server
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            // Every test class resets the database and seeds its own data, so the large demo clinic
+            // (DataSeeder.LargeDemo.cs) would only slow down the test host's startup
+            builder.UseSetting("Seeding:DemoData", "false");
+
             builder.ConfigureServices(services =>
             {
                 // 1. remove the existing DbContext registration

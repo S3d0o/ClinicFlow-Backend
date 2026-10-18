@@ -773,8 +773,21 @@ On every start the app applies pending migrations (retrying for about a minute w
 | Admin | `admin@clinicflow.com` | `Admin@1234` |
 | Doctors | `ahmed.elsayed@clinicflow.com` (Cardiology), `nour.hassan@…` (Dermatology), `karim.mansour@…` (Orthopedics), `dina.youssef@…` (Pediatrics), `tarek.soliman@…` (Gastroenterology), `layla.naguib@…` (Neurology), `omar.farouk@…` (ENT, **pending approval**) | `Doctor@1234` |
 | Patients | `mohamed.ali@gmail.com`, `sara.ibrahim@gmail.com`, `hassan.mahmoud@gmail.com`, `rana.khalil@gmail.com`, `youssef.badawi@gmail.com` | `Patient@1234` |
+| Generated doctors | `doctor01@clinicflow.test` … `doctor53@clinicflow.test` (49–53 pending approval, 46–48 suspended) | `Doctor@1234` |
+| Generated patients | `patient01@clinicflow.test` … `patient75@clinicflow.test` | `Patient@1234` |
 
-Demo doctors work Sunday to Thursday. Demo appointments are created once, relative to the day of seeding; slots are topped up on every start (14 days back to 21 days ahead). For fresh demo appointments, drop the database and restart.
+The accounts above the line have hand-written stories (a visit waiting for a review, one waiting to be completed, a no-show, …). The generated clinic adds volume for testing paging, search, sorting and statistics:
+
+| | Total |
+|---|---|
+| Doctors | 60 (51 visible, 6 pending, 3 suspended), across all 10 specialties and 8 cities, with varied fees, experience, shifts and slot lengths |
+| Patients | 80, with varied ages, blood types, allergies and conditions |
+| Appointments | About 2,450 over the last 60 days and the next 21: mostly completed, plus cancelled (by patient, doctor and admin), no-shows, a few waiting to be completed, and upcoming confirmed visits |
+| Reviews | About 900 (ratings 2.8–4.8 by doctor; the hand-written doctors rate highest) |
+| Notifications | About 7,250, the same events the app sends |
+| Slots | About 38,000 |
+
+It comes from a fixed random seed, so every fresh database is identical. Dates follow the clinic's clock on the day of seeding; the data is created once and keeps its dates, while slots are topped up on every start (60 days back to 21 ahead). For fresh demo data, drop the database and restart; seeding takes about 30 seconds. Seeded upcoming visits count as already reminded, so the reminder job never emails demo addresses (`.test` addresses can't receive mail anyway).
 
 ### Tests
 
