@@ -2,6 +2,8 @@
 using Shared.DTOs.Common;
 using Shared.DTOs.Notification;
 
+namespace Services.Implementations;
+
 public class NotificationService(
     IUnitOfWork uow,
     ILogger<NotificationService> logger,
@@ -50,7 +52,7 @@ public class NotificationService(
             logger.LogWarning(
                 "User {UserId} attempted to read notification {NotificationId} belonging to another user",
                 userId, notificationId);
-            return NotificationErrors.Unauthorized;
+            return NotificationErrors.Forbidden;
         }
 
         await uow.Notifications.MarkAsReadAsync(notificationId, ct);

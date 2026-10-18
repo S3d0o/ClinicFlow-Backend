@@ -116,20 +116,20 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         }
 
         [Fact]
-        public async Task SubmitReviewAsync_WhenAppointmentBelongsToAnotherPatient_ReturnsUnauthorizedError()
+        public async Task SubmitReviewAsync_WhenAppointmentBelongsToAnotherPatient_ReturnsForbiddenError()
         {
             _appointment.PatientProfileId = _patientId + 1;
 
             var result = await _sut.SubmitReviewAsync(_patientUserId, _request, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(AppointmentErrors.Unauthorized, result.Errors);
+            Assert.Contains(AppointmentErrors.Forbidden, result.Errors);
             await _uow.Reviews.DidNotReceive().AddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>());
             await _uow.Doctors.DidNotReceive().RefreshRatingCacheAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
-        public async Task SubmitReviewAsync_WhenAnotherPatientsAppointmentAlreadyReviewed_ReturnsUnauthorizedError()
+        public async Task SubmitReviewAsync_WhenAnotherPatientsAppointmentAlreadyReviewed_ReturnsForbiddenError()
         {
             // Ownership is checked before the duplicate check, so the response doesn't reveal
             // whether another patient's appointment was reviewed (REVIEW.md NL22)
@@ -139,7 +139,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
             var result = await _sut.SubmitReviewAsync(_patientUserId, _request, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(AppointmentErrors.Unauthorized, result.Errors);
+            Assert.Contains(AppointmentErrors.Forbidden, result.Errors);
             Assert.DoesNotContain(AppointmentErrors.ReviewAlreadyExists, result.Errors);
             await _uow.Reviews.DidNotReceive().GetByAppointmentIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }

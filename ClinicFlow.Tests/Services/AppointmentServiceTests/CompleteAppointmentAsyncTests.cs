@@ -125,14 +125,14 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         }
 
         [Fact]
-        public async Task CompleteAppointmentAsync_WhenAppointmentBelongsToAnotherDoctor_ReturnsUnauthorizedError()
+        public async Task CompleteAppointmentAsync_WhenAppointmentBelongsToAnotherDoctor_ReturnsForbiddenError()
         {
             _appointment.DoctorProfileId = _doctorId + 1;
 
             var result = await _sut.CompleteAppointmentAsync(_doctorUserId, _appointmentId, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(AppointmentErrors.Unauthorized, result.Errors);
+            Assert.Contains(AppointmentErrors.Forbidden, result.Errors);
             Assert.Equal(AppointmentStatus.Confirmed, _appointment.Status);
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
             await _notificationService.DidNotReceive()

@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Services;
+using Services.Implementations;
 
 namespace ClinicFlow.Tests.Services.NotificationServiceTests
 {

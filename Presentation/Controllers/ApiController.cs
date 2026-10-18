@@ -5,7 +5,7 @@ namespace Presentation.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class ApiController : ControllerBase
+    public abstract class ApiController : ControllerBase
     {
         // Non-generic: use for commands that return no value.
         // Default is 204 NoContent. Pass Status200OK or Status201Created when needed.

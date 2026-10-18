@@ -27,7 +27,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 
             _uow.Doctors.GetByUserIdAsync(_doctorUserId, _ct).Returns(new DoctorProfile { Id = 5, UserId = _doctorUserId });
             _mapper.Map<AppointmentFilterParams>(_request).Returns(filterParams);
-            _uow.Appointments.GetDoctorsAppointmentsAsync(_doctorUserId, AppointmentStatus.Confirmed, filterParams, _ct)
+            _uow.Appointments.GetByDoctorUserIdAsync(_doctorUserId, AppointmentStatus.Confirmed, filterParams, _ct)
                 .Returns((appointments, 2));
             _mapper.Map<List<AppointmentResponse>>(appointments).Returns(mapped);
 
@@ -36,7 +36,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             Assert.True(result.IsSuccess);
             Assert.Same(mapped, result.Value);
             await _uow.Appointments.Received(1)
-                .GetDoctorsAppointmentsAsync(_doctorUserId, AppointmentStatus.Confirmed, filterParams, _ct);
+                .GetByDoctorUserIdAsync(_doctorUserId, AppointmentStatus.Confirmed, filterParams, _ct);
         }
 
         [Fact]
@@ -48,7 +48,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 
             Assert.True(result.IsFailure);
             Assert.Contains(DoctorErrors.ProfileNotFound(_doctorUserId), result.Errors);
-            await _uow.Appointments.DidNotReceive().GetDoctorsAppointmentsAsync(
+            await _uow.Appointments.DidNotReceive().GetByDoctorUserIdAsync(
                 Arg.Any<Guid>(), Arg.Any<AppointmentStatus?>(), Arg.Any<AppointmentFilterParams>(), Arg.Any<CancellationToken>());
         }
     }

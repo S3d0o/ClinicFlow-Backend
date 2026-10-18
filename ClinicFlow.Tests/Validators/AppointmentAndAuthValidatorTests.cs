@@ -3,7 +3,6 @@ using FluentValidation.TestHelper;
 using Presentation.Validators;
 using Shared.DTOs.Appointment;
 using Shared.DTOs.Auth;
-using Shared.Errors;
 
 namespace ClinicFlow.Tests.Validators
 {
@@ -66,7 +65,7 @@ namespace ClinicFlow.Tests.Validators
         {
             var validator = new DoctorNotesRequestValidator();
 
-            validator.TestValidate(new DoctorNotesRequest(new string('a', 4001))).ShouldHaveValidationErrorFor(x => x.notes);
+            validator.TestValidate(new DoctorNotesRequest(new string('a', 4001))).ShouldHaveValidationErrorFor(x => x.Notes);
             validator.TestValidate(new DoctorNotesRequest(null)).ShouldNotHaveAnyValidationErrors();
         }
     }

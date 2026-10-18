@@ -32,15 +32,12 @@ namespace Shared.Errors
             Error.Conflict("Appointment.AlreadyCompleted",
                 "This appointment has already been completed");
 
-        public static readonly Error CannotCancelCompleted =
-            Error.Conflict("Appointment.CannotCancelCompleted",
-                "Completed appointments cannot be cancelled");
-
         public static readonly Error CancellationWindowExpired =
             Error.Validation("Appointment.CancellationWindowExpired",
                 "Appointments can only be cancelled at least 2 hours before the scheduled time");
 
-        public static readonly Error Unauthorized =
+        // 403 (not the owner). The code keeps its original "Unauthorized" name: it is part of the API contract
+        public static readonly Error Forbidden =
             Error.Forbidden("Appointment.Unauthorized",
                 "You are not authorized to perform this action on this appointment");
 
@@ -59,10 +56,6 @@ namespace Shared.Errors
         public static readonly Error NoShowTooEarly =
             Error.Validation("Appointment.NoShowTooEarly",
                 "An appointment can only be marked as a no-show 15 minutes after it starts");
-
-        public static readonly Error InvalidStatusTransition =
-            Error.Validation("Appointment.InvalidStatusTransition",
-                "The appointment cannot transition to the requested status");
 
         public static readonly Error DoctorNotesNotAllowed =
             Error.Conflict("Appointment.DoctorNotesNotAllowed",

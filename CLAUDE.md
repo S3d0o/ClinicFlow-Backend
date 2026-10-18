@@ -70,7 +70,7 @@ Clean Architecture, one project per layer. Folders are listed per project, and e
 | `Persistance` (project `Persistence.csproj`, namespaces `Persistence.*`) | `AppData/ClinicDbContext.cs`, `AppData/DataSeeder.cs`, `AppData/Configurations/<Entity>Config.cs`, `AppData/Migrations/`, `Repositories/<Name>Repo.cs`, `UnitOfWork.cs` | EF Core, `Persistence.AppData`, `Domain.Interfaces.IRepositories`, entities |
 | `Services.Abstraction` | `Contracts/I<Name>Service.cs`, plus `IEmailService`, `ITokenService`, `IDateTimeProvider` | `Shared.DTOs`, `Shared.ResultPattern` |
 | `Services` | `Implementations/<Name>Service.cs`, `MappingProfiles/<Feature>Profile.cs` (AutoMapper), `Extensions/CoreServiceExtensions.cs` (DI), `ServiceAssemblyReference.cs` (assembly marker) | AutoMapper, logging, `Services.Abstraction.Contracts`, `Shared.Errors`, `Shared.ResultPattern`, `Domain.Interfaces` |
-| `Presentation` | `Controllers/<Name>Controller.cs` + `ApiController.cs` (base), `Validators/<Request>Validator.cs`, `Filters/ValidationFilter.cs`, `Extensions/HttpContextExtensions.cs` | MVC, `FluentValidation`, `Shared.ResultPattern`, `Shared.DTOs.Doctor`/`Patient` |
+| `Presentation` | `Controllers/<Name>Controller.cs` + `ApiController.cs` (abstract base), `Validators/<Request>Validator.cs`, `Filters/ValidationFilter.cs`, `Extensions/HttpContextExtensions.cs` | MVC, `FluentValidation`, `Shared.ResultPattern`, `Shared.DTOs.Doctor`/`Patient` |
 | `ClinicFlow` (host) | `Program.cs`, `Extensions/WebApiExtensions.cs` (MVC, filters, validators), `Extensions/InfraStructureServiceExtensions.cs` (DbContext, Identity, JWT, `IUnitOfWork`), `BackgroundJobs/AppointmentReminderJob.cs` (hourly) and `BackgroundJobs/SlotGenerationJob.cs` (daily, keeps slots 14 days ahead), both `BackgroundService` | Serilog, `ClinicFlow.Extensions`, `Services.Extensions` |
 | `ClinicFlow.Tests` | `Services/<Service>Tests/` with a `*TestsBase` and one class per method | |
 | `ClinicFlow.IntegrationTests` | `Infrastructure/` (`ClinicFlowApiFactory`, `TestAuthHandler`, `SeedDataHelper`, `IntegrationTestCollection`), `Tests/<Feature>/` | |
@@ -85,7 +85,7 @@ Enum namespaces don't match their folder:
 - `SlotStatus`, `CancelledBy` and `BloodType` are in `ClinicFlow.Domain.Enums`.
 - `Gender` is in `Shared.Enums`.
 
-Files often need several of these usings. `IReviewRepo` is declared in namespace `Persistence.Repositories` even though it lives in Domain. `NotificationService` is in the global namespace.
+Files often need several of these usings. `IReviewRepo` is declared in namespace `Persistence.Repositories` even though it lives in Domain.
 
 ## Conventions
 
@@ -106,7 +106,7 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
 
 ### Errors and results
 - Services never throw for expected failures. They return `Result` / `Result<T>`. Return an `Error` or a value directly; implicit conversions do the wrapping. A `Result` can't mix `Validation` errors with other types; doing so throws.
-- In `Shared/Errors/<Feature>Errors.cs`, declare fixed errors as `public static readonly Error X = Error.Conflict("Feature.Reason", "...")` and parameterized ones as `public static Error NotFound(int id) => Error.NotFound(...)`. Codes are `Feature.Reason`.
+- In `Shared/Errors/<Feature>Errors.cs`, declare fixed errors as `public static readonly Error X = Error.Conflict("Feature.Reason", "...")` and parameterized ones as `public static Error NotFound(int id) => Error.NotFound(...)`. Codes are `Feature.Reason`. Name the C# member after the error type: the 403 ownership errors are `AppointmentErrors.Forbidden`, `ReviewErrors.Forbidden` and `NotificationErrors.Forbidden`, though their codes keep the contract names `*.Unauthorized`.
 - Pick the `ErrorType` for the status code it produces: NotFound→404, Conflict→409, Forbidden→403, Validation→400, Unauthorized/InvalidCredentials→401, Failure→500. Use `Failure` only for unexpected server errors; every expected error was moved off it in contract 2.0.0 (`docs/REVIEW.md` M3). Integration tests assert status codes, so changing a type changes the API.
 - Side effects after the main write (notifications, emails) are logged and swallowed, so they never fail the main operation. Follow the existing `TryNotifyAsync` helpers in `AppointmentService` and `AdminService`, and `TrySendConfirmationEmailAsync` in `AuthService`. Don't pass the request `ct` to emails for an already-committed change.
 - Use the injected `IDateTimeProvider` for "now" in business rules. Slot dates and times are **clinic-local**, so compare them with `ClinicNow` (the past-slot check, the 2-hour cancellation window, completion, no-show grace, slot generation's "today"); use `UtcNow` only for UTC timestamps such as `CancelledAt`. Repositories don't read the clock: pass "today" or "now" in from the service (`docs/REVIEW.md` M2). Unit tests stub it; integration tests seed time-sensitive slots from `_factory.ClinicNow`.

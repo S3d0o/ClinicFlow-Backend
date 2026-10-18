@@ -1,6 +1,4 @@
-﻿using System.Reflection.Metadata.Ecma335;
-
-namespace Shared.DTOs.Doctor
+﻿namespace Shared.DTOs.Doctor
 {
     public record ScheduleResponse
     {

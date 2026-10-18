@@ -12,7 +12,7 @@ Reviewed: branch `unit-integration-tests` at `876bbde`, 2026-10-09. This review 
 
 ## Fix status (updated 2026-10-18)
 
-After the review, a first fix pass was made on branch `docs/review-and-claude-md`. Its scope: safe fixes that change no API contract. A second pass on branch `fix/review-open-items` fixed the items that needed a product decision or an API change, in contracts 2.0.0, 3.0.0 and 3.1.0 ([API_CONTRACT.md](API_CONTRACT.md) §10). Every finding below is kept as written. Each one now has a status: a **Status** line under the Critical, High and Medium items, and a **Status** column in the Low tables. The `path:line` references describe the code *before* the fixes.
+After the review, a first fix pass was made on branch `docs/review-and-claude-md`. Its scope: safe fixes that change no API contract. A second pass on branch `fix/review-open-items` fixed the items that needed a product decision or an API change, in contracts 2.0.0, 3.0.0, 3.1.0 and 3.1.1 ([API_CONTRACT.md](API_CONTRACT.md) §10). Every finding below is kept as written. Each one now has a status: a **Status** line under the Critical, High and Medium items, and a **Status** column in the Low tables. The `path:line` references describe the code *before* the fixes.
 
 | Status | Meaning |
 |---|---|
@@ -31,6 +31,7 @@ After the review, a first fix pass was made on branch `docs/review-and-claude-md
 | `0bc5c78` | Contract 3.0.0: no-show endpoint (M14) |
 | `757cf7e` | Contract 3.0.0: validation (H6, M13, NL11), ProblemDetails (M5, NL9), authentication by default (NM5), specialty reactivation (L6), paging (NL2), pending count (NL23) |
 | `b4a2a47` | Contract 3.1.0: auth rate limiting (M6), logout without an access token (L7), kept slots blocked outside the schedule (H4 leftover), atomic rating refresh (L8), email startup warning (NL12), app DB login for compose (NM6), `Name!` removal (NL17) |
+| `<pending commit B>` | Contract 3.1.1: review group B cleanup: dead code, duplicated cancel and registration flows, naming, NL1 read paths |
 
 **Verification after the fixes (2026-10-18):**
 - `dotnet build --no-incremental`: 0 warnings. Nullable warnings are now errors.
@@ -46,8 +47,9 @@ After the review, a first fix pass was made on branch `docs/review-and-claude-md
 
 **Still open:**
 - **Larger work (V2 P0, [roadmap](v2/10_ROADMAP.md)):** NM3 (email outbox; also removes the NL24 timing difference), NL14 (retry on transient faults), §4 (state machine, domain events and the rest).
-- **Refactor or deliberate:** NL6, NL10, NL21.
-- **Not a review item:** removing the deprecated `/api/Specialty` write routes ([API_CONTRACT.md](API_CONTRACT.md) §9).
+- **Refactor or deliberate:** NL6, NL10, NL21; the project-structure renames under "Unclear naming" (folder name, `Global.cs.cs`, enum namespaces); the seeder's own slot generation; `AppointmentStatus.Pending` (kept for V2).
+- **Product decision:** whether admins hide reviews (`Review.IsVisible`) instead of deleting them (H2).
+- **Not a review item:** removing the deprecated `/api/Specialty` write routes and the duplicate review route #12 ([API_CONTRACT.md](API_CONTRACT.md) §9).
 
 ---
 
@@ -419,7 +421,15 @@ HTTP request
 | Password and phone rules are copied between validators (phone rules differ; see M13) | `Presentation/Validators/Register*Validator.cs`, `Update*ProfileRequestValidator.cs` | Low |
 | `Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!)` is repeated in ~20 actions | All controllers | Low |
 
-**Status:** the `Guid.Parse(...)` row is ✅ fixed in `d3b6511` (`User.GetUserId()` in `Presentation/Extensions/HttpContextExtensions.cs`). The other rows are ⏸ open.
+**Status (2026-10-18):**
+- ✅ `Guid.Parse(...)`: fixed in `d3b6511` (`User.GetUserId()` in `Presentation/Extensions/HttpContextExtensions.cs`).
+- ✅ Cancel flows: fixed in `<pending commit B>`. The three paths share `CannotCancelError` (the status rules) and `CancelAsync` (mutation, slot, save, notifications). Each keeps only its lookup, its ownership check and, for patients, the 2-hour window. The patient path now also notifies through `TryNotifyAsync`.
+- ✅ Registration: fixed in `<pending commit B>`. Both flows call `RegisterAsync` (one transaction for the user, the role and the profile, then the confirmation email). Each keeps its own email check and, for doctors, the specialty check, so the order of checks is unchanged.
+- ✅ `Review → ReviewResponse` mapping: fixed in `<pending commit B>`. It now lives only in `ReviewProfile`.
+- ✅ Paging: fixed in `757cf7e`. Every repository pages through one `Page()` helper.
+- ✅ Password and phone rules: fixed in `757cf7e` (M13). `ValidationRules.StrongPassword` and `ValidPhoneNumber` are shared.
+- ⏸ Two review routes (#12 and #26) and two specialty CRUD surfaces: kept. Each is part of the contract with documented behaviour; their removal is listed in [API_CONTRACT.md](API_CONTRACT.md) §9 for V2.
+- ⏸ Slot generation in `DataSeeder`: kept on purpose. `Persistence` can't reference `Services`, and the seeder also generates past slots for the demo history, which `DoctorService` never does.
 
 ### Dead code
 
@@ -435,12 +445,13 @@ HTTP request
 | Unused usings, including the internal EF API `Microsoft.EntityFrameworkCore.Query.Internal` and `Microsoft.AspNetCore.Rewrite` | `AuthService.cs:3-5`; `ScheduleResponse.cs:1`; `Review.cs:1`; `DoctorRepo.cs:2`; `ReviewController.cs:4,5,7` | Low |
 | Unused field in a test (build warning CS0169) | `CancelAppointmentByPatientTests.cs:21` | Low |
 
-**Status:** ✅ fixed:
-- the unreachable refresh checks (removed with H7, `d3b6511`)
-- the unused usings in `AuthService.cs` (`d3b6511`)
-- the unused test field (`9035a7d`)
-
-`DoctorErrors.InvalidScheduleTime` is now used (H5). `IRefreshTokenRepo.GetActiveByUserIdAsync` was replaced by `RevokeAllActiveAsync` (`d3b6511`). The other rows are ⏸ open.
+**Status (2026-10-18):**
+- ✅ Fixed in `d3b6511` and `9035a7d`: the unreachable refresh checks (removed with H7), the unused usings in `AuthService.cs` and the unused test field.
+- ✅ Fixed in `<pending commit B>`:
+  - The unused repository methods are removed (`DoctorRepo.Update`, `UpdateSchedule`; `AppointmentRepo.HasCompletedAppointmentAsync`, `Update`; `SlotRepo.IsAvailableAsync`, `Block`, `Update`; `PatientRepo.GetAllPatientsAsync`, `GetPatientByIdAsync`, `Update`, `Delete`). Two are now used instead: `AppointmentRepo.GetDetailedByIdAsync` and `DoctorRepo.ExistsAsync` serve read-only paths (NL1). `DoctorRepo.GetDetailedByIdAsync` was already used.
+  - The unused errors are removed, as are `DoctorErrors.Unauthorized` and `ScheduleNotFoundForDate` with its unreachable branch. None of their codes were in the contract's catalog. `CannotDeleteScheduleWithBookedSlots` and `InvalidScheduleTime` are used (H4, H5).
+  - The empty csproj placeholder folders and the remaining unused usings are removed. The empty `#region Helpers` was already gone.
+- ⏸ `AppointmentStatus.Pending` is still never set. It is kept, because removing an enum value affects stored strings and the V2 state machine (ADR 0004) uses it. `Review.IsVisible` is never set to false; whether admins hide reviews instead of deleting them is the open H2 product decision. `Specialty.IsActive` can be changed since L6.
 
 ### Unclear naming and misplaced types
 
@@ -457,6 +468,16 @@ HTTP request
 | PascalCase locals: `SlotUpdateResult`, `RefreshTokenExpirationDays`, `ATexpiresAt`, `Today`, `DayOfSet` (means "day offset") | `AppointmentService.cs:46`; `TokenService.cs:33,42,99`; `DoctorService.cs:146,148` |
 | `InfraStructureServiceExtensions` (odd casing) | `ClinicFlow/Extensions/InfraStructureServiceExtensions.cs` |
 | Misleading comments: header paths point to the wrong folder; "used task.fromresult" where none is used | `HttpContextExtensions.cs:1`; `CreateScheduleRequestValidator.cs:1`; `AuthService.cs:262` |
+
+**Status (2026-10-18):**
+- ✅ Fixed in `<pending commit B>`:
+  - `DoctorNotesRequest` is in `Shared.DTOs.Appointment`, and its property is `Notes`. The JSON body is unchanged; only the 400 key changes (contract 3.1.1).
+  - `NotificationService` is in `Services.Implementations`, and `ServiceAssemblyReference` is in `Services`.
+  - `ApiController` is abstract, so it no longer registers as an empty controller.
+  - The 403 errors' C# members are `AppointmentErrors.Forbidden`, `ReviewErrors.Forbidden` and `NotificationErrors.Forbidden`. Their codes keep the contract names `*.Unauthorized`.
+  - `GetPatientsAppointmentsAsync` / `GetDoctorsAppointmentsAsync` are renamed `GetByPatientUserIdAsync` / `GetByDoctorUserIdAsync`, with `patientUserId` / `doctorUserId` parameters.
+  - The PascalCase locals are renamed (the others were already fixed earlier), and the misleading header comment in `CreateScheduleRequestValidator.cs` is removed. The other two misleading comments were already gone.
+- ⏸ Kept on purpose: the `Persistance` folder, the `Global.cs.cs` files, the enum namespaces and `InfraStructureServiceExtensions`. Renaming them touches many files and changes nothing a caller sees, and CLAUDE.md documents all four. The `<Feature>Profile` AutoMapper names are the documented convention; the clash only costs fully qualified entity names inside `DoctorProfile.cs` and `PatientProfile.cs`.
 
 ### Missing tests
 
@@ -637,11 +658,11 @@ The `Microsoft.*` 10.0.x packages are pinned at three different patch levels: 10
 
 | ID | Problem | Where | Fix risk | Status |
 |---|---|---|---|---|
-| NL1 | Read-only queries are tracked (no `AsNoTracking`) on hot paths: public doctor search, doctor profile, pending approvals, schedules, available slots, specialties, `GetAppointmentAsync`, patient profile GET. That costs change-tracker work and memory per request | `DoctorRepo.cs:17-18`, `:25-29`, `:44-48`, `:57-60`; `SlotRepo.cs:14-19`; `SpecialtyRepo.cs:13-15`; `AppointmentRepo.cs:8-14`; `PatientRepo.cs:19` | Medium: `DoctorRepo.GetByIdAsync`, `AppointmentRepo.GetByIdAsync` and `PatientRepo.GetPatientByUserIdAsync` are shared with write paths, so split them into read and write methods | 🟡 `3a2c391`: pure-read queries only; methods shared with writes are not split yet |
+| NL1 | Read-only queries are tracked (no `AsNoTracking`) on hot paths: public doctor search, doctor profile, pending approvals, schedules, available slots, specialties, `GetAppointmentAsync`, patient profile GET. That costs change-tracker work and memory per request | `DoctorRepo.cs:17-18`, `:25-29`, `:44-48`, `:57-60`; `SlotRepo.cs:14-19`; `SpecialtyRepo.cs:13-15`; `AppointmentRepo.cs:8-14`; `PatientRepo.cs:19` | Medium: `DoctorRepo.GetByIdAsync`, `AppointmentRepo.GetByIdAsync` and `PatientRepo.GetPatientByUserIdAsync` are shared with write paths, so split them into read and write methods | ✅ `3a2c391`, `<pending commit B>`: pure-read queries in `3a2c391`; the read paths that shared tracked write methods now have untracked ones (`GetAppointmentAsync` uses `AppointmentRepo.GetDetailedByIdAsync`, the patient profile GET uses `PatientRepo.GetPatientByUserIdForReadAsync`, and the doctor-reviews existence check uses `DoctorRepo.ExistsAsync` instead of loading the profile) |
 | NL2 | Unbounded result sets: every notification a user has ever had is returned on each call, and the pending-doctor list has no paging | `NotificationRepo.cs:7-13`; `DoctorRepo.cs:42-51` | Low (adds paging, changes the API shape; see §4.2) | ✅ `757cf7e` (contract 3.0.0): optional `pageNumber`/`pageSize` (notifications default to 50; pending doctors stay unpaged unless asked). Bodies stay arrays and the total goes in `X-Total-Count`, so the shape didn't change. Covered by `NotificationTests` and `AdminDoctorTests` |
 | NL3 | The doctor search can't use an index: `ToLower().Contains(...)` on `FirstName + " " + LastName` and `ClinicCity` scans every row. The SQL Server default collation is already case-insensitive, so `ToLower` buys nothing | `DoctorRepo.cs:112-118` | Low | 🟡 `3a2c391`: `ToLower` removed; a leading-wildcard `LIKE` still scans (needs full-text search) |
 | NL4 | Paging order isn't deterministic: the sort keys (`AverageRating`, fee, experience, `CreatedAt`) have ties and no unique tie-breaker, so rows can repeat or disappear between pages | `DoctorRepo.cs:120-126`; `ReviewRepo.cs:24` | Low (`.ThenBy(x => x.Id)`) | ✅ `3a2c391` |
-| NL5 | The stats endpoints make 6 and 5 sequential `COUNT` round trips. One `GroupBy(a => a.Status)` query would cover the appointment stats | `AdminRepo.cs:7-12`; `AppointmentRepo.cs:117-121` | Low | 🟡 `3a2c391`: appointment stats run as one `GROUP BY`; the overview still runs 6 counts over different tables |
+| NL5 | The stats endpoints make 6 and 5 sequential `COUNT` round trips. One `GroupBy(a => a.Status)` query would cover the appointment stats | `AdminRepo.cs:7-12`; `AppointmentRepo.cs:117-121` | Low | ✅ `3a2c391`: appointment stats run as one `GROUP BY`. The overview's 6 counts over different tables are kept on purpose: one admin dashboard load, each an indexed `COUNT`, and combining them would need raw SQL |
 | NL6 | The reminder job saves one notification per `SaveChangesAsync`, plus one SMTP session per email: 2N round trips per run | `AppointmentReminderJob.cs:58-74` → `NotificationService.cs:11-13` | Low (use `CreateRangeAsync` and one SMTP connection per batch) | ⏸ Open: per-item save kept on purpose, so each sent reminder is recorded at once (no duplicate emails) |
 | NL7 | Transactions are disposed synchronously (`using var` instead of `await using`). On early returns such as `SlotAlreadyBooked`, the implicit rollback blocks a thread-pool thread on I/O | `AppointmentService.cs:43`, `:50`; `TokenService.cs:53` | Low | ✅ `d3b6511`, `3a2c391` |
 | NL8 | `ValidationFilter` is a synchronous `IActionFilter` that calls `Validate()`. Adding any `MustAsync` rule later will throw `AsyncValidatorInvokedSynchronouslyException` (500). When two arguments fail, the last result overwrites the first | `Presentation/Filters/ValidationFilter.cs:8`, `:30`, `:50` | Low (`IAsyncActionFilter` + `ValidateAsync(..., ct)`) | ✅ `e5cc0db` (response shape unchanged) |
@@ -658,7 +679,7 @@ The `Microsoft.*` 10.0.x packages are pinned at three different patch levels: 10
 | NL19 | Vulnerable `SSH.NET` 2025.1.0 (2 High advisories) is pulled in by Testcontainers. It is test-only and never deployed, but it runs on developer machines | `ClinicFlow.IntegrationTests.csproj:16` | Low (update `Testcontainers.MsSql` to 4.16.0, then re-check) | ✅ `9035a7d` |
 | NL20 | The test factory's `public async Task DisposeAsync()` (for `IAsyncLifetime`) hides `WebApplicationFactory.DisposeAsync()` (CS0114). It also only calls `StopAsync` on the container and never disposes it, so cleanup is left to the Testcontainers reaper | `ClinicFlowApiFactory.cs:25-28` | Low (implement `IAsyncLifetime.DisposeAsync` explicitly, call `await _dbContainer.DisposeAsync()` and `await base.DisposeAsync()`) | ✅ `9035a7d` |
 | NL21 | `UnitOfWork` creates repositories itself (`new DoctorRepo(_context)`, …), so repositories can't be resolved, decorated (caching, logging) or replaced through DI. This is a deliberate pattern and works with the `IUnitOfWork` mocks in the tests; it is listed here only because the brief asked for classes that create their own dependencies | `Persistance/UnitOfWork.cs:26-47` | Medium (changes how every service gets its repositories; only worth doing if decoration is needed) | ⏸ Open (deliberate pattern) |
-| NL22 | `SubmitReviewAsync` checks for an existing review before it checks ownership. A patient who submits a review for another patient's appointment gets 409 `Appointment.ReviewAlreadyExists` if that appointment has been reviewed, and 403 `Appointment.Unauthorized` if not. This reveals whether someone else's visit was reviewed. Found while writing `SubmitReviewAsyncTests` (2026-10-16) | `ReviewService.cs:21-32` | Low (move the duplicate check after the ownership and status checks; the status code changes for this edge case, so update `API_CONTRACT.md`) | ✅ `4c6d9fe` (contract 1.0.1). Ownership and status are now checked first. Covered by `SubmitReviewAsync_WhenAnotherPatientsAppointmentAlreadyReviewed_ReturnsUnauthorizedError` and `SubmitReview_OtherPatientsAlreadyReviewedAppointment_Returns403` |
+| NL22 | `SubmitReviewAsync` checks for an existing review before it checks ownership. A patient who submits a review for another patient's appointment gets 409 `Appointment.ReviewAlreadyExists` if that appointment has been reviewed, and 403 `Appointment.Unauthorized` if not. This reveals whether someone else's visit was reviewed. Found while writing `SubmitReviewAsyncTests` (2026-10-16) | `ReviewService.cs:21-32` | Low (move the duplicate check after the ownership and status checks; the status code changes for this edge case, so update `API_CONTRACT.md`) | ✅ `4c6d9fe` (contract 1.0.1). Ownership and status are now checked first. Covered by `SubmitReviewAsync_WhenAnotherPatientsAppointmentAlreadyReviewed_ReturnsForbiddenError` and `SubmitReview_OtherPatientsAlreadyReviewedAppointment_Returns403` |
 | NL23 | The admin dashboard's `pendingApprovals` count includes suspended doctors, but `GET /api/admin/doctors/pending` excludes them (`d.User.IsActive`), so the count can be higher than the list. Found while writing `AdminDoctorTests` (2026-10-16) | `AdminRepo.cs:11` vs `DoctorRepo.cs:49` | Low (decide whether suspended applicants count as pending, then align the two queries) | ✅ `757cf7e`: suspended applicants are not pending, so the count uses the list's filter. Covered by `AdminDoctorTests` |
 | NL24 | `ForgotPasswordAsync` sends the reset email inline and lets an SMTP failure propagate, so a registered, active email gets 500 while an unknown one gets 204. When SMTP is down or slow, the status code (and the response time, since only known emails reach SMTP) reveals which emails are registered, which the endpoint is meant to hide. Found while writing `ForgotPasswordAsyncTests` (2026-10-17) | `AuthService.cs:281` | Low (log and swallow the send failure and return 204, or queue the email as in NM3; the contract's "500 if the email cannot be sent" changes) | ✅ `165aa5e` (contract 1.0.2). The send failure is logged and the response is 204. Covered by `ForgotPasswordAsyncTests` and `ForgotPassword_EmailSendFails_StillReturns204LikeAnUnknownEmail`. Still open: the response **time** differs, because only known emails wait for SMTP; that goes away when sending moves off the request (NM3) |
 

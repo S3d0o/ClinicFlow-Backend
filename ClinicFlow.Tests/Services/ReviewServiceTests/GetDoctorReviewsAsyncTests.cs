@@ -15,7 +15,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         [Fact]
         public async Task GetDoctorReviewsAsync_WhenDoctorExists_PassesPagingAndMapsPatientNames()
         {
-            _uow.Doctors.GetByIdAsync(_doctorId, _ct).Returns(new DoctorProfile { Id = _doctorId });
+            _uow.Doctors.ExistsAsync(_doctorId, _ct).Returns(true);
             IReadOnlyList<Review> reviews =
             [
                 new Review
@@ -46,7 +46,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         [Fact]
         public async Task GetDoctorReviewsAsync_WhenDoctorHasNoReviews_ReturnsEmptyList()
         {
-            _uow.Doctors.GetByIdAsync(_doctorId, _ct).Returns(new DoctorProfile { Id = _doctorId });
+            _uow.Doctors.ExistsAsync(_doctorId, _ct).Returns(true);
             _uow.Reviews.GetByDoctorIdAsync(_doctorId, Arg.Any<ReviewFilterParams>(), _ct)
                 .Returns((Array.Empty<Review>(), 0));
 
@@ -59,7 +59,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         [Fact]
         public async Task GetDoctorReviewsAsync_WhenDoctorNotFound_ReturnsDoctorNotFoundError()
         {
-            _uow.Doctors.GetByIdAsync(999, _ct).Returns((DoctorProfile?)null);
+            _uow.Doctors.ExistsAsync(999, _ct).Returns(false);
 
             var result = await _sut.GetDoctorReviewsAsync(999, new ReviewFilterRequest(), _ct);
 

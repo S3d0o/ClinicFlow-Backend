@@ -1,5 +1,4 @@
 ﻿using Shared.DTOs.Appointment;
-using Shared.Errors;
 
 namespace Services.Abstraction.Contracts
 {

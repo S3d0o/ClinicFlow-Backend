@@ -1,4 +1,4 @@
-using Shared.Errors;
+using Shared.DTOs.Appointment;
 
 namespace Presentation.Validators
 {
@@ -6,9 +6,9 @@ namespace Presentation.Validators
     {
         public DoctorNotesRequestValidator()
         {
-            RuleFor(x => x.notes)
+            RuleFor(x => x.Notes)
                 .MaximumLength(4000).WithMessage("Notes cannot exceed 4000 characters.")
-                .When(x => x.notes is not null);
+                .When(x => x.Notes is not null);
         }
     }
 }

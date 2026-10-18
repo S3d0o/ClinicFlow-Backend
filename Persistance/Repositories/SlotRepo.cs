@@ -22,17 +22,6 @@ namespace Persistence.Repositories
             .OrderBy(s => s.StartTime)  
             .ToListAsync(ct);
 
-        public async Task<bool> IsAvailableAsync(int slotId, CancellationToken ct)
-            => await context.AppointmentSlots
-            .AsNoTracking()
-            .AnyAsync(s => s.Id == slotId && s.Status == SlotStatus.Available, ct);
-
-        public void Block(AppointmentSlot slot)
-        {
-            slot.Status = SlotStatus.Blocked;
-            context.Entry(slot).Property(s => s.Status).IsModified = true;
-        }
-
         public async Task AddRangeAsync(IEnumerable<AppointmentSlot> slots, CancellationToken ct)
             => await context.AppointmentSlots.AddRangeAsync(slots, ct);
 
@@ -92,9 +81,6 @@ namespace Persistence.Repositories
                 .ToListAsync(ct);
             return slots.Select(s => (s.Date, s.StartTime, s.EndTime)).ToList();
         }
-        public void Update(AppointmentSlot slot)
-            => context.AppointmentSlots.Update(slot);
-
         public async Task<int> SetStatusFromAvailableToBookedAsync(int slotId, CancellationToken ct)
         {
             var rawAffected = await context.AppointmentSlots

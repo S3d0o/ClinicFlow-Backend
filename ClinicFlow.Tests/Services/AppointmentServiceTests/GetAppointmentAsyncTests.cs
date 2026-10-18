@@ -14,7 +14,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 
         public GetAppointmentAsyncTests()
         {
-            _uow.Appointments.GetByIdAsync(_appointmentId, _ct).Returns(new Appointment
+            _uow.Appointments.GetDetailedByIdAsync(_appointmentId, _ct).Returns(new Appointment
             {
                 Id = _appointmentId,
                 Patient = new PatientProfile { UserId = _patientUserId },
@@ -62,12 +62,12 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         [InlineData("Patient")]
         [InlineData("Doctor")]
         [InlineData("")]
-        public async Task GetAppointmentAsync_WhenCallerDoesNotOwnAppointment_ReturnsUnauthorizedError(string role)
+        public async Task GetAppointmentAsync_WhenCallerDoesNotOwnAppointment_ReturnsForbiddenError(string role)
         {
             var result = await _sut.GetAppointmentAsync(_appointmentId, Guid.NewGuid(), role, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(AppointmentErrors.Unauthorized, result.Errors);
+            Assert.Contains(AppointmentErrors.Forbidden, result.Errors);
             _mapper.DidNotReceive().Map<AppointmentResponse>(Arg.Any<Appointment>());
         }
     }

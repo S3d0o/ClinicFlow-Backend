@@ -34,10 +34,7 @@ namespace Services.MappingProfiles
                 .ForMember(dest => dest.IsActive, opt => { opt.PreCondition(src => src.IsActive.HasValue); opt.MapFrom(src => src.IsActive!.Value); });
             CreateMap<AppointmentSlot, SlotResponse>();
             CreateMap<ReviewFilterRequest, ReviewFilterParams>();
-            CreateMap<Review, ReviewResponse>()
-                .ForMember(opt=>opt.PatientName, src => src.MapFrom(src => $"{src.Patient.User.FirstName} {src.Patient.User.LastName}"));
-
-
+            // Review → ReviewResponse lives in ReviewProfile
         }
     }
 }

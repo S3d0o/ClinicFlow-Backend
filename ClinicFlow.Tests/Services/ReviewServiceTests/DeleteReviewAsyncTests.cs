@@ -58,22 +58,22 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         }
 
         [Fact]
-        public async Task DeleteReviewAsync_WhenOtherPatient_ReturnsUnauthorizedError()
+        public async Task DeleteReviewAsync_WhenOtherPatient_ReturnsForbiddenError()
         {
             var result = await _sut.DeleteReviewAsync(_reviewId, Guid.NewGuid(), "Patient", _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(ReviewErrors.Unauthorized, result.Errors);
+            Assert.Contains(ReviewErrors.Forbidden, result.Errors);
             _uow.Reviews.DidNotReceive().Delete(Arg.Any<Review>());
         }
 
         [Fact]
-        public async Task DeleteReviewAsync_WhenDoctor_ReturnsUnauthorizedError()
+        public async Task DeleteReviewAsync_WhenDoctor_ReturnsForbiddenError()
         {
             var result = await _sut.DeleteReviewAsync(_reviewId, Guid.NewGuid(), "Doctor", _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(ReviewErrors.Unauthorized, result.Errors);
+            Assert.Contains(ReviewErrors.Forbidden, result.Errors);
             _uow.Reviews.DidNotReceive().Delete(Arg.Any<Review>());
         }
     }

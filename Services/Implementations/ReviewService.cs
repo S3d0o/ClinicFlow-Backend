@@ -25,7 +25,7 @@ namespace Services.Implementations
                 return AppointmentErrors.NotFound(request.AppointmentId);
 
             if (appointment.PatientProfileId != patient.Id)
-                return AppointmentErrors.Unauthorized;
+                return AppointmentErrors.Forbidden;
 
             if (appointment.Status != AppointmentStatus.Completed)
                 return AppointmentErrors.ReviewNotAllowed;
@@ -86,7 +86,7 @@ namespace Services.Implementations
             if (!canDelete)
             {
                 logger.LogWarning("User ID: {UserId} is not authorized to delete review ID: {ReviewId}", userId, reviewId);
-                return ReviewErrors.Unauthorized;
+                return ReviewErrors.Forbidden;
             }
 
             await using var transaction = await uow.BeginTransactionAsync(ct);
@@ -101,8 +101,7 @@ namespace Services.Implementations
 
         public async Task<Result<List<ReviewResponse>>> GetDoctorReviewsAsync(int doctorProfileId, ReviewFilterRequest request, CancellationToken ct)
         {
-            var doctor = await uow.Doctors.GetByIdAsync(doctorProfileId, ct);
-            if (doctor == null)
+            if (!await uow.Doctors.ExistsAsync(doctorProfileId, ct))
             {
                 logger.LogWarning("Doctor not found for ID: {DoctorProfileId}", doctorProfileId);
                 return DoctorErrors.NotFound(doctorProfileId);

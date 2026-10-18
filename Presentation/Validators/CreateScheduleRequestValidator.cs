@@ -1,5 +1,4 @@
-﻿// Presentation/Controllers/CreateScheduleRequestValidator.cs
-using Shared.DTOs.Doctor;
+﻿using Shared.DTOs.Doctor;
 
 namespace Presentation.Validators
 {

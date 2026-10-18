@@ -9,7 +9,7 @@ namespace Services.Implementations
     {
         public async Task<Result<PatientProfileResponse>> GetProfileAsync(Guid userId, CancellationToken ct)
         {
-            var patient = await uow.Patients.GetPatientByUserIdAsync(userId, ct);
+            var patient = await uow.Patients.GetPatientByUserIdForReadAsync(userId, ct);
             if (patient == null)
             {
                 logger.LogWarning("Patient profile not found for userId: {UserId}", userId);

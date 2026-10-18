@@ -13,10 +13,6 @@
 		<FrameworkReference Include="Microsoft.AspNetCore.App"></FrameworkReference>
 	</ItemGroup>
   <ItemGroup>
-    <Folder Include="Attributes\" />
-    <Folder Include="CustomMiddlewares\" />
-  </ItemGroup>
-  <ItemGroup>
     <PackageReference Include="FluentValidation" Version="12.1.1" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
   </ItemGroup>

@@ -1,5 +1,4 @@
 ﻿using Domain.Enums;
-using System.ComponentModel.DataAnnotations;
 
 namespace Persistence.Repositories
 {
@@ -94,11 +93,6 @@ namespace Persistence.Repositories
         public void AddSchedule(DoctorSchedule schedule)
             => context.DoctorSchedules.Add(schedule);
 
-        public void UpdateSchedule(DoctorSchedule schedule)
-        {
-            context.DoctorSchedules.Update(schedule);
-        }
-
         public void DeleteSchedule(DoctorSchedule schedule)
         {
             context.DoctorSchedules.Remove(schedule);
@@ -106,9 +100,6 @@ namespace Persistence.Repositories
 
         public async Task AddAsync(DoctorProfile doctor, CancellationToken ct)
             => await context.DoctorProfiles.AddAsync(doctor, ct);
-
-        public void Update(DoctorProfile doctor)
-            => context.DoctorProfiles.Update(doctor);
 
         // One UPDATE with subqueries, so the cached values are computed from the stored reviews by the same
         // statement that writes them. Called inside the review insert/delete transaction (REVIEW.md L8)

@@ -33,8 +33,7 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         [Fact]
         public async Task GetSlotsByDateAsync_WhenNoSlots_ReturnsEmptyListNotAnError()
         {
-            // Documented in the contract (#11): an unknown doctor or a day off returns []. The
-            // ScheduleNotFoundForDate branch is unreachable because the query never returns null (REVIEW.md)
+            // Documented in the contract (#11): an unknown doctor or a day off returns []
             _uow.Slots.GetAvailableByDoctorAndDateAsync(_doctorId, _date, _ct).Returns(new List<AppointmentSlot>());
 
             var result = await _sut.GetSlotsByDateAsync(_doctorId, _date, _ct);

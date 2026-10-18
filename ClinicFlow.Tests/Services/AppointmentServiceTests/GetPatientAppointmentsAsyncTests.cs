@@ -27,7 +27,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 
             _uow.Patients.GetPatientByUserIdAsync(_patientUserId, _ct).Returns(new PatientProfile { Id = 2, UserId = _patientUserId });
             _mapper.Map<AppointmentFilterParams>(_request).Returns(filterParams);
-            _uow.Appointments.GetPatientsAppointmentsAsync(_patientUserId, AppointmentStatus.Cancelled, filterParams, _ct)
+            _uow.Appointments.GetByPatientUserIdAsync(_patientUserId, AppointmentStatus.Cancelled, filterParams, _ct)
                 .Returns((appointments, 1));
             _mapper.Map<List<AppointmentResponse>>(appointments).Returns(mapped);
 
@@ -36,7 +36,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             Assert.True(result.IsSuccess);
             Assert.Same(mapped, result.Value);
             await _uow.Appointments.Received(1)
-                .GetPatientsAppointmentsAsync(_patientUserId, AppointmentStatus.Cancelled, filterParams, _ct);
+                .GetByPatientUserIdAsync(_patientUserId, AppointmentStatus.Cancelled, filterParams, _ct);
         }
 
         [Fact]
@@ -48,7 +48,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 
             Assert.True(result.IsFailure);
             Assert.Contains(PatientErrors.ProfileNotFound(_patientUserId), result.Errors);
-            await _uow.Appointments.DidNotReceive().GetPatientsAppointmentsAsync(
+            await _uow.Appointments.DidNotReceive().GetByPatientUserIdAsync(
                 Arg.Any<Guid>(), Arg.Any<AppointmentStatus?>(), Arg.Any<AppointmentFilterParams>(), Arg.Any<CancellationToken>());
         }
     }

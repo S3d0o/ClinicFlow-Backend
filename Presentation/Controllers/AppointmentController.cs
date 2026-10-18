@@ -2,7 +2,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Services.Abstraction.Contracts;
 using Shared.DTOs.Appointment;
-using Shared.Errors;
 using System.Security.Claims;
 
 namespace Presentation.Controllers;

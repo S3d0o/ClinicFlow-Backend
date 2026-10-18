@@ -63,7 +63,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         {
             var result = await _sut.MarkNoShowAsync(Guid.NewGuid(), "Doctor", _appointmentId, _ct);
 
-            Assert.Contains(AppointmentErrors.Unauthorized, result.Errors);
+            Assert.Contains(AppointmentErrors.Forbidden, result.Errors);
             Assert.Equal(AppointmentStatus.Confirmed, _appointment.Status);
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
         }

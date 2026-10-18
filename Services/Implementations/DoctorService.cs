@@ -182,15 +182,11 @@ namespace Services.Implementations
         }
         public async Task<Result<List<SlotResponse>>> GetSlotsByDateAsync(int doctorId, DateOnly date, CancellationToken ct)
         {
-            var existing =await uow.Slots.GetAvailableByDoctorAndDateAsync(doctorId, date, ct);
-            if(existing is null)
-            {
-                logger.LogWarning("No schedule found for doctor ID: {DoctorId} on date: {Date}", doctorId, date);
-                return DoctorErrors.ScheduleNotFoundForDate(doctorId, date);
-            }
+            // An unknown doctor or a day off is an empty list, not an error (contract #11)
+            var slots = await uow.Slots.GetAvailableByDoctorAndDateAsync(doctorId, date, ct);
 
             logger.LogInformation("Retrieved slots for doctor ID: {DoctorId} on date: {Date}", doctorId, date);
-            return mapper.Map<List<SlotResponse>>(existing);
+            return mapper.Map<List<SlotResponse>>(slots);
         }
 
         public async Task<int> GenerateUpcomingSlotsAsync(CancellationToken ct)

@@ -1,6 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-
-namespace Domain.Entities.AppModule
+﻿namespace Domain.Entities.AppModule
 {
     public class Review : BaseEntity<int>
     {

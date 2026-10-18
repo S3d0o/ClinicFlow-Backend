@@ -2,10 +2,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Services.Abstraction.Contracts;
 using Shared.DTOs.Review;
-using System;
-using System.Collections.Generic;
-using System.Security.Claims;
-using System.Text;
 
 namespace Presentation.Controllers
 {

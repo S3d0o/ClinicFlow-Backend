@@ -5,7 +5,6 @@
         // Queries
         Task<AppointmentSlot?> GetByIdAsync(int id, CancellationToken ct);
         Task<IReadOnlyList<AppointmentSlot>> GetAvailableByDoctorAndDateAsync(int doctorProfileId, DateOnly date, CancellationToken ct);
-        Task<bool> IsAvailableAsync(int slotId, CancellationToken ct);
         // Booked slots from today (the clinic's date) on: appointments a schedule change must not silently drop
         Task<bool> HasUpcomingBookingsAsync(int scheduleId, DateOnly today, CancellationToken ct);
         Task<bool> AnyForScheduleAsync(int scheduleId, CancellationToken ct);
@@ -15,8 +14,6 @@
         // Write
         Task AddRangeAsync(IEnumerable<AppointmentSlot> slots, CancellationToken ct);
         Task<int> SetStatusFromAvailableToBookedAsync(int slotId, CancellationToken ct);
-        void Update(AppointmentSlot slot);
-        void Block(AppointmentSlot slot);
         Task DeleteFutureAvailableByScheduleAsync(int scheduleId, DateOnly today, CancellationToken ct);
         // Free slots kept from today on (a cancelled appointment points to them, so they can't be deleted) are
         // blocked when the schedule no longer covers them, and reopened when it covers them again (REVIEW.md H4)
