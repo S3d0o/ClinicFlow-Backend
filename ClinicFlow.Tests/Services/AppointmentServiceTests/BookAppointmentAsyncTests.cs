@@ -1,4 +1,5 @@
 ﻿using Domain.Entities.AppModule;
+using Domain.Entities.IdentityModule;
 using Microsoft.EntityFrameworkCore.Storage;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -27,11 +28,12 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 .GetPatientByUserIdAsync(_patientUserId, _ct)
                 .Returns(new PatientProfile());
 
-            _dateTimeProvider.UtcNow.Returns(_now);
+            _dateTimeProvider.ClinicNow.Returns(_now);
 
             _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
             {
                 Id = SlotId,
+                DoctorProfile = ApprovedDoctor(),
                 Status = SlotStatus.Available,
                 Date = DateOnly.FromDateTime(dateTime),
                 StartTime = TimeOnly.FromDateTime(dateTime),
@@ -108,6 +110,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 
             _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
             {
+                DoctorProfile = ApprovedDoctor(),
                 Status = status
             });
 
@@ -132,11 +135,12 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 .GetPatientByUserIdAsync(_patientUserId, _ct)
                 .Returns(new PatientProfile());
 
-            _dateTimeProvider.UtcNow.Returns(_now);
+            _dateTimeProvider.ClinicNow.Returns(_now);
 
             var slotDateTime = _now.AddDays(daysOffset).AddHours(hoursOffset);
             _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
             {
+                DoctorProfile = ApprovedDoctor(),
                 Status = SlotStatus.Available,
                 Date = DateOnly.FromDateTime(slotDateTime),
                 StartTime = TimeOnly.FromDateTime(slotDateTime),
@@ -153,6 +157,27 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         }
 
         [Fact]
+        public async Task BookAppointmentAsync_WhenSlotStartedOnClinicClockButNotInUtc_ReturnsSlotInPastError()
+        {
+            // REVIEW.md M2: 10:00 clinic time (UTC+3) is 07:00 UTC. A 09:00 slot has started at the clinic,
+            // although 09:00 is still ahead of the UTC clock
+            _uow.Patients.GetPatientByUserIdAsync(_patientUserId, _ct).Returns(new PatientProfile());
+            _dateTimeProvider.ClinicNow.Returns(_now);
+            _dateTimeProvider.UtcNow.Returns(_now.AddHours(-3));
+            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
+            {
+                DoctorProfile = ApprovedDoctor(),
+                Status = SlotStatus.Available,
+                Date = DateOnly.FromDateTime(_now),
+                StartTime = new TimeOnly(9, 0),
+            });
+
+            var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
+
+            Assert.Contains(AppointmentErrors.SlotInPast, result.Errors);
+        }
+
+        [Fact]
         public async Task BookAppointmentAsync_WhenConcurrencyConflict_ReturnsSlotAlreadyBookedError()
         {
             // Arrange
@@ -160,11 +185,12 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 .GetPatientByUserIdAsync(_patientUserId, _ct)
                 .Returns(new PatientProfile());
 
-            _dateTimeProvider.UtcNow.Returns(_now);
+            _dateTimeProvider.ClinicNow.Returns(_now);
 
             var dateTime = _now.AddDays(1).AddHours(1);
             _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
             {
+                DoctorProfile = ApprovedDoctor(),
                 Status = SlotStatus.Available,
                 Date = DateOnly.FromDateTime(dateTime),
                 StartTime = TimeOnly.FromDateTime(dateTime),
@@ -228,5 +254,34 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             await transaction.Received(1).CommitAsync(Arg.Any<CancellationToken>());
             await transaction.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
         }
+
+        [Theory]
+        [InlineData(false, true)]  // not approved yet
+        [InlineData(true, false)]  // suspended
+        public async Task BookAppointmentAsync_WhenDoctorNotApprovedOrSuspended_ReturnsSlotNotFoundAndBooksNothing(bool approved, bool active)
+        {
+            // REVIEW.md M1: these slots aren't listed, so booking them directly must fail the same way
+            SetupHappyPath();
+            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
+            {
+                Id = SlotId,
+                DoctorProfile = new DoctorProfile { IsApprovedByAdmin = approved, User = new ApplicationUser { IsActive = active } },
+                Status = SlotStatus.Available,
+                Date = DateOnly.FromDateTime(_now.AddDays(2)),
+                StartTime = new TimeOnly(10, 0)
+            });
+
+            var result = await _sut.BookAppointmentAsync(_patientUserId, new BookAppointmentRequest(SlotId, null), _ct);
+
+            Assert.True(result.IsFailure);
+            Assert.Equal(AppointmentErrors.SlotNotFound(SlotId), Assert.Single(result.Errors));
+            await _uow.Slots.DidNotReceive().SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+        }
+
+        private static DoctorProfile ApprovedDoctor() => new()
+        {
+            IsApprovedByAdmin = true,
+            User = new ApplicationUser { FirstName = "Ahmed", LastName = "Elsayed", IsActive = true }
+        };
     }
 }

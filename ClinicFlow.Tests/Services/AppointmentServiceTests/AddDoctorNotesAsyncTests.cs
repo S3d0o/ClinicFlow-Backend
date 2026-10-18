@@ -1,6 +1,7 @@
 using Domain.Entities.AppModule;
 using Domain.Enums;
 using NSubstitute;
+using Shared.DTOs.Appointment;
 using Shared.Errors;
 
 namespace ClinicFlow.Tests.Services.AppointmentServiceTests
@@ -68,14 +69,14 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         }
 
         [Fact]
-        public async Task AddDoctorNotesAsync_WhenAppointmentBelongsToAnotherDoctor_ReturnsUnauthorizedError()
+        public async Task AddDoctorNotesAsync_WhenAppointmentBelongsToAnotherDoctor_ReturnsForbiddenError()
         {
             _appointment.DoctorProfileId = _doctorId + 1;
 
             var result = await _sut.AddDoctorNotesAsync(_doctorUserId, _appointmentId, _request, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(AppointmentErrors.Unauthorized, result.Errors);
+            Assert.Contains(AppointmentErrors.Forbidden, result.Errors);
             Assert.Null(_appointment.DoctorNotes);
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
         }

@@ -1,8 +1,11 @@
-﻿namespace Presentation.Controllers
+﻿using Shared.DTOs.Common;
+using System.Globalization;
+
+namespace Presentation.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class ApiController : ControllerBase
+    public abstract class ApiController : ControllerBase
     {
         // Non-generic: use for commands that return no value.
         // Default is 204 NoContent. Pass Status200OK or Status201Created when needed.
@@ -40,6 +43,18 @@
                 return StatusCode(successStatusCode, result.Value);
 
             return HandleProblem(result.Errors);
+        }
+
+        // Paged lists: the body stays a plain array and the total goes in the X-Total-Count header (REVIEW.md NL2)
+        public const string TotalCountHeader = "X-Total-Count";
+
+        protected ActionResult<IReadOnlyList<TItem>> HandlePagedResult<TItem>(Result<PagedList<TItem>> result)
+        {
+            if (result.IsFailure)
+                return HandleProblem(result.Errors);
+
+            Response.Headers[TotalCountHeader] = result.Value.TotalCount.ToString(CultureInfo.InvariantCulture);
+            return Ok(result.Value.Items);
         }
 
         // Central error dispatcher

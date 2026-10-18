@@ -16,8 +16,13 @@ namespace ClinicFlow.Tests.Validators
         public void Validate_FeeOnly_IsAllowed()
             => _validator.TestValidate(new UpdateDoctorProfileRequest { ConsultationFee = 450m }).ShouldNotHaveAnyValidationErrors();
 
+        [Fact]
+        public void Validate_FeeOmitted_IsAllowed()
+            // REVIEW.md M15: a partial update doesn't have to resend the fee
+            => _validator.TestValidate(new UpdateDoctorProfileRequest { Bio = "Only the bio" }).ShouldNotHaveAnyValidationErrors();
+
         [Theory]
-        [InlineData(0)]          // also what an omitted fee becomes (M15)
+        [InlineData(0)]
         [InlineData(-1)]
         [InlineData(10000.01)]
         public void Validate_FeeOutside0To10000_FailsOnFee(decimal fee)
@@ -58,12 +63,17 @@ namespace ClinicFlow.Tests.Validators
                 .ShouldHaveValidationErrorFor(x => x.EmergencyContactPhone);
 
         [Fact]
-        public void Validate_LocalPhoneWithLeadingZero_IsAllowedHereButNotAtRegistration()
+        public void Validate_LocalPhoneWithLeadingZero_FailsLikeAtRegistration()
         {
-            // Documents REVIEW.md M13: updates accept ^\+?[0-9]{7,15}$, registration requires E.164
+            // REVIEW.md M13: updates used to accept ^\+?[0-9]{7,15}$; now every phone field uses the registration rule
             _validator.TestValidate(new UpdatePatientProfileRequest { EmergencyContactPhone = "01001234567" })
-                .ShouldNotHaveAnyValidationErrors();
+                .ShouldHaveValidationErrorFor(x => x.EmergencyContactPhone);
         }
+
+        [Fact]
+        public void Validate_E164Phone_HasNoErrors()
+            => _validator.TestValidate(new UpdatePatientProfileRequest { EmergencyContactPhone = "+201001234567" })
+                .ShouldNotHaveAnyValidationErrors();
 
         [Fact]
         public void Validate_TextOverLimits_FailsOnEachField()

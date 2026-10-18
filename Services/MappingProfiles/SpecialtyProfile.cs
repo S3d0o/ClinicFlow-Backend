@@ -8,7 +8,13 @@ namespace Services.MappingProfiles
     {
         public SpecialtyProfile()
         {
-            CreateMap<SpecialtyRequest, Specialty>();
+            // IsActive is optional: null leaves the entity's value (true for a new specialty) unchanged (REVIEW.md L6)
+            CreateMap<SpecialtyRequest, Specialty>()
+                .ForMember(d => d.IsActive, o =>
+                {
+                    o.PreCondition(s => s.IsActive.HasValue);
+                    o.MapFrom(s => s.IsActive!.Value);
+                });
             CreateMap<Specialty, SpecialtyResponse>();
         }
     }

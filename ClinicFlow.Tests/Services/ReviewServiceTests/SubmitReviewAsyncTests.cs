@@ -19,7 +19,6 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         private readonly SubmitReviewRequest _request = new(_appointmentId, 4, "Very thorough");
         private readonly PatientProfile _patient;
         private readonly Appointment _appointment;
-        private readonly DoctorProfile _doctor;
 
         public SubmitReviewAsyncTests()
         {
@@ -36,14 +35,10 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
                 DoctorProfileId = _doctorId,
                 Status = AppointmentStatus.Completed
             };
-            _doctor = new DoctorProfile { Id = _doctorId, AverageRating = 3.0, TotalReviews = 1 };
 
             _uow.Patients.GetPatientByUserIdAsync(_patientUserId, _ct).Returns(_patient);
             _uow.Reviews.GetByAppointmentIdAsync(_appointmentId, _ct).Returns((Review?)null);
             _uow.Appointments.GetByIdAsync(_appointmentId, _ct).Returns(_appointment);
-            _uow.Doctors.GetByIdAsync(_doctorId, _ct).Returns(_doctor);
-            _uow.Reviews.GetAverageRatingAsync(_doctorId, _ct).Returns(3.5);
-            _uow.Reviews.GetTotalReviewsAsync(_doctorId, _ct).Returns(2);
         }
 
         [Fact]
@@ -67,16 +62,19 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         }
 
         [Fact]
-        public async Task SubmitReviewAsync_WhenValid_RecalculatesDoctorRating()
+        public async Task SubmitReviewAsync_WhenValid_RefreshesRatingCacheInSameTransaction()
         {
             var result = await _sut.SubmitReviewAsync(_patientUserId, _request, _ct);
 
+            // The insert and the rating refresh commit together (REVIEW.md L8)
             Assert.True(result.IsSuccess);
-            Assert.Equal(3.5, _doctor.AverageRating);
-            Assert.Equal(2, _doctor.TotalReviews);
-            _uow.Doctors.Received(1).UpdateRatingCache(_doctor);
-            // One save for the review, one for the rating cache
-            await _uow.Received(2).SaveChangesAsync(_ct);
+            Received.InOrder(() =>
+            {
+                _uow.BeginTransactionAsync(_ct);
+                _uow.SaveChangesAsync(_ct);
+                _uow.Doctors.RefreshRatingCacheAsync(_doctorId, _ct);
+                _transaction.CommitAsync(_ct);
+            });
         }
 
         [Fact]
@@ -118,20 +116,20 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         }
 
         [Fact]
-        public async Task SubmitReviewAsync_WhenAppointmentBelongsToAnotherPatient_ReturnsUnauthorizedError()
+        public async Task SubmitReviewAsync_WhenAppointmentBelongsToAnotherPatient_ReturnsForbiddenError()
         {
             _appointment.PatientProfileId = _patientId + 1;
 
             var result = await _sut.SubmitReviewAsync(_patientUserId, _request, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(AppointmentErrors.Unauthorized, result.Errors);
+            Assert.Contains(AppointmentErrors.Forbidden, result.Errors);
             await _uow.Reviews.DidNotReceive().AddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>());
-            _uow.Doctors.DidNotReceive().UpdateRatingCache(Arg.Any<DoctorProfile>());
+            await _uow.Doctors.DidNotReceive().RefreshRatingCacheAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
-        public async Task SubmitReviewAsync_WhenAnotherPatientsAppointmentAlreadyReviewed_ReturnsUnauthorizedError()
+        public async Task SubmitReviewAsync_WhenAnotherPatientsAppointmentAlreadyReviewed_ReturnsForbiddenError()
         {
             // Ownership is checked before the duplicate check, so the response doesn't reveal
             // whether another patient's appointment was reviewed (REVIEW.md NL22)
@@ -141,7 +139,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
             var result = await _sut.SubmitReviewAsync(_patientUserId, _request, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(AppointmentErrors.Unauthorized, result.Errors);
+            Assert.Contains(AppointmentErrors.Forbidden, result.Errors);
             Assert.DoesNotContain(AppointmentErrors.ReviewAlreadyExists, result.Errors);
             await _uow.Reviews.DidNotReceive().GetByAppointmentIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
@@ -163,18 +161,6 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         }
 
         [Fact]
-        public async Task SubmitReviewAsync_WhenDoctorNotFound_ReturnsDoctorNotFoundError()
-        {
-            _uow.Doctors.GetByIdAsync(_doctorId, _ct).Returns((DoctorProfile?)null);
-
-            var result = await _sut.SubmitReviewAsync(_patientUserId, _request, _ct);
-
-            Assert.True(result.IsFailure);
-            Assert.Contains(DoctorErrors.NotFound(_doctorId), result.Errors);
-            await _uow.Reviews.DidNotReceive().AddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>());
-        }
-
-        [Fact]
         public async Task SubmitReviewAsync_WhenConcurrentRequestInsertedReviewFirst_ReturnsReviewAlreadyExistsError()
         {
             // The pre-check sees no review; the insert then hits the unique index because another request won the race
@@ -186,7 +172,8 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
 
             Assert.True(result.IsFailure);
             Assert.Contains(AppointmentErrors.ReviewAlreadyExists, result.Errors);
-            _uow.Doctors.DidNotReceive().UpdateRatingCache(Arg.Any<DoctorProfile>());
+            await _uow.Doctors.DidNotReceive().RefreshRatingCacheAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+            await _transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
         }
 
         [Fact]
@@ -196,7 +183,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
             _uow.SaveChangesAsync(_ct).ThrowsAsync(new DbUpdateException("check constraint CK_Review_Rating"));
 
             await Assert.ThrowsAsync<DbUpdateException>(() => _sut.SubmitReviewAsync(_patientUserId, _request, _ct));
-            _uow.Doctors.DidNotReceive().UpdateRatingCache(Arg.Any<DoctorProfile>());
+            await _uow.Doctors.DidNotReceive().RefreshRatingCacheAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
     }
 }

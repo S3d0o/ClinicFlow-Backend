@@ -6,7 +6,8 @@ namespace Persistence.Repositories
     {
         public async Task<Appointment?> GetByIdAsync(int id, CancellationToken ct)
             => await context.Appointments
-            .Include(x=>x.Slot)
+            .Include(x => x.Slot)
+                .ThenInclude(s => s.DoctorSchedule) // a freed slot is only reopened if its schedule still covers it
             .Include(x => x.Doctor)
                 .ThenInclude(d => d.User)
             .Include(x => x.Patient)
@@ -23,8 +24,8 @@ namespace Persistence.Repositories
             .Include(x=>x.Slot)
             .FirstOrDefaultAsync(x=>x.Id==id, ct);
 
-        public async Task<(IReadOnlyList<Appointment> Appointments, int TotalCount)> GetDoctorsAppointmentsAsync
-            (Guid userId, AppointmentStatus? status, AppointmentFilterParams filters, CancellationToken ct)
+        public async Task<(IReadOnlyList<Appointment> Appointments, int TotalCount)> GetByDoctorUserIdAsync
+            (Guid doctorUserId, AppointmentStatus? status, AppointmentFilterParams filters, CancellationToken ct)
         {
             var query = context.Appointments
                 .AsNoTracking()
@@ -33,27 +34,24 @@ namespace Persistence.Repositories
                 .Include(x => x.Patient)
                     .ThenInclude(p => p.User) // needed to get patient name and email
                 .Include(x => x.Slot) // needed to get appointment date and time
-                .Where(x => x.Doctor.UserId == userId);
+                .Where(x => x.Doctor.UserId == doctorUserId);
 
             query = ApplyStatusFilter(query, status);
 
             var totalCount = await query.CountAsync(ct);
 
-            var pageNumber = Math.Max(1, filters.PageNumber);
-            var pageSize = Math.Max(1, filters.PageSize);
-
             var appointments = await query
                 .OrderByDescending(x => x.Slot.Date)
                 .ThenByDescending(x => x.Slot.StartTime)
-                .Skip((pageNumber - 1) * pageSize)
-                .Take(pageSize)
+                .ThenByDescending(x => x.Id) // unique tie-breaker keeps paging stable
+                .Page(filters.PageNumber, filters.PageSize)
                 .ToListAsync(ct);
 
             return (appointments, totalCount);
         }
 
-        public async Task<(IReadOnlyList<Appointment> Appointments, int TotalCount)> GetPatientsAppointmentsAsync
-            (Guid userId, AppointmentStatus? status, AppointmentFilterParams filters, CancellationToken ct)
+        public async Task<(IReadOnlyList<Appointment> Appointments, int TotalCount)> GetByPatientUserIdAsync
+            (Guid patientUserId, AppointmentStatus? status, AppointmentFilterParams filters, CancellationToken ct)
         {
             var query = context.Appointments
                 .AsNoTracking()
@@ -65,7 +63,7 @@ namespace Persistence.Repositories
                     .ThenInclude(p => p.User) // needed for PatientName in the response
                 .Include(x => x.Review) // needed to get review details if exists
                 .Include(x => x.Slot) // needed to get appointment date and time
-                .Where(x => x.Patient.UserId == userId);
+                .Where(x => x.Patient.UserId == patientUserId);
 
             query = ApplyStatusFilter(query, status);
 
@@ -74,30 +72,20 @@ namespace Persistence.Repositories
             var appointments = await query
                 .OrderByDescending(x => x.Slot.Date)
                     .ThenByDescending(x => x.Slot.StartTime)
-                .Skip((filters.PageNumber - 1) * filters.PageSize)
-                .Take(filters.PageSize)
+                    .ThenByDescending(x => x.Id) // unique tie-breaker keeps paging stable
+                .Page(filters.PageNumber, filters.PageSize)
                 .ToListAsync(ct);
 
             return (appointments, totalCount);
         }
 
-
-        public async Task<bool> HasCompletedAppointmentAsync(Guid patientUserId, Guid doctorUserId, CancellationToken ct)
-            => await context.Appointments.AsNoTracking().AnyAsync(x=>
-                x.Patient.UserId == patientUserId &&
-                x.Doctor.UserId == doctorUserId &&
-                x.Status == AppointmentStatus.Completed, ct);
-            
-        
         public async Task AddAsync(Appointment appointment, CancellationToken ct)
             => await context.Appointments.AddAsync(appointment, ct);
 
-        public void Update(Appointment appointment)
-            => context.Appointments.Update(appointment);
-
-        public async Task<IReadOnlyList<Appointment>> GetAppointmentsNeedingReminderAsync(CancellationToken ct)
+        public async Task<IReadOnlyList<Appointment>> GetAppointmentsNeedingReminderAsync(DateTime clinicNow, CancellationToken ct)
         {
-            var now = DateTime.UtcNow;
+            // Slot times are clinic-local, so the 24-hour window is measured on the clinic's clock (REVIEW.md M2)
+            var now = clinicNow;
             var upperBound = now.AddHours(24);
             var today = DateOnly.FromDateTime(now);
             var lastDay = DateOnly.FromDateTime(upperBound);

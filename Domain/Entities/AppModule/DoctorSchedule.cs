@@ -14,5 +14,10 @@
         public DoctorProfile DoctorProfile { get; set; } = null!;
         public ICollection<AppointmentSlot> Slots { get; set; } = [];
 
+        // A freed slot may be offered to patients again only while the schedule is active and the slot
+        // lies within its current hours; otherwise it is blocked (REVIEW.md H4)
+        public bool Covers(AppointmentSlot slot)
+            => IsActive && slot.StartTime >= StartTime && slot.EndTime <= EndTime;
+
     }
 }

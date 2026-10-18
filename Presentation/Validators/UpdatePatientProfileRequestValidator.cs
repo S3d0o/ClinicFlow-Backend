@@ -22,7 +22,7 @@ namespace Presentation.Validators
                 .When(x => x.EmergencyContactName is not null);
 
             RuleFor(x => x.EmergencyContactPhone)
-                .Matches(@"^\+?[0-9]{7,15}$").WithMessage("Emergency contact phone must be a valid format.")
+                .ValidPhoneNumber("Emergency contact phone") // same E.164 rule as registration (REVIEW.md M13)
                 .When(x => x.EmergencyContactPhone is not null);
         }
     }

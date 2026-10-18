@@ -94,7 +94,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         }
 
         [Fact]
-        public async Task ConfirmEmail_InvalidToken_Returns500AndLeavesEmailUnconfirmed()
+        public async Task ConfirmEmail_InvalidToken_Returns400AndLeavesEmailUnconfirmed()
         {
             (await _client.PostAsJsonAsync(RegisterPatientUrl, PatientRequest("bad.token@test.com")))
                 .StatusCode.Should().Be(HttpStatusCode.OK);
@@ -102,8 +102,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
 
             var response = await _client.PostAsJsonAsync(ConfirmEmailUrl, new ConfirmEmailRequest(userId.ToString(), "not-a-real-token"));
 
-            // 500 is the documented status today (REVIEW.md M3)
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Auth.InvalidEmailConfirmationToken");
             await _factory.SeedAsync(async db =>
                 (await db.Users.AsNoTracking().SingleAsync(u => u.Id == userId)).EmailConfirmed.Should().BeFalse());
@@ -119,15 +118,14 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         }
 
         [Fact]
-        public async Task RegisterPatient_DuplicateEmail_Returns500AndKeepsOneAccount()
+        public async Task RegisterPatient_DuplicateEmail_Returns409AndKeepsOneAccount()
         {
             (await _client.PostAsJsonAsync(RegisterPatientUrl, PatientRequest("taken@test.com")))
                 .StatusCode.Should().Be(HttpStatusCode.OK);
 
             var response = await _client.PostAsJsonAsync(RegisterPatientUrl, PatientRequest("taken@test.com"));
 
-            // 500 is the documented status today (REVIEW.md M3)
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Auth.EmailAlreadyExists");
             await _factory.SeedAsync(async db =>
                 (await db.Users.CountAsync(u => u.Email == "taken@test.com")).Should().Be(1));
@@ -154,12 +152,41 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         }
 
         [Fact]
-        public async Task RegisterDoctor_UnknownSpecialty_Returns500AndRollsBackTheUser()
+        public async Task RegisterDoctor_UnknownSpecialty_Returns404AndCreatesNothing()
         {
-            // The profile insert fails on the foreign key after Identity has created the user and
-            // assigned the role; the transaction must undo both
-            var response = await _client.PostAsJsonAsync(RegisterDoctorUrl, DoctorRequest("orphan@test.com", specialtyId: 999_999));
+            // REVIEW.md M3: checked up front now, instead of failing on the foreign key with a 500
+            var response = await _client.PostAsJsonAsync(RegisterDoctorUrl, DoctorRequest("nospecialty@test.com", specialtyId: 999_999));
 
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Specialty.NotFound");
+            await _factory.SeedAsync(async db =>
+                (await db.Users.AnyAsync(u => u.Email == "nospecialty@test.com")).Should().BeFalse());
+            _factory.Emails.Sent.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task RegisterDoctor_BioOver500_Returns400AndCreatesNothing()
+        {
+            // REVIEW.md M13: the validator now checks the bio, which used to fail on the 500-character column
+            var response = await _client.PostAsJsonAsync(RegisterDoctorUrl,
+                DoctorRequest("longbio@test.com", _specialtyId) with { Bio = new string('a', 501) });
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            await _factory.SeedAsync(async db =>
+                (await db.Users.AnyAsync(u => u.Email == "longbio@test.com")).Should().BeFalse());
+        }
+
+        [Fact]
+        public async Task RegisterDoctor_ProfileInsertFails_Returns500AndRollsBackTheUser()
+        {
+            // A trigger makes the profile insert fail after Identity has created the user and assigned the role;
+            // the transaction must undo both
+            await _factory.SeedAsync(async db => await db.Database.ExecuteSqlRawAsync(
+                "CREATE TRIGGER FailDoctorInsert ON Doctors INSTEAD OF INSERT AS THROW 50000, 'Simulated insert failure', 1;"));
+
+            var response = await _client.PostAsJsonAsync(RegisterDoctorUrl, DoctorRequest("orphan@test.com", _specialtyId));
+
+            await _factory.SeedAsync(async db => await db.Database.ExecuteSqlRawAsync("DROP TRIGGER FailDoctorInsert;"));
             response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Auth.RegistrationFailed");
             await _factory.SeedAsync(async db =>
@@ -170,7 +197,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
             });
             _factory.Emails.Sent.Should().BeEmpty();
 
-            // Nothing is left behind, so the same email can register once the input is fixed
+            // Nothing is left behind, so the same email can register once the database recovers
             (await _client.PostAsJsonAsync(RegisterDoctorUrl, DoctorRequest("orphan@test.com", _specialtyId)))
                 .StatusCode.Should().Be(HttpStatusCode.OK);
         }

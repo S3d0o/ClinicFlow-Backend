@@ -62,7 +62,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         }
 
         [Fact]
-        public async Task CancelByPatientAsync_WhenPatientProfileIdsNotMatch_ReturnsUnauthorizedError()
+        public async Task CancelByPatientAsync_WhenPatientProfileIdsNotMatch_ReturnsForbiddenError()
         {
             //Arrange
             _uow.Patients.GetPatientByUserIdAsync(_patientUserId, _ct)
@@ -76,7 +76,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                     PatientProfileId = _patientId + 1
                 });
 
-            var error = AppointmentErrors.Unauthorized;
+            var error = AppointmentErrors.Forbidden;
 
             //Act
             var result = await _sut.CancelByPatientAsync(_patientUserId, _appointmentId, _request, _ct);
@@ -150,13 +150,14 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 {
                     Id = _patientId,
                 });
-            _dateTimeProvider.UtcNow.Returns(_now);
+            _dateTimeProvider.ClinicNow.Returns(_now);
             var slotDateTime = _now.AddHours(1);
             var slot = new AppointmentSlot
             {
                 Id = 1,
                 Date = DateOnly.FromDateTime(slotDateTime),
-                StartTime = TimeOnly.FromDateTime(slotDateTime)
+                StartTime = TimeOnly.FromDateTime(slotDateTime),
+                DoctorSchedule = new DoctorSchedule { StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MaxValue }
             };
             _uow.Appointments.GetByIdAsync(_appointmentId, _ct)
                 .Returns(new Appointment
@@ -217,13 +218,14 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                   {
                       Id = _patientId,
                   });
-            _dateTimeProvider.UtcNow.Returns(_now);
+            _dateTimeProvider.ClinicNow.Returns(_now);
             var slotDateTime = _now.AddHours(10);
             var slot = new AppointmentSlot
             {
                 Id = 1,
                 Date = DateOnly.FromDateTime(slotDateTime),
-                StartTime = TimeOnly.FromDateTime(slotDateTime)
+                StartTime = TimeOnly.FromDateTime(slotDateTime),
+                DoctorSchedule = new DoctorSchedule { StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MaxValue }
             };
             _uow.Appointments.GetByIdAsync(_appointmentId, _ct)
                 .Returns(new Appointment

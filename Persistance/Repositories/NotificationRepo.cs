@@ -4,13 +4,23 @@ namespace Persistence.Repositories
 {
     public class NotificationRepo(ClinicDbContext context) : INotificationRepo
     {
-        public async Task<IReadOnlyList<Notification>> GetByUserIdAsync(
-             Guid userId, bool unreadOnly = false, CancellationToken ct = default)
-                 => await context.Notifications
-                       .AsNoTracking()
-                       .Where(n => n.UserId == userId && (!unreadOnly || !n.IsRead))
-                       .OrderByDescending(n => n.CreatedAt)
-                       .ToListAsync(ct);
+        public async Task<(IReadOnlyList<Notification> Notifications, int TotalCount)> GetByUserIdAsync(
+             Guid userId, bool unreadOnly, int pageNumber, int pageSize, CancellationToken ct)
+        {
+            var query = context.Notifications
+                .AsNoTracking()
+                .Where(n => n.UserId == userId && (!unreadOnly || !n.IsRead));
+
+            var totalCount = await query.CountAsync(ct);
+
+            var notifications = await query
+                .OrderByDescending(n => n.CreatedAt)
+                .ThenByDescending(n => n.Id) // unique tie-breaker keeps paging stable
+                .Page(pageNumber, pageSize)
+                .ToListAsync(ct);
+
+            return (notifications, totalCount);
+        }
 
         public async Task<Notification?> GetByIdAsync(int id, CancellationToken ct)
             => await context.Notifications

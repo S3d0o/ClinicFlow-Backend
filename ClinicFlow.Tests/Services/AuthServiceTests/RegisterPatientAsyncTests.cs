@@ -119,28 +119,29 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
         }
 
         [Fact]
-        public async Task RegisterPatientAsync_WhenRoleAssignmentFails_ReturnsRegistrationFailedAndRollsBack()
+        public async Task RegisterPatientAsync_WhenRoleAssignmentFails_ReturnsRegistrationErrorAndRollsBack()
         {
             _userManager.AddToRoleAsync(Arg.Any<ApplicationUser>(), "Patient").Returns(Failed("Role PATIENT does not exist."));
 
             var result = await _sut.RegisterPatientAsync(_request, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(AuthErrors.RegistrationFailed(["Role PATIENT does not exist."]), result.Errors);
+            // A missing role is a server problem (500), not the caller's (REVIEW.md M3)
+            Assert.Contains(AuthErrors.RegistrationError, result.Errors);
             await _transaction.Received(1).RollbackAsync(Arg.Any<CancellationToken>());
             await _transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
             await _uow.Patients.DidNotReceive().AddAsync(Arg.Any<PatientProfile>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
-        public async Task RegisterPatientAsync_WhenSavingProfileThrows_ReturnsGenericRegistrationFailedAndRollsBack()
+        public async Task RegisterPatientAsync_WhenSavingProfileThrows_ReturnsRegistrationErrorAndRollsBack()
         {
             _uow.SaveChangesAsync(Arg.Any<CancellationToken>()).ThrowsAsync(new InvalidOperationException("db down"));
 
             var result = await _sut.RegisterPatientAsync(_request, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(AuthErrors.RegistrationFailed(["An error occurred during registration. Please try again later."]), result.Errors);
+            Assert.Contains(AuthErrors.RegistrationError, result.Errors);
             // The rollback must run even if the request was cancelled
             await _transaction.Received(1).RollbackAsync(CancellationToken.None);
             await _transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());

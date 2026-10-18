@@ -1,7 +1,9 @@
 
 using ClinicFlow.BackgroundJobs;
+using Microsoft.Extensions.Options;
 using Persistence.AppData;
 using Scalar.AspNetCore;
+using Shared.Settings;
 
 Log.Logger = new LoggerConfiguration() // capture startup errors
     .MinimumLevel.Information()
@@ -26,12 +28,14 @@ try
     #region Add services to the container.
 
     builder.Services.AddWebApiServices();
+    builder.Services.AddAuthRateLimiting(builder.Configuration);
 
     builder.Services.AddInfraStructureServices(builder.Configuration);
 
     builder.Services.AddCoreServices(builder.Configuration);
 
     builder.Services.AddHostedService<AppointmentReminderJob>();
+    builder.Services.AddHostedService<SlotGenerationJob>();
 
     // Liveness probe for the Docker HEALTHCHECK (GET /health)
     builder.Services.AddHealthChecks();
@@ -50,11 +54,19 @@ try
                 .WithOrigins(frontendUrl.TrimEnd('/'))
                 .AllowAnyHeader()
                 .AllowAnyMethod()
-                .AllowCredentials();
+                .AllowCredentials()
+                .WithExposedHeaders("X-Total-Count"); // paged lists (REVIEW.md NL2); the browser hides it otherwise
         });
     });
 
     var app = builder.Build();
+
+    // The app runs without email, so missing SMTP settings are a warning rather than a startup failure;
+    // without it they only surfaced at the first send (REVIEW.md NL12)
+    var missingEmailSettings = app.Services.GetRequiredService<IOptions<EmailSettings>>().Value.MissingSettings();
+    if (missingEmailSettings.Count > 0)
+        Log.Warning("Email is not configured (missing EmailSettings: {MissingSettings}); confirmation, password-reset and reminder emails will fail to send",
+            missingEmailSettings);
 
     // Demo accounts use published passwords: only seed them in Development unless explicitly enabled.
     var seedDemoData = app.Configuration.GetValue<bool?>("Seeding:DemoData") ?? app.Environment.IsDevelopment();
@@ -70,6 +82,11 @@ try
     // add its address to ForwardedHeadersOptions.KnownProxies (see AddWebApiServices).
     app.UseForwardedHeaders();
 
+    // An unhandled exception becomes a 500 ProblemDetails without exception details (the developer
+    // exception page still applies in Development); empty 401/403/404 responses get a ProblemDetails body
+    app.UseExceptionHandler();
+    app.UseStatusCodePages();
+
     app.UseSerilogRequestLogging(opt =>
     {
         opt.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
@@ -84,19 +101,21 @@ try
     // Configure the HTTP request pipeline.
     if (app.Environment.IsDevelopment())
     {
-        app.MapOpenApi();
-        app.MapScalarApiReference();
+        app.MapOpenApi().AllowAnonymous();
+        app.MapScalarApiReference().AllowAnonymous();
     }
 
     app.UseHttpsRedirection();
     app.UseCors("React");
+    // After CORS, so the browser can read a 429; per client IP, so it doesn't need the authenticated user
+    app.UseRateLimiter();
     app.UseAuthentication();
     app.UseAuthorization();
 
     #endregion
 
     app.MapControllers();
-    app.MapHealthChecks("/health");
+    app.MapHealthChecks("/health").AllowAnonymous(); // the fallback policy would otherwise require a login
     await app.RunAsync();
     return 0;
 }

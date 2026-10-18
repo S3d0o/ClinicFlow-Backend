@@ -20,7 +20,7 @@ The file references are from 2026-10-09 and lines may have moved. Open each refe
 ## 2. Check for blockers
 
 Stop and ask me before coding if any of these apply:
-- **Product decision needed** (the status says so; currently H4, H8, M1, M2, M14). Check `docs/v2/adr/` and `docs/v2/` first, because a decision may already be recorded there. If one is, quote it and propose the fix based on it.
+- **Product decision needed** (the status says so; currently H8, M2, and NoShow handling in M14). Check `docs/v2/adr/` and `docs/v2/` first, because a decision may already be recorded there. If one is, quote it and propose the fix based on it.
 - **API change the frontend would see** (listed in §9 of `docs/API_CONTRACT.md`, or the fix changes a route, field, status code, error code or auth rule). Proceed only through the `/contract-change` process: classify, version bump, update the contract and `openapi.json`.
 - **Fix risk High** (migration, many call sites). Show the plan first.
 

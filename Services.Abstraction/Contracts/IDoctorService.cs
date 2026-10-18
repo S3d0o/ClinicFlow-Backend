@@ -16,5 +16,9 @@ namespace Services.Abstraction.Contracts
         public Task<Result<ScheduleResponse>> UpdateScheduleAsync(int scheduleId, Guid UserId, UpdateScheduleRequest request, CancellationToken ct);
         public Task<Result> DeleteScheduleAsync(int scheduleId, Guid UserId, CancellationToken ct);
 
+        // Rolls every active schedule's slots forward to the 14-day window; run daily by SlotGenerationJob (REVIEW.md H8).
+        // Returns the number of slots created
+        public Task<int> GenerateUpcomingSlotsAsync(CancellationToken ct);
+
     }
 }

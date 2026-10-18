@@ -82,16 +82,15 @@ namespace ClinicFlow.IntegrationTests.Tests.Admin
         }
 
         [Fact]
-        public async Task SuspendDoctor_AlreadySuspended_Returns500WithAlreadySuspendedCode()
+        public async Task SuspendDoctor_AlreadySuspended_Returns409WithAlreadySuspendedCode()
         {
-            // 500 is the documented status today (REVIEW.md M3, API_CONTRACT §39b)
             AuthenticateAs(_adminUserId, "Admin");
             (await _client.PostAsync($"{AdminUrl}/{_doctorProfileId}/suspend", null))
                 .StatusCode.Should().Be(HttpStatusCode.NoContent);
 
             var response = await _client.PostAsync($"{AdminUrl}/{_doctorProfileId}/suspend", null);
 
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Admin.DoctorAlreadySuspended");
         }
 
@@ -139,14 +138,13 @@ namespace ClinicFlow.IntegrationTests.Tests.Admin
         }
 
         [Fact]
-        public async Task ApproveDoctor_AlreadyApproved_Returns500WithAlreadyApprovedCode()
+        public async Task ApproveDoctor_AlreadyApproved_Returns409WithAlreadyApprovedCode()
         {
-            // 500 is the documented status today (REVIEW.md M3, API_CONTRACT §39)
             AuthenticateAs(_adminUserId, "Admin");
 
             var response = await _client.PostAsync($"{AdminUrl}/{_doctorProfileId}/approve", null);
 
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Admin.DoctorAlreadyApproved");
         }
 
@@ -159,6 +157,41 @@ namespace ClinicFlow.IntegrationTests.Tests.Admin
                 .StatusCode.Should().Be(HttpStatusCode.NoContent);
 
             (await GetPendingAsync()).Should().BeEmpty();
+
+            // REVIEW.md NL23: the dashboard count used to include the suspended applicant
+            var overview = await _client.GetFromJsonAsync<JsonElement>("/api/admin/stats/overview");
+            overview.GetProperty("pendingApprovals").GetInt32().Should().Be(0);
+        }
+
+        [Fact]
+        public async Task GetPendingDoctors_WithPageSize_ReturnsOnePageAndTheTotalInTheHeader()
+        {
+            // REVIEW.md NL2: three applicants, oldest first, two per page
+            await SetDoctorApprovedAsync(false);
+            await _factory.SeedAsync(async db =>
+            {
+                await SeedDataHelper.SeedDoctorAsync(db, "pending2", approved: false);
+                await SeedDataHelper.SeedDoctorAsync(db, "pending3", approved: false);
+            });
+            AuthenticateAs(_adminUserId, "Admin");
+
+            var all = await _client.GetAsync($"{AdminUrl}/pending");
+            var secondPage = await _client.GetAsync($"{AdminUrl}/pending?pageNumber=2&pageSize=2");
+
+            all.Headers.GetValues("X-Total-Count").Should().Equal("3");
+            (await all.Content.ReadFromJsonAsync<List<DoctorResponse>>(_json)).Should().HaveCount(3);
+            secondPage.Headers.GetValues("X-Total-Count").Should().Equal("3");
+            (await secondPage.Content.ReadFromJsonAsync<List<DoctorResponse>>(_json)).Should().ContainSingle();
+        }
+
+        [Fact]
+        public async Task GetPendingDoctors_PageSizeOutOfRange_Returns400()
+        {
+            AuthenticateAs(_adminUserId, "Admin");
+
+            var response = await _client.GetAsync($"{AdminUrl}/pending?pageSize=101");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         }
 
         // ----------------------------------------------------------------

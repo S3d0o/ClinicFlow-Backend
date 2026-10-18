@@ -76,13 +76,14 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         }
 
         [Fact]
-        public async Task UpdateDoctorProfileAsync_WhenFeeOmitted_OverwritesFeeWithZero()
+        public async Task UpdateDoctorProfileAsync_WhenFeeOmitted_KeepsTheCurrentFee()
         {
-            // Documents REVIEW.md M15: ConsultationFee is a non-nullable decimal, so the null-skipping mapping
-            // can't tell "omitted" from 0. Only the validator (fee > 0) stops this at the HTTP level today
-            await _sut.UpdateDoctorProfileAsync(_userId, new UpdateDoctorProfileRequest { Bio = "Only the bio" }, _ct);
+            // REVIEW.md M15: the fee is optional, and an omitted fee must not be written as 0
+            var result = await _sut.UpdateDoctorProfileAsync(_userId, new UpdateDoctorProfileRequest { Bio = "Only the bio" }, _ct);
 
-            Assert.Equal(0m, _doctor.ConsultationFee);
+            Assert.True(result.IsSuccess);
+            Assert.Equal(300m, _doctor.ConsultationFee);
+            Assert.Equal("Only the bio", _doctor.Bio);
         }
 
         [Fact]

@@ -15,11 +15,16 @@ public class AdminController(
     // ── Doctor management ─────────────────────────────────────────────────────
 
     /// <summary>Get pending doctors</summary>
-    /// <remarks>Returns all doctors awaiting admin approval.</remarks>
+    /// <remarks>
+    /// Returns doctors awaiting admin approval, oldest application first. All of them by default;
+    /// pass PageSize (1–100) and PageNumber for one page. The total is in the X-Total-Count header.
+    /// </remarks>
     [HttpGet("doctors/pending")]
     [ProducesResponseType(typeof(List<DoctorResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<DoctorResponse>>> GetPendingDoctors(CancellationToken ct)
-        => HandleResult(await adminService.GetPendingDoctorsAsync(ct));
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<IReadOnlyList<DoctorResponse>>> GetPendingDoctors(
+        [FromQuery] PendingDoctorsFilterRequest request, CancellationToken ct)
+        => HandlePagedResult(await adminService.GetPendingDoctorsAsync(request, ct));
 
     /// <summary>Approve a doctor</summary>
     /// <remarks>
@@ -59,7 +64,7 @@ public class AdminController(
     [HttpPost("specialties")]
     [ProducesResponseType(typeof(SpecialtyResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<SpecialtyResponse>> CreateSpecialty(
         [FromBody] SpecialtyRequest dto, CancellationToken ct)
     {
@@ -73,6 +78,7 @@ public class AdminController(
     [ProducesResponseType(typeof(SpecialtyResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<SpecialtyResponse>> UpdateSpecialty(
         [FromRoute] int id, [FromBody] SpecialtyRequest dto, CancellationToken ct)
         => HandleResult(await specialtyService.UpdateAsync(id, dto, ct));
@@ -82,7 +88,7 @@ public class AdminController(
     [HttpDelete("specialties/{id}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> DeleteSpecialty(int id, CancellationToken ct)
         => HandleResult(await specialtyService.DeleteByIdAsync(id, ct));
 

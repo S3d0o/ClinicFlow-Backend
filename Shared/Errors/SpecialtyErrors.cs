@@ -8,9 +8,9 @@ namespace Shared.Errors
         Error.NotFound("Specialty.NotFound", $"Specialty with id {id} was not found");
 
         public static readonly Error NameAlreadyExists =
-            Error.Failure("Specialty.NameAlreadyExists", "A specialty with this name already exists");
+            Error.Conflict("Specialty.NameAlreadyExists", "A specialty with this name already exists");
 
         public static readonly Error HasAssignedDoctors =
-            Error.Failure("Specialty.HasAssignedDoctors", "Cannot delete a specialty with assigned doctors");
+            Error.Conflict("Specialty.HasAssignedDoctors", "Cannot delete a specialty with assigned doctors");
     }
 }

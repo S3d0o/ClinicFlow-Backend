@@ -24,8 +24,9 @@ How to run the API locally, configure it, test it, and deploy it. For what the s
 | `JwtSettings:Secret` | **Yes** | At least 32 bytes. Checked at startup |
 | `JwtSettings:Issuer`, `JwtSettings:Audience` | Yes | Set in `appsettings.json` (`https://localhost:7129` / `https://localhost:3000`) |
 | `JwtSettings:AccessTokenExpirationMinutes` / `RefreshTokenExpirationDays` / `TheftDetectionWindowMinutes` | Yes | 15 / 7 / 5 in `appsettings.json` |
-| `EmailSettings:Username`, `EmailSettings:Password`, `EmailSettings:FromAddress` | For email | SMTP credentials (Gmail: use an app password). Host `smtp.gmail.com`, port 587 in `appsettings.json`. Without them, emails fail and the failures are logged |
+| `EmailSettings:Username`, `EmailSettings:Password`, `EmailSettings:FromAddress` | For email | SMTP credentials (Gmail: use an app password). Host `smtp.gmail.com`, port 587 in `appsettings.json`. Without them, startup logs a warning naming the missing keys, and every send fails and is logged |
 | `Frontend:BaseUrl` | No | `http://localhost:3000`. CORS origin and base of the email links |
+| `RateLimiting:Auth:PermitLimit`, `RateLimiting:Auth:WindowSeconds` | No | 10 / 60 in `appsettings.json`: requests per client IP per window, shared by login, both registrations, confirm-email, forgot-password and reset-password. Over the limit: 429 `RateLimit.Exceeded` |
 | `Seeding:DemoData` | No | `true` in Development, `false` elsewhere. Creates the demo clinic with **published passwords** |
 | `Seeding:AdminEmail`, `Seeding:AdminPassword` | No | When both are set, an admin with these credentials is created at startup if one doesn't exist |
 
@@ -111,7 +112,7 @@ docker build -t clinicflow-backend .      # Dockerfile is at the repo root
 
 Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data**. Set `ADMIN_EMAIL` / `ADMIN_PASSWORD` to get a first admin.
 
-⚠️ `docker-compose.yml` does not set `EmailSettings__FromAddress` yet. Add `EmailSettings__FromAddress: ${EMAIL_FROM_ADDRESS}` under `backend.environment` (and the variable to `.env`), or emails will fail.
+**Database login.** The backend doesn't connect as `sa`. Before it starts, the one-shot `db-init` service runs [`docker/db-init.sql`](../docker/db-init.sql) as `sa`. The script creates the `ClinicFlow` database and the login `clinicflow_app` with the password `APP_DB_PASSWORD`. That login is `db_owner` of `ClinicFlow` only, with no server-level rights. It needs DDL because the app applies migrations at startup. The script is idempotent, and it re-applies `APP_DB_PASSWORD`, so a changed password takes effect on the next `docker compose up`. **Upgrading from an `.env` without `APP_DB_PASSWORD`:** add it (and `EMAIL_FROM_ADDRESS`). Compose refuses to start without it. The existing database volume is kept, and the script adds the login to it.
 
 ## 7. Production checklist
 
@@ -120,10 +121,11 @@ Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data**. Set 
 - [ ] A bootstrap admin is configured (`Seeding:AdminEmail` / `Seeding:AdminPassword`). Remove the password from the environment once the admin exists, and change it.
 - [ ] `Frontend:BaseUrl` is the real frontend origin (CORS and email links).
 - [ ] `JwtSettings:Issuer` / `Audience` match the deployed URLs.
-- [ ] Email settings are complete (`Username`, `Password`, `FromAddress`).
+- [ ] Email settings are complete (`Username`, `Password`, `FromAddress`). If any is missing, startup logs the warning "Email is not configured" and lists the missing keys.
+- [ ] `RateLimiting:Auth` suits the deployment. The default is 10 requests per minute per client IP, shared across login, registration, confirm-email and the password-reset endpoints. Clients behind one NAT address share that budget.
 - [ ] Behind a reverse proxy, the proxy is added to `ForwardedHeadersOptions.KnownProxies` (`ClinicFlow/Extensions/WebApiExtensions.cs`). Otherwise client IPs show as the proxy's address.
 - [ ] HTTPS terminates at the proxy or at Kestrel.
-- [ ] The database login is a dedicated least-privilege user, not `sa` (see REVIEW NM6).
+- [ ] The database login is a dedicated user, not `sa`. Compose does this with `db-init` (`clinicflow_app`, `db_owner` of `ClinicFlow` only); elsewhere, run [`docker/db-init.sql`](../docker/db-init.sql) the same way (REVIEW NM6).
 - [ ] Only one instance runs the reminder job (there is no distributed lock yet; REVIEW M9).
 - [ ] Logs: the Seq URL is configured, or the Seq sink is removed; `logs/` is on persistent storage, if file logs are wanted.
 - [ ] The orchestrator restarts the container on failure (compose: `restart: unless-stopped`), and probes `GET /health` (liveness only; it doesn't check the database). Startup failures exit with 1.
@@ -140,7 +142,7 @@ Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data**. Set 
 | Demo appointments are all in the past | The demo dataset is created once and keeps its dates (slots are topped up on every start). Drop the database and restart to reseed |
 | Login returns `Auth.AccountLockedOut` | 5 wrong passwords: wait 15 minutes, or clear `LockoutEnd` for the user |
 | Login returns `Auth.EmailNotConfirmed` | Confirm the email, or set `EmailConfirmed = 1` in `Users` for local testing |
-| No slots for a doctor | The doctor has no active schedule for that weekday, or the date is more than 14 days ahead |
+| No slots for a doctor | The doctor has no active schedule for that weekday, is not approved or is suspended, or the date is more than 14 days ahead. The daily `SlotGenerationJob` extends the window at startup and then every 24 hours |
 | Emails not arriving | Check the logs for `Failed to send …`. Verify the SMTP credentials and `FromAddress` |
 
 ## Regenerating openapi.json

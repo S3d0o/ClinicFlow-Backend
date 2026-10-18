@@ -115,7 +115,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         }
 
         [Fact]
-        public async Task ResetPassword_TokenUsedTwice_SecondAttemptReturns500()
+        public async Task ResetPassword_TokenUsedTwice_SecondAttemptReturns400()
         {
             var token = await RequestResetTokenAsync();
             (await _client.PostAsJsonAsync(ResetUrl, new ResetPasswordRequest(_userId.ToString(), token, NewPassword)))
@@ -124,18 +124,17 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
             // The reset rotates the security stamp, which invalidates the token
             var response = await _client.PostAsJsonAsync(ResetUrl, new ResetPasswordRequest(_userId.ToString(), token, "Another@9012"));
 
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Auth.InvalidPasswordResetToken");
             await LoginAsync(NewPassword);
         }
 
         [Fact]
-        public async Task ResetPassword_InvalidToken_Returns500AndKeepsPassword()
+        public async Task ResetPassword_InvalidToken_Returns400AndKeepsPassword()
         {
             var response = await _client.PostAsJsonAsync(ResetUrl, new ResetPasswordRequest(_userId.ToString(), "not-a-real-token", NewPassword));
 
-            // 500 is the documented status today (REVIEW.md M3)
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Auth.InvalidPasswordResetToken");
             await LoginAsync(_password);
         }

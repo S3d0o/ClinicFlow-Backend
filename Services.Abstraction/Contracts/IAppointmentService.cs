@@ -1,5 +1,4 @@
 ﻿using Shared.DTOs.Appointment;
-using Shared.Errors;
 
 namespace Services.Abstraction.Contracts
 {
@@ -20,6 +19,9 @@ namespace Services.Abstraction.Contracts
         // Doctor-only actions
         Task<Result> CompleteAppointmentAsync(Guid doctorUserId, int appointmentId, CancellationToken ct);
         Task<Result> AddDoctorNotesAsync(Guid doctorUserId, int appointmentId, DoctorNotesRequest request, CancellationToken ct);
+
+        // The owning doctor or an admin marks a missed visit, once the grace period after its start has passed
+        Task<Result> MarkNoShowAsync(Guid userId, string role, int appointmentId, CancellationToken ct);
 
         // Queries
         Task<Result<AppointmentResponse>> GetAppointmentAsync(int appointmentId, Guid userId, string role, CancellationToken ct);

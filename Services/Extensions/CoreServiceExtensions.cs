@@ -28,6 +28,13 @@ namespace Services.Extensions
             services.Configure<EmailSettings>(config.GetSection("EmailSettings"));
             services.Configure<FrontendSettings>(config.GetSection("Frontend"));
 
+            // An unknown zone would make every slot-time rule wrong, so fail at startup (REVIEW.md M2)
+            services.AddOptions<ClinicSettings>()
+                .Bind(config.GetSection("Clinic"))
+                .Validate(s => TimeZoneInfo.TryFindSystemTimeZoneById(s.TimeZoneId, out _),
+                    "Clinic:TimeZoneId must be a known IANA time zone id, e.g. Africa/Cairo.")
+                .ValidateOnStart();
+
 
             return services;
         }

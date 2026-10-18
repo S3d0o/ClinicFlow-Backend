@@ -107,16 +107,16 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         }
 
         [Fact]
-        public async Task Cancel_AsAdmin_CompletedAppointment_Returns409AlreadyCancelled()
+        public async Task Cancel_AsAdmin_CompletedAppointment_Returns409AlreadyCompleted()
         {
-            // Documents REVIEW.md M14 and the contract's error catalog: the wrong code, but the documented one
+            // REVIEW.md M14: this used to return AlreadyCancelled
             await SetStatusAsync(AppointmentStatus.Completed);
             AuthenticateAs(_adminUserId, "Admin");
 
             var response = await _client.PostAsJsonAsync($"{BaseUrl}/{_appointmentId}/cancel", new CancelAppointmentRequest(null));
 
             response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-            (await response.Content.ReadAsStringAsync()).Should().Contain("Appointment.AlreadyCancelled");
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Appointment.AlreadyCompleted");
             await AssertStatusAsync(AppointmentStatus.Completed);
         }
 
@@ -135,8 +135,22 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         // ---- complete ----
 
         [Fact]
+        public async Task Complete_BeforeTheAppointmentStarts_Returns400AndLeavesItConfirmed()
+        {
+            // REVIEW.md M14: the seeded slot is 3 days ahead
+            AuthenticateAs(_doctorUserId, "Doctor");
+
+            var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/complete", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Appointment.CannotCompleteBeforeStart");
+            await AssertStatusAsync(AppointmentStatus.Confirmed);
+        }
+
+        [Fact]
         public async Task Complete_AsOwningDoctor_Returns204AndNotifiesThePatient()
         {
+            await MoveSlotToThePastAsync();
             AuthenticateAs(_doctorUserId, "Doctor");
 
             var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/complete", null);
@@ -162,15 +176,14 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         }
 
         [Fact]
-        public async Task Complete_CancelledAppointment_Returns500CannotCompleteCancelled()
+        public async Task Complete_CancelledAppointment_Returns409CannotCompleteCancelled()
         {
-            // 500 is the documented status today (REVIEW.md M3)
             await SetStatusAsync(AppointmentStatus.Cancelled);
             AuthenticateAs(_doctorUserId, "Doctor");
 
             var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/complete", null);
 
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Appointment.CannotCompleteCancelled");
         }
 
@@ -215,19 +228,101 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         }
 
         [Fact]
-        public async Task Notes_CancelledAppointment_Returns500DoctorNotesNotAllowed()
+        public async Task Notes_CancelledAppointment_Returns409DoctorNotesNotAllowed()
         {
-            // 500 is the documented status today (REVIEW.md M3)
             await SetStatusAsync(AppointmentStatus.Cancelled);
             AuthenticateAs(_doctorUserId, "Doctor");
 
             var response = await _client.PutAsJsonAsync($"{BaseUrl}/{_appointmentId}/notes", new { notes = "Too late" });
 
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Appointment.DoctorNotesNotAllowed");
         }
 
+        // ---- no-show (REVIEW.md M14) ----
+
+        [Theory]
+        [InlineData("Doctor")]
+        [InlineData("Admin")]
+        public async Task NoShow_AfterGracePeriod_Returns204AndNotifiesThePatient(string role)
+        {
+            await MoveSlotToThePastAsync();
+            AuthenticateAs(role == "Doctor" ? _doctorUserId : _adminUserId, role);
+
+            var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/no-show", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            await AssertStatusAsync(AppointmentStatus.NoShow);
+            await _factory.SeedAsync(async db =>
+                (await db.Notifications.AsNoTracking()
+                    .Where(n => n.RelatedEntityId == _appointmentId)
+                    .Select(n => n.UserId).ToListAsync())
+                .Should().Equal(_patientUserId));
+        }
+
+        [Fact]
+        public async Task NoShow_BeforeTheAppointmentStarts_Returns400NoShowTooEarly()
+        {
+            AuthenticateAs(_doctorUserId, "Doctor");
+
+            var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/no-show", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("Appointment.NoShowTooEarly");
+            await AssertStatusAsync(AppointmentStatus.Confirmed);
+        }
+
+        [Fact]
+        public async Task NoShow_AsAnotherDoctor_Returns403()
+        {
+            await MoveSlotToThePastAsync();
+            AuthenticateAs(_otherDoctorUserId, "Doctor");
+
+            var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/no-show", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            await AssertStatusAsync(AppointmentStatus.Confirmed);
+        }
+
+        [Fact]
+        public async Task NoShow_AsPatient_Returns403()
+        {
+            await MoveSlotToThePastAsync();
+            AuthenticateAs(_patientUserId, "Patient");
+
+            var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/no-show", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            await AssertStatusAsync(AppointmentStatus.Confirmed);
+        }
+
+        [Fact]
+        public async Task CancelAndComplete_NoShowAppointment_Return409AlreadyNoShow()
+        {
+            await MoveSlotToThePastAsync();
+            await SetStatusAsync(AppointmentStatus.NoShow);
+            AuthenticateAs(_doctorUserId, "Doctor");
+
+            var cancel = await _client.PostAsJsonAsync($"{BaseUrl}/{_appointmentId}/cancel", new { cancellationReason = "x" });
+            var complete = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/complete", null);
+
+            cancel.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await cancel.Content.ReadAsStringAsync()).Should().Contain("Appointment.AlreadyNoShow");
+            complete.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            await AssertStatusAsync(AppointmentStatus.NoShow);
+        }
+
         // ----------------------------------------------------------------
+
+        // The visit started an hour ago, so it can be completed
+        private Task MoveSlotToThePastAsync() => _factory.SeedAsync(async db =>
+        {
+            var started = _factory.ClinicNow.AddHours(-1);
+            await db.AppointmentSlots.Where(s => s.Id == _slotId).ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Date, DateOnly.FromDateTime(started))
+                .SetProperty(x => x.StartTime, TimeOnly.FromDateTime(started))
+                .SetProperty(x => x.EndTime, TimeOnly.FromDateTime(started.AddMinutes(30))));
+        });
 
         private Task SetStatusAsync(AppointmentStatus status) => _factory.SeedAsync(async db =>
             await db.Appointments.Where(a => a.Id == _appointmentId)

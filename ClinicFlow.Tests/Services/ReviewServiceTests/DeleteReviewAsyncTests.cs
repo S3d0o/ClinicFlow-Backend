@@ -21,7 +21,6 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
                 Patient = new PatientProfile { UserId = _authorUserId }
             };
             _uow.Reviews.GetByIdAsync(_reviewId, _ct).Returns(_review);
-            _uow.Doctors.GetByIdAsync(_doctorProfileId, _ct).Returns(new DoctorProfile { Id = _doctorProfileId });
         }
 
         [Fact]
@@ -40,6 +39,13 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
 
             Assert.True(result.IsSuccess);
             _uow.Reviews.Received(1).Delete(_review);
+            // The delete and the rating refresh commit together (REVIEW.md L8)
+            Received.InOrder(() =>
+            {
+                _uow.SaveChangesAsync(_ct);
+                _uow.Doctors.RefreshRatingCacheAsync(_doctorProfileId, _ct);
+                _transaction.CommitAsync(_ct);
+            });
         }
 
         [Fact]
@@ -52,22 +58,22 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         }
 
         [Fact]
-        public async Task DeleteReviewAsync_WhenOtherPatient_ReturnsUnauthorizedError()
+        public async Task DeleteReviewAsync_WhenOtherPatient_ReturnsForbiddenError()
         {
             var result = await _sut.DeleteReviewAsync(_reviewId, Guid.NewGuid(), "Patient", _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(ReviewErrors.Unauthorized, result.Errors);
+            Assert.Contains(ReviewErrors.Forbidden, result.Errors);
             _uow.Reviews.DidNotReceive().Delete(Arg.Any<Review>());
         }
 
         [Fact]
-        public async Task DeleteReviewAsync_WhenDoctor_ReturnsUnauthorizedError()
+        public async Task DeleteReviewAsync_WhenDoctor_ReturnsForbiddenError()
         {
             var result = await _sut.DeleteReviewAsync(_reviewId, Guid.NewGuid(), "Doctor", _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(ReviewErrors.Unauthorized, result.Errors);
+            Assert.Contains(ReviewErrors.Forbidden, result.Errors);
             _uow.Reviews.DidNotReceive().Delete(Arg.Any<Review>());
         }
     }

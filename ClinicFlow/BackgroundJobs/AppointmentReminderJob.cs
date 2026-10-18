@@ -42,9 +42,10 @@ public sealed class AppointmentReminderJob(
             var notificationService =
                 scope.ServiceProvider.GetRequiredService<INotificationService>();
             var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+            var dateTimeProvider = scope.ServiceProvider.GetRequiredService<IDateTimeProvider>();
 
             var appointments =
-                await uow.Appointments.GetAppointmentsNeedingReminderAsync(cancellationToken);
+                await uow.Appointments.GetAppointmentsNeedingReminderAsync(dateTimeProvider.ClinicNow, cancellationToken);
 
             if (appointments.Count == 0)
             {
@@ -65,7 +66,7 @@ public sealed class AppointmentReminderJob(
                         time: appointment.Slot.StartTime,
                         ct: cancellationToken);
 
-                    appointment.ReminderSentAt = DateTime.UtcNow;
+                    appointment.ReminderSentAt = dateTimeProvider.UtcNow;
 
                     // CreateAsync saves the notification and the ReminderSentAt change together
                     await notificationService.CreateAsync(

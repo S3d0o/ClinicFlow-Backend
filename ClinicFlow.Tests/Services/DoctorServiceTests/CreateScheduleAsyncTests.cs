@@ -63,5 +63,59 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
             Assert.Equal(4 * MatchingDaysInWindow, _generatedSlots!.Count);
             Assert.All(_generatedSlots, s => Assert.Equal(DayOfWeek.Monday, s.Date.DayOfWeek));
         }
+
+        [Fact]
+        public async Task CreateScheduleAsync_WhenActiveScheduleExistsForTheDay_ReturnsScheduleDayAlreadyExists()
+        {
+            _uow.Doctors.GetScheduleByUserIdAndDayAsync(_doctorUserId, DayOfWeek.Monday, _ct)
+                .Returns(new DoctorSchedule { Id = 3, DoctorProfileId = 7, DayOfWeek = DayOfWeek.Monday, IsActive = true });
+
+            var result = await _sut.CreateScheduleAsync(_doctorUserId, Request("09:00", "12:00", 30), _ct);
+
+            Assert.True(result.IsFailure);
+            Assert.Contains(Shared.Errors.DoctorErrors.ScheduleDayAlreadyExists, result.Errors);
+            Assert.Null(_generatedSlots);
+        }
+
+        [Fact]
+        public async Task CreateScheduleAsync_WhenInactiveScheduleExistsForTheDay_ReactivatesItWithTheNewHours()
+        {
+            // REVIEW.md H4: a schedule kept for its history when deleted is reused for that weekday
+            var inactive = new DoctorSchedule
+            {
+                Id = 3, DoctorProfileId = 7, DayOfWeek = DayOfWeek.Monday, IsActive = false,
+                StartTime = new TimeOnly(14, 0), EndTime = new TimeOnly(18, 0), SlotDurationMinutes = 60
+            };
+            _uow.Doctors.GetScheduleByUserIdAndDayAsync(_doctorUserId, DayOfWeek.Monday, _ct).Returns(inactive);
+
+            var result = await _sut.CreateScheduleAsync(_doctorUserId, Request("09:00", "10:00", 30), _ct);
+
+            Assert.True(result.IsSuccess);
+            Assert.Equal(3, result.Value.Id);
+            Assert.True(inactive.IsActive);
+            Assert.Equal(new TimeOnly(9, 0), inactive.StartTime);
+            Assert.Equal(new TimeOnly(10, 0), inactive.EndTime);
+            Assert.Equal(30, inactive.SlotDurationMinutes);
+            // Blocked slots of cancelled appointments that fit the new hours are reopened
+            await _uow.Slots.Received(1).SyncKeptSlotsWithScheduleAsync(inactive, ClinicToday, _ct);
+            _uow.Doctors.DidNotReceive().AddSchedule(Arg.Any<DoctorSchedule>());
+            Assert.Equal(2 * MatchingDaysInWindow, _generatedSlots!.Count);
+        }
+
+        [Fact]
+        public async Task CreateScheduleAsync_WhenDoctorAlreadyHasOverlappingSlots_SkipsThoseTimes()
+        {
+            // REVIEW.md H4: an existing (e.g. booked) 09:15–09:45 slot blocks both 09:00–09:30 and 09:30–10:00 that day
+            var today = ClinicToday;
+            var firstMonday = Enumerable.Range(0, 7).Select(today.AddDays).First(d => d.DayOfWeek == DayOfWeek.Monday);
+            _uow.Slots.GetSlotTimesAsync(7, Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), _ct)
+                .Returns(new List<(DateOnly, TimeOnly, TimeOnly)> { (firstMonday, new TimeOnly(9, 15), new TimeOnly(9, 45)) });
+
+            await _sut.CreateScheduleAsync(_doctorUserId, Request("09:00", "10:30", 30), _ct);
+
+            Assert.DoesNotContain(_generatedSlots!, s => s.Date == firstMonday && s.StartTime < new TimeOnly(10, 0));
+            Assert.Contains(_generatedSlots!, s => s.Date == firstMonday && s.StartTime == new TimeOnly(10, 0));
+            Assert.Equal(3 * MatchingDaysInWindow - 2, _generatedSlots!.Count);
+        }
     }
 }

@@ -80,6 +80,33 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
             body[0].PatientName.Should().Be("Test Patient");
         }
         [Fact]
+        public async Task GetPatientAppointments_NoQueryString_Returns200WithTheFirstPage()
+        {
+            // REVIEW.md H6: PageNumber/PageSize defaulted to 0, so Take(0) returned an empty list
+            _client.DefaultRequestHeaders.Add(TestAuthHandler.UserIdHeader, _patientUserId.ToString());
+            _client.DefaultRequestHeaders.Add(TestAuthHandler.UserRoleHeader, "Patient");
+
+            var response = await _client.GetAsync(BaseUrl);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await response.Content.ReadFromJsonAsync<List<JsonElement>>()).Should().HaveCount(1);
+        }
+
+        [Theory]
+        [InlineData("PageNumber=0&PageSize=10")]
+        [InlineData("PageNumber=1&PageSize=51")]
+        public async Task GetPatientAppointments_PagingOutOfRange_Returns400(string query)
+        {
+            // REVIEW.md H6: PageNumber=0 used to reach Skip(-10) and return 500
+            _client.DefaultRequestHeaders.Add(TestAuthHandler.UserIdHeader, _patientUserId.ToString());
+            _client.DefaultRequestHeaders.Add(TestAuthHandler.UserRoleHeader, "Patient");
+
+            var response = await _client.GetAsync($"{BaseUrl}?{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Fact]
         public async Task GetPatientAppointments_WrongRole_Returns403()
         {
 

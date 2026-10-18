@@ -11,7 +11,8 @@ namespace Services.Abstraction.Contracts
         //so that we can return the user details along with the tokens
         Task<Result<LoginResponse>> RefreshTokenAsync(string refreshToken, string ipAddress, CancellationToken ct);
 
-        // Revokes a refresh token that belongs to the given user
-        Task<Result> RevokeRefreshTokenAsync(Guid userId, string refreshToken, string ipAddress, string? reason, CancellationToken ct);
+        // Revokes a refresh token. With a userId (a logged-in caller) the token must belong to that user;
+        // without one (an anonymous logout), holding the token is enough
+        Task<Result> RevokeRefreshTokenAsync(Guid? userId, string refreshToken, string ipAddress, string? reason, CancellationToken ct);
     }
 }

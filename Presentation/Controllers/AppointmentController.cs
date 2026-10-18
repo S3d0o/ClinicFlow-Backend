@@ -2,7 +2,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Services.Abstraction.Contracts;
 using Shared.DTOs.Appointment;
-using Shared.Errors;
 using System.Security.Claims;
 
 namespace Presentation.Controllers;
@@ -114,6 +113,7 @@ public class AppointmentController(IAppointmentService service) : ApiController
     [Authorize(Roles = "Doctor")]
     [HttpPost("{id}/complete")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
@@ -123,6 +123,21 @@ public class AppointmentController(IAppointmentService service) : ApiController
         var result = await service.CompleteAppointmentAsync(userId, id, ct);
         return HandleResult(result);
     }
+
+    /// <summary>Mark an appointment as a no-show</summary>
+    /// <remarks>
+    /// The owning doctor or an admin marks a Confirmed appointment as missed, at least 15 minutes
+    /// after it was due to start. Cancelled, completed and already-marked appointments return 409.
+    /// </remarks>
+    [Authorize(Roles = "Doctor,Admin")]
+    [HttpPost("{id}/no-show")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> MarkNoShow(int id, CancellationToken ct)
+        => HandleResult(await service.MarkNoShowAsync(User.GetUserId(), User.GetRole(), id, ct));
 
     /// <summary>Add doctor notes</summary>
     /// <remarks>
@@ -136,6 +151,7 @@ public class AppointmentController(IAppointmentService service) : ApiController
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> AddNotes(
         int id, [FromBody] DoctorNotesRequest request, CancellationToken ct)
     {

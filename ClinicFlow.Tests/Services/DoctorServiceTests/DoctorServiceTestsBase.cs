@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Services;
+using Services.Abstraction.Contracts;
 using Services.Implementations;
 
 namespace ClinicFlow.Tests.Services.DoctorServiceTests
@@ -15,6 +16,11 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         protected readonly IUnitOfWork _uow;
         protected readonly IMapper _mapper;
         protected readonly ILogger<DoctorService> _logger;
+        protected readonly IDateTimeProvider _dateTimeProvider;
+
+        // Clinic-local "now" for every test: Sunday 18 Oct 2026, 08:00
+        protected static readonly DateTime ClinicNow = new(2026, 10, 18, 8, 0, 0);
+        protected static DateOnly ClinicToday => DateOnly.FromDateTime(ClinicNow);
 
         // Slots passed to uow.Slots.AddRangeAsync (null when generation was skipped)
         protected List<AppointmentSlot>? _generatedSlots;
@@ -26,6 +32,8 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         {
             _uow = Substitute.For<IUnitOfWork>();
             _logger = Substitute.For<ILogger<DoctorService>>();
+            _dateTimeProvider = Substitute.For<IDateTimeProvider>();
+            _dateTimeProvider.ClinicNow.Returns(ClinicNow);
             _mapper = new ServiceCollection()
                 .AddLogging()
                 .AddAutoMapper(cfg => { }, typeof(ServiceAssemblyReference).Assembly)
@@ -37,7 +45,11 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
                     Arg.Any<CancellationToken>())
                 .Returns(Task.CompletedTask);
 
-            _sut = new DoctorService(_uow, _mapper, _logger);
+            // No existing slots unless a test says otherwise
+            _uow.Slots.GetSlotTimesAsync(Arg.Any<int>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
+                .Returns(new List<(DateOnly, TimeOnly, TimeOnly)>());
+
+            _sut = new DoctorService(_uow, _mapper, _logger, _dateTimeProvider);
         }
     }
 }

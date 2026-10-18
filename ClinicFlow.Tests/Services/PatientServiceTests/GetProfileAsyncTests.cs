@@ -15,7 +15,7 @@ namespace ClinicFlow.Tests.Services.PatientServiceTests
         [Fact]
         public async Task GetProfileAsync_WhenFound_MapsAccountAndMedicalFields()
         {
-            _uow.Patients.GetPatientByUserIdAsync(_userId, _ct).Returns(new PatientProfile
+            _uow.Patients.GetPatientByUserIdForReadAsync(_userId, _ct).Returns(new PatientProfile
             {
                 Id = 2,
                 UserId = _userId,

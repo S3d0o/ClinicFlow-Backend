@@ -5,10 +5,6 @@
     string Description,
     ErrorType Type)
     {
-        // Sentinel — use when you need an "empty" error slot
-        public static readonly Error None
-            = new(string.Empty, string.Empty, ErrorType.Failure);
-
         public static Error Failure(
             string code = "General.Failure",
             string description = "A general failure occurred")

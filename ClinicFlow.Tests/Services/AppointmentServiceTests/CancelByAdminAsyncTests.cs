@@ -22,7 +22,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 
         public CancelByAdminAsyncTests()
         {
-            _dateTimeProvider.UtcNow.Returns(_now);
+            _dateTimeProvider.ClinicNow.Returns(_now);
 
             // Starts in 30 minutes: admins are not bound by the patient's 2-hour window
             var slotStart = _now.AddMinutes(30);
@@ -35,7 +35,8 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                     Id = 1,
                     Date = DateOnly.FromDateTime(slotStart),
                     StartTime = TimeOnly.FromDateTime(slotStart),
-                    Status = SlotStatus.Booked
+                    Status = SlotStatus.Booked,
+                    DoctorSchedule = new DoctorSchedule { StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MaxValue }
                 },
                 Doctor = new DoctorProfile { UserId = _doctorUserId },
                 Patient = new PatientProfile
@@ -59,6 +60,18 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             Assert.NotNull(_appointment.CancelledAt);
             Assert.Equal(SlotStatus.Available, _appointment.Slot.Status);
             await _uow.Received(1).SaveChangesAsync(_ct);
+        }
+
+        [Fact]
+        public async Task CancelByAdminAsync_WhenScheduleDeactivated_BlocksSlot()
+        {
+            // REVIEW.md H4: a freed slot of a deactivated schedule must not become bookable
+            _appointment.Slot.DoctorSchedule.IsActive = false;
+
+            var result = await _sut.CancelByAdminAsync(_appointmentId, _request, _ct);
+
+            Assert.True(result.IsSuccess);
+            Assert.Equal(SlotStatus.Blocked, _appointment.Slot.Status);
         }
 
         [Fact]
@@ -114,16 +127,16 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         }
 
         [Fact]
-        public async Task CancelByAdminAsync_WhenCompleted_ReturnsAlreadyCancelledErrorAndKeepsStatus()
+        public async Task CancelByAdminAsync_WhenCompleted_ReturnsAlreadyCompletedErrorAndKeepsStatus()
         {
-            // Documented current behaviour (REVIEW.md M14, API_CONTRACT error catalog): admins get
-            // AlreadyCancelled, not AlreadyCompleted, for a completed appointment. Update when M14 is fixed.
+            // REVIEW.md M14: admins used to get AlreadyCancelled for a completed appointment
             _appointment.Status = AppointmentStatus.Completed;
 
             var result = await _sut.CancelByAdminAsync(_appointmentId, _request, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(AppointmentErrors.AlreadyCancelled, result.Errors);
+            Assert.Contains(AppointmentErrors.AlreadyCompleted, result.Errors);
+            Assert.DoesNotContain(AppointmentErrors.AlreadyCancelled, result.Errors);
             Assert.Equal(AppointmentStatus.Completed, _appointment.Status);
             Assert.Equal(SlotStatus.Booked, _appointment.Slot.Status);
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());

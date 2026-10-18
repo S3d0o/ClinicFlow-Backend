@@ -27,8 +27,7 @@ namespace Persistence.Repositories
             var totalCount = await query.CountAsync(ct);
 
             var reviews = await query
-                .Skip((filters.PageNumber - 1) * filters.PageSize)
-                .Take(filters.PageSize)
+                .Page(filters.PageNumber, filters.PageSize)
                 .ToListAsync(ct);
 
             return (reviews, totalCount);
@@ -39,24 +38,5 @@ namespace Persistence.Repositories
 
         public void Delete(Review review)
             => context.Reviews.Remove(review);
-
-        public async Task<double> GetAverageRatingAsync(int doctorProfileId, CancellationToken ct)
-        {
-            var averageRating = await context.Reviews
-                 .AsNoTracking()
-                 .Where(r => r.DoctorProfileId == doctorProfileId && r.IsVisible)
-                 .AverageAsync(r => (double?)r.Rating, ct) ?? 0.0;
-            return averageRating;
-        }
-
-        public async Task<int> GetTotalReviewsAsync(int doctorProfileId, CancellationToken ct)
-        {
-            var totalReviews = await context.Reviews
-                .AsNoTracking()
-                .Where(r => r.DoctorProfileId == doctorProfileId && r.IsVisible)
-                .CountAsync(ct);
-
-            return totalReviews;
-        }
     }
 }

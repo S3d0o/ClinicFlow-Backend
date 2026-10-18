@@ -1,6 +1,6 @@
-﻿namespace Shared.Errors
+﻿namespace Shared.DTOs.Appointment
 {
     public record DoctorNotesRequest(
-        string? notes
+        string? Notes
     );
 }

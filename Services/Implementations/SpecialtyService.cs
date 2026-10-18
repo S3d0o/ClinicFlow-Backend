@@ -10,7 +10,7 @@ namespace Services.Implementations
     {
         public async Task<Result<SpecialtyResponse>> CreateAsync(SpecialtyRequest specialtyDTO, CancellationToken ct)
         {
-            var existing = await uow.Specialties.GetByNameAsync(specialtyDTO.Name!, ct);
+            var existing = await uow.Specialties.GetByNameAsync(specialtyDTO.Name, ct);
             if (existing is not null)
             {
                 logger.LogWarning("Attempted to create duplicate specialty with name {Name}", specialtyDTO.Name);
@@ -46,7 +46,7 @@ namespace Services.Implementations
 
         public async Task<Result> DeleteByIdAsync(int id, CancellationToken ct)
         {
-            var specialty = await uow.Specialties.GetByIdAsync(id, ct);
+            var specialty = await uow.Specialties.GetByIdAsync(id, ct, includeInactive: true);
             if (specialty is null)
             {
                 logger.LogWarning("Attempted to delete non-existing specialty with id {Id}", id);
@@ -68,14 +68,14 @@ namespace Services.Implementations
 
         public async Task<Result<SpecialtyResponse>> UpdateAsync(int id, SpecialtyRequest specialtyDTO, CancellationToken ct)
         {
-            var specialty = await uow.Specialties.GetByIdAsync(id, ct);
+            var specialty = await uow.Specialties.GetByIdAsync(id, ct, includeInactive: true); // admins manage inactive ones too (REVIEW.md L6)
             if (specialty is null)
             {
                 logger.LogWarning("Attempted to update non-existing specialty with id {Id}", id);
                 return SpecialtyErrors.NotFound(id);
             }
 
-            var nameConflict = await uow.Specialties.GetByNameAsync(specialtyDTO.Name!, ct);
+            var nameConflict = await uow.Specialties.GetByNameAsync(specialtyDTO.Name, ct);
             if (nameConflict is not null && nameConflict.Id != id)
             {
                 logger.LogWarning("Attempted to rename specialty {Id} to existing name {Name}", id, specialtyDTO.Name);

@@ -1,6 +1,7 @@
 ﻿using Domain.Entities.IdentityModule;
 using Microsoft.AspNetCore.Identity;
 using Shared.DTOs.Auth;
+using Shared.Enums;
 
 namespace Services.Implementations
 {
@@ -19,83 +20,25 @@ namespace Services.Implementations
                 return AuthErrors.EmailAlreadyExists;
             }
 
-            // i did this cause i want to make sure that if any of the operations fail,
-            // the entire registration process is rolled back to maintain data integrity.
-            // if user is created and roles is assigned but doctor profile creation fails, we don't want to have a user without a profile.
-            await using var transaction = await uow.BeginTransactionAsync(ct);
-            try
+            // An unknown or inactive specialty is the caller's mistake (404), not a server error from the foreign key (REVIEW.md M3)
+            if (await uow.Specialties.GetByIdAsync(request.SpecialtyId, ct) is null)
             {
-                var user = new ApplicationUser
-                {
-                    FirstName = request.FirstName,
-                    LastName = request.LastName,
-                    Email = request.Email,
-                    UserName = request.Email,
-                    PhoneNumber = request.PhoneNumber,
-                    EmailConfirmed = false,
-                    Gender = request.Gender,
-                    DateOfBirth = request.DateOfBirth,
-                    CreatedAt = DateTime.UtcNow,
-                    IsActive = true,
-                };
-                var createResult = await userManager.CreateAsync(user, request.Password);
-
-                if (!createResult.Succeeded)
-                {
-                    await transaction.RollbackAsync(ct);
-                    logger.LogWarning("Doctor registration failed for {Email}: {Errors}",
-                         request.Email, string.Join(", ", createResult.Errors.Select(e => e.Description)));
-                    return AuthErrors.RegistrationFailed(createResult.Errors.Select(e => e.Description));
-                }
-
-                var roleResult = await userManager.AddToRoleAsync(user, "Doctor");
-
-                if (!roleResult.Succeeded)
-                {
-                    await transaction.RollbackAsync(ct);
-
-                    logger.LogWarning(
-                        "Failed to add Doctor role to user {Email}: {Errors}",
-                        request.Email,
-                        string.Join(", ", roleResult.Errors.Select(e => e.Description)));
-
-                    return AuthErrors.RegistrationFailed(
-                        roleResult.Errors.Select(e => e.Description));
-                }
-
-                var doctorProfile = new DoctorProfile
-                {
-                    UserId = user.Id,
-                    SpecialtyId = request.SpecialtyId,
-                    Bio = request.Bio,
-                    YearsOfExperience = request.YearsOfExperience,
-                    ConsultationFee = request.ConsultationFee,
-                    ClinicAddress = request.ClinicAddress,
-                    ClinicCity = request.ClinicCity,
-                    IsApprovedByAdmin = false, // doctors need to be approved by admin before they can log in
-                };
-
-                await uow.Doctors.AddAsync(doctorProfile, ct);
-                await uow.SaveChangesAsync(ct);
-
-                await transaction.CommitAsync(ct);
-
-                await TrySendConfirmationEmailAsync(user);
-
-                logger.LogInformation("Doctor registered successfully: {Email}", request.Email);
-
-
-                return new RegisterResponse(
-                     "Registration successful. Please check your email to confirm your account.",
-                       user.Email!);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "An error occurred while registering doctor with email: {Email}", request.Email);
-                await transaction.RollbackAsync(CancellationToken.None); // must run even if the request was cancelled
-                return AuthErrors.RegistrationFailed(["An error occurred during registration. Please try again later."]);
+                logger.LogWarning("Doctor registration for {Email} rejected: specialty {SpecialtyId} not found", request.Email, request.SpecialtyId);
+                return SpecialtyErrors.NotFound(request.SpecialtyId);
             }
 
+            var user = NewUser(request.FirstName, request.LastName, request.Email, request.PhoneNumber, request.Gender, request.DateOfBirth);
+            return await RegisterAsync(user, request.Password, "Doctor", token => uow.Doctors.AddAsync(new DoctorProfile
+            {
+                UserId = user.Id,
+                SpecialtyId = request.SpecialtyId,
+                Bio = request.Bio,
+                YearsOfExperience = request.YearsOfExperience,
+                ConsultationFee = request.ConsultationFee,
+                ClinicAddress = request.ClinicAddress,
+                ClinicCity = request.ClinicCity,
+                IsApprovedByAdmin = false, // can log in and set up schedules, but stays hidden from patients until an admin approves (REVIEW.md M1)
+            }, token), ct);
         }
 
         public async Task<Result<RegisterResponse>> RegisterPatientAsync(RegisterPatientRequest request, CancellationToken ct)
@@ -106,72 +49,77 @@ namespace Services.Implementations
                 return AuthErrors.EmailAlreadyExists;
             }
 
-            await using var transaction = await uow.BeginTransactionAsync(ct);
+            var user = NewUser(request.FirstName, request.LastName, request.Email, request.PhoneNumber, request.Gender, request.DateOfBirth);
+            return await RegisterAsync(user, request.Password, "Patient", token => uow.Patients.AddAsync(new PatientProfile
+            {
+                UserId = user.Id,
+                BloodType = request.BloodType,
+                Allergies = request.Allergies,
+                ChronicConditions = request.ChronicConditions,
+                EmergencyContactName = request.EmergencyContactName,
+                EmergencyContactPhone = request.EmergencyContactPhone
+            }, token), ct);
+        }
 
+        private static ApplicationUser NewUser(string firstName, string lastName, string email, string phoneNumber, Gender gender, DateOnly? dateOfBirth)
+            => new()
+            {
+                FirstName = firstName,
+                LastName = lastName,
+                Email = email,
+                UserName = email,
+                PhoneNumber = phoneNumber,
+                Gender = gender,
+                DateOfBirth = dateOfBirth,
+                CreatedAt = DateTime.UtcNow,
+                IsActive = true,
+                EmailConfirmed = false,
+            };
+
+        // Shared by both registrations. The user, the role and the profile are created in one transaction,
+        // so a failure at any step leaves no account without a role or profile. addProfileAsync adds the
+        // role's profile (user.Id is set once CreateAsync succeeds); the confirmation email is sent after the commit.
+        private async Task<Result<RegisterResponse>> RegisterAsync(
+            ApplicationUser user, string password, string role, Func<CancellationToken, Task> addProfileAsync, CancellationToken ct)
+        {
+            await using var transaction = await uow.BeginTransactionAsync(ct);
             try
             {
-                var user = new ApplicationUser
-                {
-                    FirstName = request.FirstName,
-                    LastName = request.LastName,
-                    Email = request.Email,
-                    UserName = request.Email,
-                    PhoneNumber = request.PhoneNumber,
-                    Gender = request.Gender,
-                    DateOfBirth = request.DateOfBirth,
-                    CreatedAt = DateTime.UtcNow,
-                    IsActive = true,
-                    EmailConfirmed = false,
-                };
-                var createResult = await userManager.CreateAsync(user, request.Password);
-
+                var createResult = await userManager.CreateAsync(user, password);
                 if (!createResult.Succeeded)
                 {
-                    logger.LogWarning("Patient registration failed for {Email}: {Errors}",
-                        request.Email, string.Join(", ", createResult.Errors.Select(e => e.Description)));
-
                     await transaction.RollbackAsync(ct);
+                    logger.LogWarning("{Role} registration failed for {Email}: {Errors}",
+                        role, user.Email, string.Join(", ", createResult.Errors.Select(e => e.Description)));
                     return AuthErrors.RegistrationFailed(createResult.Errors.Select(e => e.Description));
                 }
 
-               var roleResult = await userManager.AddToRoleAsync(user, "Patient");
+                var roleResult = await userManager.AddToRoleAsync(user, role);
                 if (!roleResult.Succeeded)
                 {
-                    logger.LogWarning("Failed to add Patient role to user {Email}: {Errors}",
-                        request.Email, string.Join(", ", roleResult.Errors.Select(e => e.Description)));
                     await transaction.RollbackAsync(ct);
-                    return AuthErrors.RegistrationFailed(roleResult.Errors.Select(e => e.Description));
+                    logger.LogWarning("Failed to add {Role} role to user {Email}: {Errors}",
+                        role, user.Email, string.Join(", ", roleResult.Errors.Select(e => e.Description)));
+                    // A missing role is a server problem, not something the caller can fix
+                    return AuthErrors.RegistrationError;
                 }
 
-
-                var patientProfile = new PatientProfile
-                {
-                    UserId = user.Id,
-                    BloodType = request.BloodType,
-                    Allergies = request.Allergies,
-                    ChronicConditions = request.ChronicConditions,
-                    EmergencyContactName = request.EmergencyContactName,
-                    EmergencyContactPhone = request.EmergencyContactPhone
-                };
-
-                await uow.Patients.AddAsync(patientProfile, ct);
+                await addProfileAsync(ct);
                 await uow.SaveChangesAsync(ct);
-
                 await transaction.CommitAsync(ct);
 
                 await TrySendConfirmationEmailAsync(user);
 
-                logger.LogInformation("Patient registered successfully: {Email}", request.Email);
-
+                logger.LogInformation("{Role} registered successfully: {Email}", role, user.Email);
                 return new RegisterResponse(
-                         "Registration successful. Please check your email to confirm your account.",
-                          user.Email!);
+                    "Registration successful. Please check your email to confirm your account.",
+                    user.Email!);
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "An error occurred while registering patient with email: {Email}", request.Email);
+                logger.LogError(ex, "An error occurred while registering {Role} with email: {Email}", role, user.Email);
                 await transaction.RollbackAsync(CancellationToken.None); // must run even if the request was cancelled
-                return AuthErrors.RegistrationFailed(["An error occurred during registration. Please try again later."]);
+                return AuthErrors.RegistrationError;
             }
         }
 
@@ -252,11 +200,11 @@ namespace Services.Implementations
                 );
         }
 
-        public async Task<Result> LogoutAsync(Guid userId, RefreshTokenRequest request, string ipAddress, CancellationToken ct)
+        public async Task<Result> LogoutAsync(Guid? userId, RefreshTokenRequest request, string ipAddress, CancellationToken ct)
         {
             var result = await tokenService.RevokeRefreshTokenAsync(userId, request.RefreshToken, ipAddress, "Logout", ct);
             if (result.IsSuccess)
-                logger.LogInformation("User {UserId} logged out — refresh token revoked from {IpAddress}", userId, ipAddress);
+                logger.LogInformation("Logout revoked a refresh token from {IpAddress} (caller {UserId}; null when anonymous)", ipAddress, userId);
             return result;
         }
 

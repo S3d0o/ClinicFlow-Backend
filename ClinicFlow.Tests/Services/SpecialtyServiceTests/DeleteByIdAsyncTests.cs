@@ -12,7 +12,8 @@ namespace ClinicFlow.Tests.Services.SpecialtyServiceTests
 
         public DeleteByIdAsyncTests()
         {
-            _uow.Specialties.GetByIdAsync(_id, _ct).Returns(_specialty);
+            // Admin updates and deletes reach inactive specialties too (REVIEW.md L6)
+            _uow.Specialties.GetByIdAsync(_id, _ct, includeInactive: true).Returns(_specialty);
         }
 
         [Fact]

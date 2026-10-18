@@ -92,24 +92,26 @@ Specialty     Name (unique), Description, IconUrl, IsActive
             book (patient)
  [slot Available] ───────────────► Confirmed ──── complete (doctor) ───► Completed ──► review (patient, once)
                                        │
-                                       └── cancel (patient ≥2h before start; doctor or admin anytime) ──► Cancelled
-                                                                                            (slot → Available)
+                                       ├── cancel (patient ≥2h before start; doctor or admin anytime) ──► Cancelled
+                                       │                                                     (slot → Available)
+                                       └── mark no-show (doctor or admin, ≥15 min after start) ──► NoShow
 ```
 
-`Pending` and `NoShow` exist in the enum but no code path sets them today.
+`Pending` exists in the enum but no code path sets it. `Cancelled`, `Completed` and `NoShow` are final.
 
 ## 4. Business rules
 
 | Area | Rule |
 |---|---|
-| Doctor visibility | Search lists only doctors that are approved **and** active |
-| Schedules | One schedule per doctor per weekday. Creating a second one for the same day is rejected |
-| Slot generation | Slots are generated for the next 14 days, only whole slots that end by `EndTime`, and only for active schedules. Updating a schedule deletes future *available* slots and regenerates them |
-| Slot times | Dates and times are the clinic's local wall-clock time and carry no time zone |
+| Doctor visibility | Patients see only doctors that are approved **and** active: search, the public profile (404 otherwise), slots (empty otherwise) and booking (404 otherwise). Unapproved doctors can still log in and set up their schedules |
+| Schedules | One schedule per doctor per weekday. Creating a second active one for the same day is rejected (409); an inactive one for that day is reused. Deleting a schedule is refused (409) while upcoming appointments are booked on it; a schedule with only past appointments is deactivated instead of deleted, to keep that history |
+| Slot generation | Slots are generated for the next 14 days, only whole slots that end by `EndTime`, and only for active schedules. A daily job (`SlotGenerationJob`) rolls every active schedule forward, so the window never runs out. Generation is idempotent: it skips times that overlap an existing slot. Updating a schedule deletes future free slots and regenerates them in one transaction, keeping booked slots and slots an appointment points to |
+| Slot times | Dates and times are the clinic's local wall-clock time and carry no time zone. The clinic's zone is `Clinic:TimeZoneId` (default `Africa/Cairo`), and every rule that compares a slot with "now" or "today" uses the clinic's clock |
 | Booking | The slot must exist, be `Available`, and not be in the past. A conditional `UPDATE … WHERE Status = Available` inside a transaction guarantees that only one booking succeeds |
-| Patient cancellation | Allowed only for the patient's own appointment, only if it is not already cancelled or completed, and only up to 2 hours before the start |
+| Patient cancellation | Allowed only for the patient's own appointment, only if it is not already cancelled, completed or a no-show, and only up to 2 hours before the start |
 | Doctor / admin cancellation | A doctor can cancel their own appointments, an admin any appointment, with no time limit |
-| Completion | Only the owning doctor. Not allowed for cancelled or already-completed appointments |
+| Completion | Only the owning doctor, and only once the appointment has started. Not allowed for cancelled, already-completed or no-show appointments |
+| No-show | The owning doctor or an admin marks a confirmed appointment as `NoShow`, no earlier than 15 minutes after its start; the patient is notified. Nothing is marked automatically |
 | Doctor notes | Only the owning doctor. Not allowed on cancelled appointments |
 | Reviews | Only the patient who owns a **completed** appointment, at most one review per appointment. Rating 1–5, comment ≤ 300 characters. Only the author or an admin can delete a review |
 | Appointment details | Readable only by the owning patient, the owning doctor, or an admin |
@@ -119,7 +121,7 @@ Specialty     Name (unique), Description, IconUrl, IsActive
 | Suspension | Suspending a doctor deactivates the account and revokes their refresh tokens. Their current access token stays valid until it expires |
 | Password reset | Revokes all of the user's refresh tokens |
 
-Known gaps in these rules, such as unapproved doctors being able to log in and the clinic time zone versus UTC comparisons, are tracked in [REVIEW.md](REVIEW.md) with their status.
+Known gaps in these rules are tracked in [REVIEW.md](REVIEW.md) with their status.
 
 ## 5. Architecture
 

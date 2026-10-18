@@ -1,5 +1,6 @@
 using AutoMapper;
 using Domain.Interfaces;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -14,6 +15,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         protected readonly IUnitOfWork _uow;
         protected readonly IMapper _mapper;
         protected readonly ILogger<ReviewService> _logger;
+        protected readonly IDbContextTransaction _transaction;
 
         // System Under Test
         protected readonly ReviewService _sut;
@@ -21,6 +23,8 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         protected ReviewServiceTestsBase()
         {
             _uow = Substitute.For<IUnitOfWork>();
+            _transaction = Substitute.For<IDbContextTransaction>();
+            _uow.BeginTransactionAsync(Arg.Any<CancellationToken>()).Returns(_transaction);
             _logger = Substitute.For<ILogger<ReviewService>>();
             _mapper = new ServiceCollection()
                 .AddLogging()

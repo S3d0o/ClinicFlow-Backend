@@ -12,18 +12,16 @@ namespace Presentation.Controllers
     {
         /// <summary>Get my notifications</summary>
         /// <remarks>
-        /// Returns the authenticated user's notifications ordered by most recent first.
+        /// Returns the authenticated user's notifications ordered by most recent first, one page at a time
+        /// (PageNumber, PageSize: default 1 and 50, at most 100). The total is in the X-Total-Count header.
         /// Pass unreadOnly=true to get only unread notifications.
         /// </remarks>
         [HttpGet("my")]
         [ProducesResponseType(typeof(List<NotificationResponse>), StatusCodes.Status200OK)]
-        public async Task<ActionResult<List<NotificationResponse>>> GetMyNotifications(
-            [FromQuery] bool unreadOnly = false, CancellationToken ct = default)
-        {
-            var userId = User.GetUserId();
-            var result = await service.GetMyNotificationsAsync(userId, unreadOnly, ct);
-            return HandleResult(result);
-        }
+        [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<IReadOnlyList<NotificationResponse>>> GetMyNotifications(
+            [FromQuery] NotificationFilterRequest request, CancellationToken ct)
+            => HandlePagedResult(await service.GetMyNotificationsAsync(User.GetUserId(), request, ct));
 
         /// <summary>Mark notification as read</summary>
         /// <remarks>

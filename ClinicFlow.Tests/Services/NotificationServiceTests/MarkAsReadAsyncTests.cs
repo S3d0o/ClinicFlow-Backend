@@ -43,7 +43,7 @@ namespace ClinicFlow.Tests.Services.NotificationServiceTests
             var result = await _sut.MarkAsReadAsync(Guid.NewGuid(), _notificationId, _ct);
 
             Assert.True(result.IsFailure);
-            Assert.Contains(NotificationErrors.Unauthorized, result.Errors);
+            Assert.Contains(NotificationErrors.Forbidden, result.Errors);
             await _uow.Notifications.DidNotReceive().MarkAsReadAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
     }

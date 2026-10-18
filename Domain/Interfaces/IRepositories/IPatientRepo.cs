@@ -3,13 +3,12 @@
     public interface IPatientRepo
     {
         // Queries
-        Task<PatientProfile?> GetPatientByIdAsync(int id, CancellationToken ct);
+        // Tracked, for flows that change the profile or use it in a write
         Task<PatientProfile?> GetPatientByUserIdAsync(Guid userId, CancellationToken ct);
-        Task<IEnumerable<PatientProfile>> GetAllPatientsAsync(CancellationToken ct);
+        // Untracked, for read-only responses (REVIEW.md NL1)
+        Task<PatientProfile?> GetPatientByUserIdForReadAsync(Guid userId, CancellationToken ct);
 
         // Write
         Task AddAsync(PatientProfile patient, CancellationToken ct);
-        void Update(PatientProfile patient);
-        void Delete(PatientProfile patient);
     }
 }

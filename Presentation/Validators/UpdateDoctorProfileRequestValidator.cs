@@ -10,7 +10,8 @@
 
             RuleFor(x => x.ConsultationFee)
                 .GreaterThan(0).WithMessage("Consultation fee must be greater than 0.")
-                .LessThanOrEqualTo(10000).WithMessage("Consultation fee cannot exceed 10,000 EGP.");
+                .LessThanOrEqualTo(10000).WithMessage("Consultation fee cannot exceed 10,000 EGP.")
+                .When(x => x.ConsultationFee is not null);
 
             RuleFor(x => x.ClinicAddress)
                 .MaximumLength(300).WithMessage("Clinic address cannot exceed 300 characters.")

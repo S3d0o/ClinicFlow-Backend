@@ -12,7 +12,7 @@ using Persistence.AppData;
 namespace ClinicFlow.IntegrationTests.Tests.BackgroundJobs
 {
     // Runs single passes of the hourly job against SQL Server. The 24-hour window is computed from
-    // DateTime.UtcNow inside the repository, so appointments are placed relative to the real clock
+    // the clinic's clock (ClinicNow), so appointments are placed relative to it (REVIEW.md M2)
     [Collection(nameof(IntegrationTestCollection))]
     public class AppointmentReminderJobTests : IAsyncLifetime
     {
@@ -126,15 +126,15 @@ namespace ClinicFlow.IntegrationTests.Tests.BackgroundJobs
 
         // ----------------------------------------------------------------
 
-        // One patient per appointment (email patient{suffix}@test.com), with a slot hoursFromNow from now (UTC)
+        // One patient per appointment (email patient{suffix}@test.com), with a slot hoursFromNow from now (clinic time)
         private async Task<int> AddAppointmentAsync(ClinicDbContext db, string suffix, int hoursFromNow,
             AppointmentStatus status = AppointmentStatus.Confirmed, bool alreadyReminded = false)
         {
             var patientUserId = await SeedDataHelper.SeedPatientOnlyAsync(db, suffix);
             var patientId = db.PatientProfiles.Single(p => p.UserId == patientUserId).Id;
 
-            var now = DateTime.UtcNow;
-            var start = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Utc).AddHours(hoursFromNow);
+            var now = _factory.ClinicNow;
+            var start = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Unspecified).AddHours(hoursFromNow);
             var slot = new AppointmentSlot
             {
                 DoctorProfileId = _doctorId,
@@ -153,7 +153,7 @@ namespace ClinicFlow.IntegrationTests.Tests.BackgroundJobs
                 DoctorProfileId = _doctorId,
                 SlotId = slot.Id,
                 Status = status,
-                ReminderSentAt = alreadyReminded ? now.AddHours(-1) : null
+                ReminderSentAt = alreadyReminded ? DateTime.UtcNow.AddHours(-1) : null
             };
             db.Appointments.Add(appointment);
             await db.SaveChangesAsync();

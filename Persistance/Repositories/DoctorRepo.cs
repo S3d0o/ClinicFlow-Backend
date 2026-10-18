@@ -1,5 +1,4 @@
 ﻿using Domain.Enums;
-using System.ComponentModel.DataAnnotations;
 
 namespace Persistence.Repositories
 {
@@ -11,7 +10,9 @@ namespace Persistence.Repositories
             return await context.DoctorProfiles
                 .Include(d => d.Specialty)
                 .Include(d => d.User)
-                .FirstOrDefaultAsync(d => d.Id == id && d.IsApprovedByAdmin, ct);
+                .AsNoTracking()
+                // Public profile: only approved doctors whose accounts are active (REVIEW.md M1)
+                .FirstOrDefaultAsync(d => d.Id == id && d.IsApprovedByAdmin && d.User.IsActive, ct);
 
         }
         public async Task<DoctorProfile?> GetByIdAsync(int id, CancellationToken ct)
@@ -34,22 +35,28 @@ namespace Persistence.Repositories
             var totalCount = await query.CountAsync(ct);
 
             var doctors = await query
-                .Skip((filters.PageNumber - 1) * filters.PageSize)
-                .Take(filters.PageSize)
+                .Page(filters.PageNumber, filters.PageSize)
                 .ToListAsync(ct); // ct is important here to allow cancellation if user navigates away before data loads
 
             return (doctors, totalCount);
         }
-        public async Task<IReadOnlyList<DoctorProfile>> GetPendingApprovalsAsync(CancellationToken ct) // this is for admin dashboard to show doctors waiting for approval
+        public async Task<(IReadOnlyList<DoctorProfile> Doctors, int TotalCount)> GetPendingApprovalsAsync(int pageNumber, int? pageSize, CancellationToken ct) // this is for admin dashboard to show doctors waiting for approval
         {
-            var doctors = await context.DoctorProfiles
+            var query = context.DoctorProfiles
                 .AsNoTracking()
                 .Include(d => d.Specialty)
                 .Include(d => d.User)
                 .Where(d => !d.IsApprovedByAdmin && d.User.IsActive)
-                .ToListAsync(ct);
+                .OrderBy(d => d.User.CreatedAt)
+                .ThenBy(d => d.Id);
 
-            return doctors;
+            var totalCount = await query.CountAsync(ct);
+
+            var doctors = pageSize is null
+                ? await query.ToListAsync(ct)
+                : await query.Page(pageNumber, pageSize.Value).ToListAsync(ct);
+
+            return (doctors, totalCount);
         }
 
         public async Task<bool> ExistsAsync(int id, CancellationToken ct) // lightweight check for existence
@@ -76,13 +83,15 @@ namespace Persistence.Repositories
                   .Include(s => s.DoctorProfile)
                   .FirstOrDefaultAsync(s => s.Id == scheduleId, ct);
 
+        public async Task<IReadOnlyList<DoctorSchedule>> GetActiveSchedulesAsync(CancellationToken ct)
+            => await context.DoctorSchedules
+                  .AsNoTracking()
+                  .Where(s => s.IsActive)
+                  .OrderBy(s => s.Id)
+                  .ToListAsync(ct);
+
         public void AddSchedule(DoctorSchedule schedule)
             => context.DoctorSchedules.Add(schedule);
-
-        public void UpdateSchedule(DoctorSchedule schedule)
-        {
-            context.DoctorSchedules.Update(schedule);
-        }
 
         public void DeleteSchedule(DoctorSchedule schedule)
         {
@@ -92,20 +101,19 @@ namespace Persistence.Repositories
         public async Task AddAsync(DoctorProfile doctor, CancellationToken ct)
             => await context.DoctorProfiles.AddAsync(doctor, ct);
 
-        public void Update(DoctorProfile doctor)
-            => context.DoctorProfiles.Update(doctor);
+        // One UPDATE with subqueries, so the cached values are computed from the stored reviews by the same
+        // statement that writes them. Called inside the review insert/delete transaction (REVIEW.md L8)
+        public Task RefreshRatingCacheAsync(int doctorProfileId, CancellationToken ct)
+            => context.DoctorProfiles
+                .Where(d => d.Id == doctorProfileId)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(d => d.AverageRating, d => context.Reviews
+                        .Where(r => r.DoctorProfileId == d.Id && r.IsVisible)
+                        .Average(r => (double?)r.Rating) ?? 0.0)
+                    .SetProperty(d => d.TotalReviews, d => context.Reviews
+                        .Count(r => r.DoctorProfileId == d.Id && r.IsVisible)), ct);
 
-        // this method is called after a new review is added or an existing review is updated/deleted to recalculate the average rating
-        // and total reviews for the doctor. We mark only these two properties as modified to avoid unnecessary updates to other fields.
-        public void UpdateRatingCache(DoctorProfile doctor)
-        {
-            context.Entry(doctor).Property(d => d.AverageRating).IsModified = true;
-            context.Entry(doctor).Property(d => d.TotalReviews).IsModified = true;
-        }
-
-
-
-        #region Helpers 
+        #region Helpers
 
         private IQueryable<DoctorProfile> ApplyFilters(IQueryable<DoctorProfile> query, DoctorFilterParams filters)
         {

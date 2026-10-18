@@ -62,24 +62,23 @@ namespace ClinicFlow.IntegrationTests.Tests.Admin
         }
 
         [Fact]
-        public async Task Create_ExistingNameInAnotherCase_Returns500NameAlreadyExists()
+        public async Task Create_ExistingNameInAnotherCase_Returns409NameAlreadyExists()
         {
             // SQL Server's default collation is case-insensitive, so "cardiology" matches "Cardiology".
-            // 500 is the documented status today (REVIEW.md M3)
             var response = await _client.PostAsJsonAsync(AdminUrl, new SpecialtyRequest("cardiology", null, null));
 
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Specialty.NameAlreadyExists");
             await _factory.SeedAsync(async db =>
                 (await db.Specialties.CountAsync(s => s.Name == "Cardiology")).Should().Be(1));
         }
 
         [Fact]
-        public async Task Update_RenameToAnotherSpecialtysName_Returns500AndKeepsTheOldName()
+        public async Task Update_RenameToAnotherSpecialtysName_Returns409AndKeepsTheOldName()
         {
             var response = await _client.PutAsJsonAsync($"{AdminUrl}/{_unusedId}", new SpecialtyRequest("Cardiology", null, null));
 
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Specialty.NameAlreadyExists");
             await _factory.SeedAsync(async db =>
                 (await db.Specialties.AsNoTracking().SingleAsync(s => s.Id == _unusedId)).Name.Should().Be("Dermatology"));
@@ -95,12 +94,38 @@ namespace ClinicFlow.IntegrationTests.Tests.Admin
         }
 
         [Fact]
-        public async Task Delete_SpecialtyWithDoctors_Returns500AndKeepsIt()
+        public async Task Update_DeactivateThenReactivate_HidesAndRestoresThePublicListing()
         {
-            // 500 is the documented status today (REVIEW.md M3)
+            // REVIEW.md L6: an inactive specialty used to be unreachable (404) and could never be reactivated
+            var deactivate = await _client.PutAsJsonAsync($"{AdminUrl}/{_unusedId}", new SpecialtyRequest("Dermatology", null, null, IsActive: false));
+            deactivate.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await _client.GetAsync($"/api/Specialty/{_unusedId}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+            var reactivate = await _client.PutAsJsonAsync($"{AdminUrl}/{_unusedId}", new SpecialtyRequest("Dermatology", "Skin", null, IsActive: true));
+
+            reactivate.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await reactivate.Content.ReadFromJsonAsync<SpecialtyResponse>())!.IsActive.Should().BeTrue();
+            (await _client.GetAsync($"/api/Specialty/{_unusedId}")).StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Fact]
+        public async Task Update_WithoutIsActive_KeepsAnInactiveSpecialtyInactive()
+        {
+            await _factory.SeedAsync(async db =>
+                await db.Specialties.Where(s => s.Id == _unusedId).ExecuteUpdateAsync(s => s.SetProperty(x => x.IsActive, false)));
+
+            var response = await _client.PutAsJsonAsync($"{AdminUrl}/{_unusedId}", new SpecialtyRequest("Dermatology", "Skin", null));
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await response.Content.ReadFromJsonAsync<SpecialtyResponse>())!.IsActive.Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task Delete_SpecialtyWithDoctors_Returns409AndKeepsIt()
+        {
             var response = await _client.DeleteAsync($"{AdminUrl}/{_cardiologyId}");
 
-            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Specialty.HasAssignedDoctors");
             await _factory.SeedAsync(async db =>
                 (await db.Specialties.AnyAsync(s => s.Id == _cardiologyId)).Should().BeTrue());

@@ -10,6 +10,10 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 {
     public static class SeedDataHelper
     {
+        // Slot dates are clinic-local (Clinic:TimeZoneId, Africa/Cairo by default), see REVIEW.md M2
+        private static DateOnly ClinicToday
+            => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTime.UtcNow, "Africa/Cairo"));
+
         public static async Task<(Guid patientUserId, Guid doctorUserId, int slotId, int appointmentId)>
             SeedBaseAppointmentAsync(ClinicDbContext db, AppointmentStatus status = AppointmentStatus.Confirmed, string suffix = "")
         {
@@ -92,7 +96,7 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
             {
                 DoctorProfileId = doctorProfile.Id,
                 DoctorScheduleId = schedule.Id,
-                Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3)),
+                Date = ClinicToday.AddDays(3),
                 StartTime = new TimeOnly(10, 0),
                 EndTime = new TimeOnly(10, 30),
                 Status = SlotStatus.Available
@@ -204,7 +208,7 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
             {
                 DoctorProfileId = doctorProfileId,
                 DoctorScheduleId = schedule.Id,
-                Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(s.daysFromToday)),
+                Date = ClinicToday.AddDays(s.daysFromToday),
                 StartTime = s.start,
                 EndTime = s.start.AddMinutes(30),
                 Status = s.status
