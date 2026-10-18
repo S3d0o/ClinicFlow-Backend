@@ -31,7 +31,7 @@ After the review, a first fix pass was made on branch `docs/review-and-claude-md
 | `0bc5c78` | Contract 3.0.0: no-show endpoint (M14) |
 | `757cf7e` | Contract 3.0.0: validation (H6, M13, NL11), ProblemDetails (M5, NL9), authentication by default (NM5), specialty reactivation (L6), paging (NL2), pending count (NL23) |
 | `b4a2a47` | Contract 3.1.0: auth rate limiting (M6), logout without an access token (L7), kept slots blocked outside the schedule (H4 leftover), atomic rating refresh (L8), email startup warning (NL12), app DB login for compose (NM6), `Name!` removal (NL17) |
-| `<pending commit B>` | Contract 3.1.1: review group B cleanup: dead code, duplicated cancel and registration flows, naming, NL1 read paths |
+| `bea10ad` | Contract 3.1.1: review group B cleanup: dead code, duplicated cancel and registration flows, naming, NL1 read paths |
 
 **Verification after the fixes (2026-10-18):**
 - `dotnet build --no-incremental`: 0 warnings. Nullable warnings are now errors.
@@ -423,9 +423,9 @@ HTTP request
 
 **Status (2026-10-18):**
 - ✅ `Guid.Parse(...)`: fixed in `d3b6511` (`User.GetUserId()` in `Presentation/Extensions/HttpContextExtensions.cs`).
-- ✅ Cancel flows: fixed in `<pending commit B>`. The three paths share `CannotCancelError` (the status rules) and `CancelAsync` (mutation, slot, save, notifications). Each keeps only its lookup, its ownership check and, for patients, the 2-hour window. The patient path now also notifies through `TryNotifyAsync`.
-- ✅ Registration: fixed in `<pending commit B>`. Both flows call `RegisterAsync` (one transaction for the user, the role and the profile, then the confirmation email). Each keeps its own email check and, for doctors, the specialty check, so the order of checks is unchanged.
-- ✅ `Review → ReviewResponse` mapping: fixed in `<pending commit B>`. It now lives only in `ReviewProfile`.
+- ✅ Cancel flows: fixed in `bea10ad`. The three paths share `CannotCancelError` (the status rules) and `CancelAsync` (mutation, slot, save, notifications). Each keeps only its lookup, its ownership check and, for patients, the 2-hour window. The patient path now also notifies through `TryNotifyAsync`.
+- ✅ Registration: fixed in `bea10ad`. Both flows call `RegisterAsync` (one transaction for the user, the role and the profile, then the confirmation email). Each keeps its own email check and, for doctors, the specialty check, so the order of checks is unchanged.
+- ✅ `Review → ReviewResponse` mapping: fixed in `bea10ad`. It now lives only in `ReviewProfile`.
 - ✅ Paging: fixed in `757cf7e`. Every repository pages through one `Page()` helper.
 - ✅ Password and phone rules: fixed in `757cf7e` (M13). `ValidationRules.StrongPassword` and `ValidPhoneNumber` are shared.
 - ⏸ Two review routes (#12 and #26) and two specialty CRUD surfaces: kept. Each is part of the contract with documented behaviour; their removal is listed in [API_CONTRACT.md](API_CONTRACT.md) §9 for V2.
@@ -447,7 +447,7 @@ HTTP request
 
 **Status (2026-10-18):**
 - ✅ Fixed in `d3b6511` and `9035a7d`: the unreachable refresh checks (removed with H7), the unused usings in `AuthService.cs` and the unused test field.
-- ✅ Fixed in `<pending commit B>`:
+- ✅ Fixed in `bea10ad`:
   - The unused repository methods are removed (`DoctorRepo.Update`, `UpdateSchedule`; `AppointmentRepo.HasCompletedAppointmentAsync`, `Update`; `SlotRepo.IsAvailableAsync`, `Block`, `Update`; `PatientRepo.GetAllPatientsAsync`, `GetPatientByIdAsync`, `Update`, `Delete`). Two are now used instead: `AppointmentRepo.GetDetailedByIdAsync` and `DoctorRepo.ExistsAsync` serve read-only paths (NL1). `DoctorRepo.GetDetailedByIdAsync` was already used.
   - The unused errors are removed, as are `DoctorErrors.Unauthorized` and `ScheduleNotFoundForDate` with its unreachable branch. None of their codes were in the contract's catalog. `CannotDeleteScheduleWithBookedSlots` and `InvalidScheduleTime` are used (H4, H5).
   - The empty csproj placeholder folders and the remaining unused usings are removed. The empty `#region Helpers` was already gone.
@@ -470,7 +470,7 @@ HTTP request
 | Misleading comments: header paths point to the wrong folder; "used task.fromresult" where none is used | `HttpContextExtensions.cs:1`; `CreateScheduleRequestValidator.cs:1`; `AuthService.cs:262` |
 
 **Status (2026-10-18):**
-- ✅ Fixed in `<pending commit B>`:
+- ✅ Fixed in `bea10ad`:
   - `DoctorNotesRequest` is in `Shared.DTOs.Appointment`, and its property is `Notes`. The JSON body is unchanged; only the 400 key changes (contract 3.1.1).
   - `NotificationService` is in `Services.Implementations`, and `ServiceAssemblyReference` is in `Services`.
   - `ApiController` is abstract, so it no longer registers as an empty controller.
@@ -658,7 +658,7 @@ The `Microsoft.*` 10.0.x packages are pinned at three different patch levels: 10
 
 | ID | Problem | Where | Fix risk | Status |
 |---|---|---|---|---|
-| NL1 | Read-only queries are tracked (no `AsNoTracking`) on hot paths: public doctor search, doctor profile, pending approvals, schedules, available slots, specialties, `GetAppointmentAsync`, patient profile GET. That costs change-tracker work and memory per request | `DoctorRepo.cs:17-18`, `:25-29`, `:44-48`, `:57-60`; `SlotRepo.cs:14-19`; `SpecialtyRepo.cs:13-15`; `AppointmentRepo.cs:8-14`; `PatientRepo.cs:19` | Medium: `DoctorRepo.GetByIdAsync`, `AppointmentRepo.GetByIdAsync` and `PatientRepo.GetPatientByUserIdAsync` are shared with write paths, so split them into read and write methods | ✅ `3a2c391`, `<pending commit B>`: pure-read queries in `3a2c391`; the read paths that shared tracked write methods now have untracked ones (`GetAppointmentAsync` uses `AppointmentRepo.GetDetailedByIdAsync`, the patient profile GET uses `PatientRepo.GetPatientByUserIdForReadAsync`, and the doctor-reviews existence check uses `DoctorRepo.ExistsAsync` instead of loading the profile) |
+| NL1 | Read-only queries are tracked (no `AsNoTracking`) on hot paths: public doctor search, doctor profile, pending approvals, schedules, available slots, specialties, `GetAppointmentAsync`, patient profile GET. That costs change-tracker work and memory per request | `DoctorRepo.cs:17-18`, `:25-29`, `:44-48`, `:57-60`; `SlotRepo.cs:14-19`; `SpecialtyRepo.cs:13-15`; `AppointmentRepo.cs:8-14`; `PatientRepo.cs:19` | Medium: `DoctorRepo.GetByIdAsync`, `AppointmentRepo.GetByIdAsync` and `PatientRepo.GetPatientByUserIdAsync` are shared with write paths, so split them into read and write methods | ✅ `3a2c391`, `bea10ad`: pure-read queries in `3a2c391`; the read paths that shared tracked write methods now have untracked ones (`GetAppointmentAsync` uses `AppointmentRepo.GetDetailedByIdAsync`, the patient profile GET uses `PatientRepo.GetPatientByUserIdForReadAsync`, and the doctor-reviews existence check uses `DoctorRepo.ExistsAsync` instead of loading the profile) |
 | NL2 | Unbounded result sets: every notification a user has ever had is returned on each call, and the pending-doctor list has no paging | `NotificationRepo.cs:7-13`; `DoctorRepo.cs:42-51` | Low (adds paging, changes the API shape; see §4.2) | ✅ `757cf7e` (contract 3.0.0): optional `pageNumber`/`pageSize` (notifications default to 50; pending doctors stay unpaged unless asked). Bodies stay arrays and the total goes in `X-Total-Count`, so the shape didn't change. Covered by `NotificationTests` and `AdminDoctorTests` |
 | NL3 | The doctor search can't use an index: `ToLower().Contains(...)` on `FirstName + " " + LastName` and `ClinicCity` scans every row. The SQL Server default collation is already case-insensitive, so `ToLower` buys nothing | `DoctorRepo.cs:112-118` | Low | 🟡 `3a2c391`: `ToLower` removed; a leading-wildcard `LIKE` still scans (needs full-text search) |
 | NL4 | Paging order isn't deterministic: the sort keys (`AverageRating`, fee, experience, `CreatedAt`) have ties and no unique tie-breaker, so rows can repeat or disappear between pages | `DoctorRepo.cs:120-126`; `ReviewRepo.cs:24` | Low (`.ThenBy(x => x.Id)`) | ✅ `3a2c391` |
