@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **What this is** | One document that explains all of ClinicFlow V1: what it does, every user flow end to end, the rules behind them, how the code is built, how to run, test and deploy it, and what is still open |
-| **State described** | Backend `master` at the V1 merge (2026-10-18), API contract **3.1.1** |
+| **State described** | Backend `master` at the V1 merge (2026-10-18), API contract **3.1.2** |
 | **Audience** | Anyone joining the project: developers (backend or frontend), testers, the product owner |
 
 For field-by-field request and response details, the source of truth is [API_CONTRACT.md](API_CONTRACT.md). This guide explains *how things work and why*; the contract says *exactly what goes over the wire*. If the two ever disagree, the contract and the code win, and this guide should be fixed.
@@ -612,6 +612,7 @@ Every rule that compares a slot with "now" uses the **clinic's clock** (`IDateTi
 | Lists | Bare JSON arrays. Paged lists take `pageNumber` (1-based) and `pageSize`; notifications and pending doctors add an `X-Total-Count` header |
 | Partial updates | `PATCH` endpoints and the schedule `PUT` apply only the fields sent |
 | Auth | `Authorization: Bearer <accessToken>`. Every endpoint needs it unless marked anonymous below |
+| CORS | Only the configured frontend origin. The browser can read the `X-Total-Count` and `Retry-After` response headers |
 | Interactive docs | `/scalar` in Development; [openapi.json](openapi.json) is committed |
 
 ### Endpoint index
