@@ -13,11 +13,16 @@
 | P6 Reporting | Reports and exports beyond the dashboard; V3 groundwork | S | P3, P5 |
 | P7 Chatbot | A bilingual patient assistant | S | P6 |
 
-**Sizes, not dates.** V2 is built by **one developer working with Claude** on both repos (backend and frontend). Sizes are relative (S < M < L) and only for sequencing; each phase is estimated in weeks at its kickoff, and the estimate is recorded in the decisions log (§6). A phase can start its backend while the frontend of the previous one finishes, as long as the previous phase's exit criteria are met before its pilot.
+**Sizes, not dates.** V2 is built by **one developer working with Claude** on both repos (backend and frontend). Sizes are relative (S < M < L) and only for sequencing; each phase is estimated in weeks at its kickoff, and the estimate is recorded in the decisions log (§6). A phase can start its backend while the frontend of the previous one finishes, as long as the previous phase's exit criteria are met first.
+
+**V2 is a separate product line** ([ADR 0007](adr/0007-v2-separate-product-line.md)):
+- V2 is built on the `v2` branch of both repos, with its own database. V1 stays on `master`/`main`, untouched.
+- The owner decides if and when V2 replaces V1.
+- Exit criteria that mention a **pilot branch** or real clinic data apply only once the owner chooses to pilot V2. Until then they are checked in a V2 staging environment with demo data (and a test import of V1 data, [09 §2](09_MIGRATION_FROM_V1.md#2-importing-v1-data)).
 
 **Order changed on 2026-10-22:** billing (now P3) comes **before** EMR (now P4). Taking money at the desk is part of every visit in the clinic, while EMR needs legal sign-off first (R2). The two phases share only the appointment and the patient record.
 
-Each phase ends with a **phase review**: exit criteria met, docs updated (`API_CONTRACT.md` 4.x, `PROJECT_OVERVIEW.md`, REVIEW entries), pilot feedback recorded, next phase re-planned and estimated. Each finished phase is tagged `v2.0.0-p<n>` in both repos; `v2.0.0` is tagged at general availability.
+Each phase ends with a **phase review**: exit criteria met, docs updated (`API_CONTRACT.md` 4.x, `PROJECT_OVERVIEW.md`, REVIEW entries), pilot feedback recorded (if piloted), next phase re-planned and estimated. Each finished phase is tagged `v2.0.0-p<n>` on the `v2` branch of both repos; `v2.0.0` is tagged at V2 general availability.
 
 ## 2. Phases
 
@@ -39,6 +44,7 @@ Each phase ends with a **phase review**: exit criteria met, docs updated (`API_C
 
 | Area | Deliverables | Resolves |
 |---|---|---|
+| **Separation from V1 (first)** | Before any V2 migration: a new `UserSecretsId`; database name `ClinicFlowV2` in every connection string, compose file and `db-init` script; a distinct compose project name, container names and host ports; a check at startup that refuses to run V2 migrations against a database that has V1's migration history but no V2 marker | [ADR 0007](adr/0007-v2-separate-product-line.md) |
 | Architecture | `Infrastructure` project (email moved out of `Services`); drop `Services → Persistence` behind `ITransaction`; module folders for new code; architecture tests; AutoMapper decision (explicit mapping preferred) | §4.6, [ADR 0006](adr/0006-clean-architecture-modular-monolith.md) |
 | Authorization | Permission constants, `IAccessGuard`, `ICurrentUser`, `[HasPermission]`, anonymous-endpoint allowlist in the existing test | NL10, §4.7 |
 | Tenancy | `Organization`, `OrganizationId` backfill, global query filters, tenant interceptor, model test | [ADR 0001](adr/0001-single-organization-tenant-ready.md) |
@@ -49,7 +55,7 @@ Each phase ends with a **phase review**: exit criteria met, docs updated (`API_C
 | Ops | `/health/live` and `/health/ready`, migration bundle (migrations leave startup), deploy login, SQL retry strategy, CI pipeline (build, tests, openapi diff, vulnerable packages) | M12, NM6, NL14, §4.9, §4.10 |
 
 **FRs:** FR-ORG-06, FR-APT-01, FR-AUD-01, FR-AUD-04, and the platform parts of NFR-01…NFR-12.
-**Exit criteria:** all V1 tests pass; V1 API behaviour unchanged except documented fixes (contract 3.x changelog); CI green; architecture, permission and tenancy tests in place; the outbox delivers V1 notifications.
+**Exit criteria:** the inherited V1 tests pass on the `v2` branch against the V2 database; `master` (V1) unchanged; CI green on `v2`; architecture, permission and tenancy tests in place; the outbox delivers V1 notifications.
 
 ### P1: Organization, staff, catalog, recruitment and sign-up
 
@@ -61,7 +67,7 @@ Each phase ends with a **phase review**: exit criteria met, docs updated (`API_C
 - **SMS provider** behind `ISmsSender`; **sign-up by mobile number** with SMS codes; login by phone or email; password reset by SMS; preferred language; AR/EN message templates (V1's emails rewritten)
 - **file storage** with virus scanning (moved here from the EMR phase)
 - **doctor recruitment**: applications with CV and cover letter, the Applied → Interview → Accepted pipeline, stage emails with the reviewer's variables and a preview, staff activation on the start date
-- data migration steps 3–5 and 4a ([09 §2](09_MIGRATION_FROM_V1.md#2-data-migration)); V1 doctor registration and approval removed
+- import-tool steps 3–5 and 4a ([09 §2](09_MIGRATION_FROM_V1.md#2-importing-v1-data)); the inherited doctor registration and approval routes deleted from `v2`
 
 **Exit criteria:** the clinic's real branches, staff and prices are entered in staging; every role can log in with MFA and sees only its menus; a test applicant goes from application to an active doctor with all four emails in both languages; a patient signs up with only a phone number; the permission matrix test passes for all P1 permissions.
 
@@ -70,7 +76,7 @@ Each phase ends with a **phase review**: exit criteria met, docs updated (`API_C
 **Goal:** one calendar for every booking, a live waiting room, and the first dashboard.
 
 **FRs:** FR-SCH-01…10, FR-APT-02…07, FR-APT-09, FR-APT-10, FR-FD-01…06, FR-FD-08, FR-NTF-03…06, FR-SVC-04, FR-RPT-01 (operational part), FR-RPT-04, FR-RPT-11 (charts 1, 2, 4), FR-PAT-01, FR-PAT-02, FR-PAT-08, FR-PAT-09.
-**Deliverables:** schedules per branch with shifts, rooms, exceptions, leave and the reschedule worklist; rolling slot generation per branch; booking on behalf, walk-ins, check-in, queue board with SignalR, waiting-room display; reschedule and no-show; **booking confirmations and reminders by SMS, email or both, as the patient chooses**; patient registration with duplicate detection; portal booking by branch and service with prices; consent capture; **admin dashboard** with KPI tiles and three of the four charts; data migration steps 6–9.
+**Deliverables:** schedules per branch with shifts, rooms, exceptions, leave and the reschedule worklist; rolling slot generation per branch; booking on behalf, walk-ins, check-in, queue board with SignalR, waiting-room display; reschedule and no-show; **booking confirmations and reminders by SMS, email or both, as the patient chooses**; patient registration with duplicate detection; portal booking by branch and service with prices; consent capture; **admin dashboard** with KPI tiles and three of the four charts; import-tool steps 6–9.
 **Exit criteria:** the pilot branch runs all bookings (online, phone, walk-in) in ClinicFlow for two weeks; zero double bookings; the queue board is used by desk, nurses and doctors; no-show rate measured and shown on the dashboard.
 
 ### P3: Billing and payments
@@ -86,7 +92,7 @@ Each phase ends with a **phase review**: exit criteria met, docs updated (`API_C
 **Goal:** every visit has a structured, signed record.
 
 **FRs:** FR-EMR-01…15, FR-APT-11, FR-RPT-09, FR-AUD-02, FR-PAT-05, FR-PAT-06.
-**Deliverables:** encounters, triage vitals, SOAP templates, ICD-10, prescriptions with allergy checks and PDFs, orders, clinical attachments (on P1's file storage), signing and addenda, voids, history timeline, patient visit summaries, read logging, break-glass; the "encounter exists" guard on completing a visit; data migration step 10.
+**Deliverables:** encounters, triage vitals, SOAP templates, ICD-10, prescriptions with allergy checks and PDFs, orders, clinical attachments (on P1's file storage), signing and addenda, voids, history timeline, patient visit summaries, read logging, break-glass; the "encounter exists" guard on completing a visit; import-tool step 10.
 **Exit criteria:** penetration test passed; privacy checklist items P1, P3, P4 done ([08 §5](08_SECURITY_PRIVACY_COMPLIANCE.md#5-privacy-and-consent)); ≥ 90% of pilot visits have a signed encounter within 24 h; doctors' documentation time measured and accepted by the medical director.
 
 ### P5: Insurance
@@ -95,7 +101,7 @@ Each phase ends with a **phase review**: exit criteria met, docs updated (`API_C
 
 **FRs:** FR-INS-01…12, FR-BIL-04, FR-SVC-05, FR-RPT-08.
 **Deliverables:** payers, plans, coverage rules, policies with cards, eligibility recording, pre-authorizations, automatic split, claim batches with validation, exports per payer, remittances, denials and resubmission, aging.
-**Exit criteria:** the clinic's top three payers configured; one full monthly claim cycle run from ClinicFlow; claim rejection rate baseline recorded. **V2 general availability:** all branches live; V1 endpoints removed ([09 §3](09_MIGRATION_FROM_V1.md#3-api-migration)).
+**Exit criteria:** the clinic's top three payers configured; one full monthly claim cycle run from ClinicFlow; claim rejection rate baseline recorded. **V2 general availability** (when the owner chooses V2): V1 data imported ([09 §2](09_MIGRATION_FROM_V1.md#2-importing-v1-data)), all branches on V2, inherited unversioned routes deleted from `v2` ([09 §3](09_MIGRATION_FROM_V1.md#3-the-api-on-the-v2-branch)), and `v2` merged into `master`/`main` with V1 kept on `release/v1` ([ADR 0007](adr/0007-v2-separate-product-line.md)).
 
 ### P6: Reporting and V3 groundwork
 
@@ -146,7 +152,7 @@ External dependencies:
 |---|---|---|---|---|---|
 | R1 | Scope is too large for **one developer**; phases slip | High | High | Strict MoSCoW; *Should*/*Could* items move to the next phase rather than delay a phase; each phase estimated at kickoff; Claude used for routine code, tests and docs; phase reviews re-plan | Developer + product owner |
 | R2 | Legal requirements (licence, hosting location, retention) delay the EMR go-live | Medium | High | Start legal review in P0; hosting decision before P1; EMR moved to P4 so billing ships first | Clinic management |
-| R3 | Free-text doctor addresses don't map cleanly to branches | High | Low | Manual branch mapping sheet ([09 §2](09_MIGRATION_FROM_V1.md#2-data-migration)) | Developer |
+| R3 | Free-text doctor addresses don't map cleanly to branches | High | Low | Manual branch mapping sheet ([09 §2](09_MIGRATION_FROM_V1.md#2-importing-v1-data)) | Developer |
 | R4 | The frontend (separate repo, same developer) lags behind the backend | Medium | High | Each phase's exit criteria include its frontend track; API-first with mocks from `openapi.json`; backend of the next phase starts only after the current frontend is usable | Developer |
 | R5 | Staff resistance; front desk falls back to paper | Medium | High | Pilot branch, super-users, training sandbox, measure adoption weekly, fix friction quickly | Branch managers |
 | R6 | Insurer formats differ and change | High | Medium | Configurable export templates per payer; start with the top three payers | Developer + clinic |
@@ -157,6 +163,7 @@ External dependencies:
 | R11 | Doctors find structured notes slower than free text | Medium | Medium | Specialty templates, free-text sections allowed, measure documentation time in the pilot | Medical director |
 | R12 | SMS cost or abuse (code pumping) grows; SMS delivery in Egypt is unreliable | Medium | Medium | Caps, cooldowns and a spend alert ([08 §2](08_SECURITY_PRIVACY_COMPLIANCE.md#2-threats-and-controls)); delivery receipts; email as a fallback channel when the patient has one; a second provider behind `ISmsSender` if needed | Developer |
 | R13 | The chatbot gives wrong or unsafe answers | Medium | Medium | Built last; grounded in clinic data only; no medical advice; red-team test before launch | Developer + medical director |
+| R14 | V1 and V2 drift apart; a V1 fix is forgotten in V2, or the import tool falls behind V2's schema | Medium | Medium | Every V1 fix on `master` is checked for `v2` and cherry-picked the same day; the import tool has a test per step run in CI against a V1 sample database, so a V2 schema change that breaks it fails the build | Developer |
 
 ## 5. Open questions
 
@@ -203,3 +210,4 @@ Each needs an owner and a decision date at the phase where it's needed.
 | 2026-10-22 | Chatbot is the last phase (P7) | FR-BOT-01 |
 | 2026-10-22 | Keep Clean Architecture as a modular monolith; SOLID rules enforced by architecture tests; **CQRS-lite** (separate command and query services, no MediatR, one database); patterns adopted on merit, for new code and enhancements; no microservices or event sourcing | [ADR 0006](adr/0006-clean-architecture-modular-monolith.md) |
 | 2026-10-22 | Every finished or changed service ships with unit tests for its methods, plus integration tests where HTTP behaviour matters | [06 §2.1](06_TECHNICAL_DESIGN.md#21-design-principles), CLAUDE.md |
+| 2026-10-22 | **V2 is a separate product line:** `v2` branch in both repos, its own database (`ClinicFlowV2`); V1 on `master`/`main` stays untouched; the owner decides if and when to switch, using a one-time import tool. Supersedes ADR 0005 decisions 2–5 | [ADR 0007](adr/0007-v2-separate-product-line.md) |

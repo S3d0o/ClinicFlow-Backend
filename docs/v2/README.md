@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Draft for review |
 | **Last updated** | 2026-10-22 |
-| **Applies to** | ClinicFlow backend and frontend, contract version 4.0.0 (V1 is 3.x) |
+| **Applies to** | ClinicFlow backend and frontend, `v2` branch, contract version 4.0.0 (V1 is 3.x on `master`/`main`) |
 | **Builds on** | V1 docs: [PROJECT_OVERVIEW.md](../PROJECT_OVERVIEW.md), [API_CONTRACT.md](../API_CONTRACT.md), [REVIEW.md](../REVIEW.md) |
 
 V1 is a **patient-facing booking product**. Patients find doctors and book slots, doctors publish schedules, and one Admin approves doctors. The clinic itself is not modelled: each doctor carries their own address and fee, and the people who actually run a clinic (managers, receptionists, nurses, accountants) have no place in the system.
@@ -39,8 +39,9 @@ Read them in this order:
 | [0002](adr/0002-permission-based-authorization.md) | Permission-based, branch-scoped authorization instead of role checks |
 | [0003](adr/0003-branch-time-zones.md) | Each branch has a time zone; slots store local time plus UTC |
 | [0004](adr/0004-appointment-state-machine.md) | One appointment state machine, owned by the entity |
-| [0005](adr/0005-api-v2-versioning.md) | V2 endpoints live under `/api/v2`; V1 routes are frozen, then removed |
+| [0005](adr/0005-api-v2-versioning.md) | V2 endpoints live under `/api/v2`, contract 4.x (its V1-coexistence parts are superseded by 0007) |
 | [0006](adr/0006-clean-architecture-modular-monolith.md) | Keep Clean Architecture as a modular monolith with CQRS-lite (no MediatR); patterns on merit; SOLID rules enforced by architecture tests |
+| [0007](adr/0007-v2-separate-product-line.md) | V2 is a separate product line: `v2` branch, its own database; V1 stays untouched; the owner decides when to switch |
 
 ## Canonical names
 
@@ -92,4 +93,6 @@ These names are defined once and used verbatim in every document and, later, in 
 
 ## Status of these documents
 
-These are **planning** documents. Nothing here is implemented yet. When a phase ships, the matching parts move into the V1-style living docs (`PROJECT_OVERVIEW.md`, `API_CONTRACT.md` 4.0.0, `SETUP_AND_DEPLOYMENT.md`) and these files record what was decided. Open business questions are collected in [10_ROADMAP.md §5](10_ROADMAP.md#5-open-questions).
+V2 is a **separate product line** ([ADR 0007](adr/0007-v2-separate-product-line.md)). It is built on the `v2` branch of both repos with its own database, while V1 stays untouched on `master`/`main`. The owner decides if and when V2 replaces V1.
+
+These are **planning** documents. Nothing here is implemented yet. When a phase ships, the matching parts move into the living docs on the `v2` branch (`PROJECT_OVERVIEW.md`, `API_CONTRACT.md` 4.0.0, `SETUP_AND_DEPLOYMENT.md`) and these files record what was decided. Open business questions are collected in [10_ROADMAP.md §5](10_ROADMAP.md#5-open-questions).

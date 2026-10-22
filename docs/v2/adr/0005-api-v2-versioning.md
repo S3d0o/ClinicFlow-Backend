@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Accepted; amended 2026-10-22 (contract number) |
+| **Status** | Accepted; amended 2026-10-22 (contract number); decisions 2–5 superseded on 2026-10-22 by [ADR 0007](0007-v2-separate-product-line.md) (V2 is a separate product line with its own database) |
 | **Date** | 2026-10-09 |
 | **Deciders** | Backend lead, frontend lead |
 
@@ -31,4 +31,8 @@ V2 changes many shapes at once: paged lists, ProblemDetails everywhere, correcte
 
 ## Amendment (2026-10-22): contract number
 
-This ADR first said V2 would be contract 2.0.0 and V1 fixes would be 1.x. While V1 was being finished, the V1 contract itself went to 2.0.0 (the M3 error-type fix) and then 3.x; it was 3.1.2 when V1 was declared done on 2026-10-18. So V2 starts at **4.0.0**, and V1 fixes during the coexistence window are 3.x. Nothing else in the decision changes.
+This ADR first said V2 would be contract 2.0.0 and V1 fixes would be 1.x. While V1 was being finished, the V1 contract itself went to 2.0.0 (the M3 error-type fix) and then 3.x; it was 3.1.2 when V1 was declared done on 2026-10-18. So V2 starts at **4.0.0**, and V1 fixes are 3.x. Nothing else in the decision changes.
+
+## Superseded in part (2026-10-22)
+
+[ADR 0007](0007-v2-separate-product-line.md) keeps V1 separate and untouched: V2 lives on its own `v2` branch with its own database. Decisions 1, 6 and 7 here still hold (the `/api/v2` prefix, contract 4.x, no versioning package). Decisions 2–5 (freezing V1 inside the V2 app, sharing services and data, deprecation headers, removal at GA) no longer apply as written; see ADR 0007 decision 5 for what replaces them.
