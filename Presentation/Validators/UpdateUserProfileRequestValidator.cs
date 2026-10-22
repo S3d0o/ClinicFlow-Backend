@@ -20,8 +20,7 @@ public class UpdateUserProfileRequestValidator : AbstractValidator<UpdateUserPro
             .When(x => x.PhoneNumber is not null);
 
         RuleFor(x => x.ProfilePictureUrl)
-            .Must(url => Uri.TryCreate(url, UriKind.Absolute, out _))
-            .WithMessage("Profile picture URL must be a valid URL.")
+            .AbsoluteHttpUrl("Profile picture URL")
             .When(x => x.ProfilePictureUrl is not null);
 
         RuleFor(x => x.Gender)

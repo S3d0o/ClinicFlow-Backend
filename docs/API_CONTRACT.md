@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Contract version** | 3.1.2 |
-| **Last updated** | 2026-10-18 |
+| **Contract version** | 4.0.0-p0 (pre-release, `v2` branch). V1's contract stays 3.1.2 on `master` ([docs/v2/adr/0007](v2/adr/0007-v2-separate-product-line.md)) |
+| **Last updated** | 2026-10-23 |
 | **Applies to** | ClinicFlow backend (`ClinicFlow.Backend`) and the ClinicFlow frontend (React) |
 | **Canonical copy** | `ClinicFlow.Backend/docs/API_CONTRACT.md`. The frontend repo keeps an identical copy at `docs/API_CONTRACT.md` |
 | **Machine-readable companion** | [`openapi.json`](openapi.json) (OpenAPI 3.1, generated from the running API) |
@@ -589,7 +589,7 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **Body:** `UpdateUserProfileRequest`. All fields are optional:
   - `firstName` and `lastName` ≤ 50
   - `phoneNumber` is E.164 with 7–15 digits, as at registration
-  - `profilePictureUrl` is an absolute URL
+  - `profilePictureUrl` is an absolute `http` or `https` URL
   - `dateOfBirth` is in the past
 - **204**
 - **Errors:**
@@ -665,7 +665,7 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **Body:** `SpecialtyRequest`. Rules:
   - `name` is required, ≤ 100, and unique.
   - `description` ≤ 500.
-  - `iconUrl` must be an absolute URL.
+  - `iconUrl` must be an absolute `http` or `https` URL.
   - `isActive` is optional; a new specialty is active unless `false` is sent.
 - **201:** `SpecialtyResponse`
 - **Errors:**
@@ -785,6 +785,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) whose fix **will change the cont
 | 3.1.0 | 2026-10-18 | No breaking changes: every request that worked before still gets the same response. **New: rate limiting (M6).** Register (#1, #2), login (#3), confirm email (#6), forgot password (#7) and reset password (#8) share a per-client-IP limit, 10 requests per 60 s by default ([§2.7](#27-rate-limiting)). Over it: 429 with the new code `RateLimit.Exceeded` and a `Retry-After` header. Refresh and logout are not limited. **Relaxed auth rule: logout (L7).** `POST /api/auth/logout` (#5) no longer requires an access token, so it works after the access token has expired; with an access token, the refresh token must still be the caller's. **Behaviour (H4):** a free slot kept because a cancelled appointment points to it is now `Blocked` while the doctor's schedule no longer covers it (hours moved away, or the schedule deactivated), so it no longer appears in `GET /api/doctors/{id}/slots` and booking it returns 409 `Appointment.SlotNotAvailable`. It is reopened if the hours cover it again. Cancelling an appointment outside the doctor's current hours blocks its slot instead of freeing it. **Behaviour (L8):** a doctor's `averageRating` and `totalReviews` are updated in the same transaction as the review insert or delete, so concurrent reviews can't leave them stale. **Frontend:** show a "try again in N seconds" message for 429 `RateLimit.Exceeded` on the auth forms; logout can be called without refreshing first |
 | 3.1.1 | 2026-10-18 | Bug fix: a 400 from `PUT /api/appointments/{id}/notes` (#24) keys the validation error as `Notes`, like every other validation error (§3.1 B: PascalCase property names). It was `notes`. The request body is unchanged (`{ "notes": … }`). Internal cleanup with no other observable change (REVIEW.md group B). §9 now also lists the removal of #12, which duplicates #26 |
 | 3.1.2 | 2026-10-18 | Bug fix: CORS now exposes the `Retry-After` header, so a frontend on another origin can read the wait time of a 429 `RateLimit.Exceeded` (§2.7). Before, the browser hid it, and only same-origin deployments (e.g. behind the compose nginx proxy) could read it. No other change |
+| 4.0.0-p0 | 2026-10-23 | **Pre-release on the `v2` branch (V2 line)**; the V2 frontend is its only client. Bug fix: `profilePictureUrl` (#31) and `iconUrl` (#41, #42) must be absolute `http` or `https` URLs. Before, the rule accepted any absolute URI, including `javascript:` and `file:`, and on Linux (the Docker image) a path such as `/images/me.png`, which .NET reads as a `file://` URI. Those values now return 400 with a validation error on the field; the message is "... must be an absolute http or https URL." |
 
 ## 11. How to change this contract
 
