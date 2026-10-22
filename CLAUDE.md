@@ -90,9 +90,15 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
 ## Conventions
 
 ### Git workflow
-- **Every new feature gets its own branch.** Create the branch before writing any code: `git switch master && git pull && git switch -c feature/<kebab-case-name>`. Never build a feature on `master` or on another feature's branch.
+- **Two product lines** (`docs/v2/adr/0007-v2-separate-product-line.md`):
+  - **`master` is V1.** V1 is finished and stays untouched. Change it only when the owner explicitly asks for a V1 fix.
+  - **`v2` is V2.** It has its own database, `ClinicFlowV2`; never point V2 at V1's database or run V2 migrations against it.
+  - **Separation isn't done yet.** Until P0's separation step lands, the `v2` branch still shares V1's `UserSecretsId` and database name. Don't run `dotnet run` or `dotnet ef database update` on `v2` before that step (`docs/v2/10_ROADMAP.md` P0).
+  - **V1 fixes:** when one lands on `master`, check whether it applies to `v2` and cherry-pick it.
+- **Every new V2 feature gets its own branch off `v2`.** Create the branch before writing any code: `git switch v2 && git pull && git switch -c feature/p<phase>-<kebab-case-name>`. Merge it back into `v2`. Never build a feature on `v2`, `master` or another feature's branch.
+- **V1 fixes**, only when asked: branch off `master` as `fix/<name>`.
 - **Uncommitted changes:** if the working tree has them when a feature starts, stop and ask whether to commit, stash or carry them over. Don't switch branches over them.
-- **Other branch prefixes:** `fix/`, `docs/`, `test/` and `chore/` follow the same rule for other kinds of work (e.g. `docs/review-and-claude-md`).
+- **Other branch prefixes:** `fix/`, `docs/`, `test/` and `chore/` follow the same rule for other kinds of work (e.g. `docs/review-and-claude-md`). They branch off `v2` for V2 work and off `master` for V1 work.
 - **Commits and pushes:** commit or push only when asked.
 
 ### Naming

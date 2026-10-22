@@ -4,12 +4,12 @@ This is the **direction** for the V2 API, not the contract itself. When each pha
 
 ## 1. Versioning
 
-See [ADR 0005](adr/0005-api-v2-versioning.md).
+See [ADR 0005](adr/0005-api-v2-versioning.md) and [ADR 0007](adr/0007-v2-separate-product-line.md).
 
 - V2 endpoints live under **`/api/v2/...`**.
-- The unversioned V1 routes (`/api/...`) are **frozen**: bug and security fixes only. They keep working until the frontend has moved every screen to V2, then they are removed, with dates agreed in the contract's §9.
-- V1 and V2 share the database and the services. V1 controllers become thin adapters over V2 services where behaviour still matches; V1 endpoints whose concept no longer exists (doctor self-registration, admin doctor approval) are deprecated first and removed at the end of the window.
-- The contract version becomes **4.0.0** when the first `/api/v2` endpoint ships; additive V2 changes after that are 4.x. (V1 already used 2.0.0 for the M3 error-type fix and is at 3.1.2; V1 fixes during the coexistence window stay 3.x.)
+- **V1's API is a separate deployment** from `master`, with its own database. V2 work never changes it.
+- The unversioned routes inherited on the `v2` branch serve only the V2 frontend while it is rebuilt. They are not frozen, need no deprecation headers, and are deleted from `v2` as soon as the V2 frontend stops using them, at the latest at V2 GA ([09 §3](09_MIGRATION_FROM_V1.md#3-the-api-on-the-v2-branch)).
+- The contract version becomes **4.0.0** when the first `/api/v2` endpoint ships; additive V2 changes after that are 4.x. (V1 already used 2.0.0 for the M3 error-type fix and is at 3.1.2; V1 fixes on `master` stay 3.x.) `docs/API_CONTRACT.md` on the `v2` branch becomes the 4.x contract; the copy on `master` stays V1's 3.x contract.
 
 ## 2. Resource map
 
@@ -232,9 +232,9 @@ Each row is `METHOD path` → permission. "public" = anonymous.
 | `GET /api/v2/public/branches`, `/public/services`, `/public/doctors`, `/public/specialties` | public |
 | `GET /api/v2/public/documents/verify/{code}` | public; minimal data only |
 
-## 5. Breaking changes from V1
+## 5. Differences from V1
 
-Listed in `API_CONTRACT.md` §9 before they ship.
+V1 clients keep using the V1 deployment, so these aren't breaking changes for them. They are what the V2 frontend has to handle differently from the V1 code it starts from.
 
 | V1 | V2 | Frontend impact |
 |---|---|---|

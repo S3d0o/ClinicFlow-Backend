@@ -71,7 +71,7 @@ Section numbers below follow the order the modules were added, not the phase ord
 | FR-STF-06 | Edit the permissions of a role (organization-level) | C | P1 | Clinical permissions can't be given to `Admin` or `Accountant`; every change audited; a "reset to default" exists |
 | FR-STF-07 | MFA (TOTP authenticator app) required for all staff; optional for patients | S | P1 | Staff without MFA can only reach the enrolment screen; Admin can reset a staff member's MFA (audited) |
 | FR-STF-08 | Staff directory: search by name, role, branch, status | M | P1 | Paged; respects `staff.view` scope |
-| FR-STF-09 | V1 doctor self-registration and admin approval are replaced by the doctor application pipeline ([§4.14](#414-recruitment-rec)) | M | P1 | `POST /api/auth/register/doctor` and the V1 approve/suspend endpoints are removed at the end of P1 (deprecated in V1 first, [09](09_MIGRATION_FROM_V1.md)); doctors join by application (FR-REC-01) or invitation (FR-STF-01) |
+| FR-STF-09 | V1 doctor self-registration and admin approval are replaced by the doctor application pipeline ([§4.14](#414-recruitment-rec)) | M | P1 | `POST /api/auth/register/doctor` and the V1 approve/suspend endpoints are deleted from the `v2` branch at the end of P1 ([09 §3](09_MIGRATION_FROM_V1.md#3-the-api-on-the-v2-branch)); V1 keeps them; doctors join by application (FR-REC-01) or invitation (FR-STF-01) |
 
 ### 4.3 Services and pricing (SVC)
 
@@ -147,7 +147,7 @@ Section numbers below follow the order the modules were added, not the phase ord
 | FR-EMR-12 | Patient history timeline: past encounters, vitals trends, prescriptions, attachments, across branches | M | P4 | Respects `encounters.view` scope; break-glass outside it |
 | FR-EMR-13 | Patient-facing visit summary: diagnoses (plain names), prescriptions, orders, instructions; no internal notes | S | P4 | Published to the portal when the encounter is signed |
 | FR-EMR-14 | Every read of an encounter or attachment is logged | M | P4 | See FR-AUD-02 |
-| FR-EMR-15 | V1 `Appointment.DoctorNotes` is migrated into the encounter | M | P4 | See [09 §2](09_MIGRATION_FROM_V1.md#2-data-migration) |
+| FR-EMR-15 | V1 `Appointment.DoctorNotes` is migrated into the encounter | M | P4 | See [09 §2](09_MIGRATION_FROM_V1.md#2-importing-v1-data) |
 
 ### 4.8 Billing and payments (BIL)
 

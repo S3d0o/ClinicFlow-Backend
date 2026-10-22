@@ -1,66 +1,75 @@
-# 09: Migration from V1
+# 09: Moving from V1 to V2
 
-V2 is built in the same codebase and on the same database as V1. There is no big-bang rewrite: each phase adds tables and endpoints, migrates the data it needs, and moves frontend screens to `/api/v2`. This document covers the data, the API and the frontend, and maps every open V1 issue to where V2 resolves it.
+V2 is a **separate product line** ([ADR 0007](adr/0007-v2-separate-product-line.md)). It is built on the `v2` branch, started from V1's code, and runs on **its own database** (`ClinicFlowV2`). V1 stays on `master` with its own database and is never changed by V2 work. The owner decides if and when V2 replaces V1. This document covers:
+- the **import tool** that copies V1 data into V2 at that point
+- what happens to the V1 API and frontend code inherited on the `v2` branch
+- where each known V1 issue is resolved
 
 ## 1. Principles
 
-- **Additive schema first.** New tables and nullable columns ship before any column is dropped. Old columns are removed only after the code no longer reads them (expand → migrate → contract).
-- **Every data migration is a script with a dry run.** It is idempotent, it runs on an anonymised staging copy first, and it produces a reconciliation report (row counts, sums, checksums) that someone signs off.
-- **V1 keeps working** until the frontend has moved ([ADR 0005](adr/0005-api-v2-versioning.md)).
+- **V1 is read-only to V2.** No V2 migration, job or endpoint touches V1's database. The import tool opens V1 with a read-only login.
+- **V2 owns its schema.** V2 migrations run only against the V2 database, so V2 may rename, reshape or drop V1-era columns whenever its own code stops using them. There is no expand → migrate → contract against live V1 data.
+- **The import is a tool, built phase by phase.** Each phase that adds a V2 concept with a V1 counterpart adds its import step and a test for it. The tool is idempotent, has a dry-run mode, runs on an anonymised copy first, and produces a reconciliation report (row counts, sums, checksums) that the owner signs off.
 - **No data is lost.** Free text that can't be mapped to a structure is kept verbatim and flagged "migrated from V1".
+- **V1 is the fallback.** Until the owner retires it, V1 stays deployable with its data as it was at the cut-over.
 
-## 2. Data migration
+## 2. Importing V1 data
 
-Steps run in this order. The phase column says when.
+Run only when the owner decides to switch. The **Built in** column says which phase adds the step to the tool. The cut-over:
+1. Stop writes in V1 (maintenance page).
+2. Back up both databases.
+3. Run the import in dry-run mode, then for real.
+4. Check the reconciliation report.
+5. Switch DNS to V2.
 
-| # | Step | Phase | Details |
+| # | Step | Built in | Details |
 |---|---|---|---|
 | 1 | Create the organization | P0 | One `Organization` row from configuration (name, registration numbers, default time zone `Africa/Cairo`) |
-| 2 | Backfill `OrganizationId` | P0 | Added (nullable) to every organization-owned V1 table, filled with the one id, then made non-null |
-| 3 | Create branches | P1 | Extract distinct `(ClinicCity, ClinicAddress)` from approved doctors into a **branch mapping sheet** (CSV). The clinic manager edits it: merges spelling variants, names branches, assigns codes. The script reads the approved sheet. Doctors with no address go to the default branch `MAIN` |
+| 2 | Organization on every row | P0 | Every imported organization-owned row gets the one `OrganizationId` |
+| 3 | Create branches | P1 | Extract distinct `(ClinicCity, ClinicAddress)` from approved doctors into a **branch mapping sheet** (CSV). The clinic manager edits it: merges spelling variants, names branches, assigns codes. The tool reads the approved sheet. Doctors with no address go to the default branch `MAIN` |
 | 4 | Staff members | P1 | Users with role `Admin` → `StaffMember` with `Admin` @ Organization. Approved doctors → `StaffMember` `Active` with `Doctor` @ their mapped branch, `DoctorProfile.IsPublic = true`. Unapproved doctors → a `DoctorApplication` in `Applied`, flagged "migrated from V1, no CV", so the manager reviews them like any applicant (they never appeared publicly); their V1 profile data fills the application. Suspended doctors → `StaffMember` `Inactive` |
-| 4a | Users: phone and language | P1 | `ApplicationUser.PhoneNumber` normalised to E.164 (numbers that fail are listed for the desk to fix), `PhoneNumberConfirmed = false` (verified by SMS at the first V2 login); `PreferredLanguage = ar`; `NotificationChannel = Both` for users with a confirmed email, else `Sms` |
-| 5 | Services and prices | P1 | One service per specialty, "Consultation – <Specialty>", 30 min default. One `PriceListItem` per doctor from `ConsultationFee` (doctor-specific price, valid from the migration date) |
-| 6 | Schedules and slots | P2 | `DoctorSchedule.BranchId` from the doctor's branch. `AppointmentSlot.BranchId`, `StartsAtUtc`, `EndsAtUtc` computed with the branch zone; `Capacity = 1`, `BookedCount` from current status |
+| 4a | Users: identity, phone and language | P1 | Users are copied with their Identity data (password hashes, so V1 passwords keep working; refresh tokens are **not** copied, so everyone logs in again). `PhoneNumber` normalised to E.164 (numbers that fail are listed for the desk to fix), `PhoneNumberConfirmed = false` (verified by SMS at the first V2 login); `PreferredLanguage = ar`; `NotificationChannel = Both` for users with a confirmed email, else `Sms` |
+| 5 | Services and prices | P1 | One service per specialty, "Consultation – <Specialty>", 30 min default. One `PriceListItem` per doctor from `ConsultationFee` (doctor-specific price, valid from the import date) |
+| 6 | Schedules and slots | P2 | `DoctorSchedule.BranchId` from the doctor's branch. Future `AppointmentSlot`s with `BranchId`, `StartsAtUtc`, `EndsAtUtc` computed with the branch zone; `Capacity = 1`, `BookedCount` from current status. Past slots are imported only when an appointment refers to them |
 | 7 | Patient records | P2 | One `PatientRecord` per `PatientProfile`; MRNs assigned in `CreatedAt` order. Emergency contact and blood type move to the record. `Allergies` and `ChronicConditions` text → one `Allergy` / `Condition` entry each, flagged "migrated" for review at the next visit |
 | 8 | Appointments | P2 | `BranchId` from the slot; `ServiceId` = the doctor's consultation service; `PatientRecordId` from step 7; `Source = Online`. Statuses unchanged (`Confirmed`, `Cancelled`, `Completed` are valid V2 values) |
 | 9 | Reviews and notifications | P2 | `OrganizationId`; `Review.BranchId` from the appointment |
-| 10 | Doctor notes → encounters | P4 | For each appointment with `DoctorNotes`: an `Encounter` with `Plan` = the notes, `Status = Signed`, `SignedAt` = appointment completion (or booking) time, author = the doctor, flagged "migrated from V1". `DoctorNotes` is then dropped in a later release |
-| 11 | Drop retired columns | After P4 | `DoctorProfile.ClinicAddress`, `ClinicCity`, `ConsultationFee`, `IsApprovedByAdmin`; `PatientProfile` clinical columns; `Appointment.DoctorNotes`, `PatientProfileId` |
+| 10 | Doctor notes → encounters | P4 | For each appointment with `DoctorNotes`: an `Encounter` with `Plan` = the notes, `Status = Signed`, `SignedAt` = appointment completion (or booking) time, author = the doctor, flagged "migrated from V1" |
 
-**Reconciliation checks** (each must match before sign-off): approved and suspended doctors = staff doctors, and unapproved doctors = migrated applications; sum of `ConsultationFee` = sum of migrated prices; patients = patient records; appointments per status unchanged; notes count = migrated encounters; no row without `OrganizationId`.
+V1-era columns that V2 no longer uses are dropped by ordinary V2 migrations once V2's own code stops reading them: `DoctorProfile.ClinicAddress`, `ClinicCity`, `ConsultationFee`, `IsApprovedByAdmin`; `PatientProfile` clinical columns; `Appointment.DoctorNotes`, `PatientProfileId`. The import tool reads them from V1, so dropping them in V2 loses nothing.
 
-**Rollback:** every step before 11 is reversible because nothing is dropped; the release before a migration can run against the migrated database (new columns are nullable or defaulted until the code depends on them).
+**Reconciliation checks** (each must match before sign-off): approved and suspended doctors = staff doctors, and unapproved doctors = migrated applications; sum of `ConsultationFee` = sum of migrated prices; users and patients = imported users and patient records; appointments per status unchanged; notes count = migrated encounters; no row without `OrganizationId`.
 
-## 3. API migration
+**Rollback:** V1 was never changed. If the reconciliation fails or V2 misbehaves after the switch, point DNS back to V1, which is complete up to the moment writes stopped.
 
-| Stage | When | What |
-|---|---|---|
-| Freeze | Start of P0 | V1 endpoints get bug and security fixes only, recorded as contract 3.x. `API_CONTRACT.md` §9 lists the deprecations below with dates |
-| Coexist | P1–P5 | Each phase ships `/api/v2` endpoints (contract 4.x). V1 endpoints keep working, backed by V2 services where possible |
-| Deprecate | When the frontend moves a screen | The V1 endpoint returns a `Deprecation` header and a `Sunset` date |
-| Remove | V2 general availability (end of P5), or earlier per endpoint by agreement | V1 controllers deleted; contract 4.x only |
+## 3. The API on the `v2` branch
 
-V1 sign-up requires an email and stays as it is while it exists. Accounts created through V2 without an email can't log in through V1's email login; the frontend uses V2 sign-in for them from P1.
+- **V1's API** lives on `master` and is served by the V1 deployment. Its contract is `docs/API_CONTRACT.md` 3.x on `master`. V2 work never changes it.
+- **V2's API** is under `/api/v2` (contract 4.x, in `docs/API_CONTRACT.md` on the `v2` branch). Each phase adds its endpoints.
+- **Inherited unversioned routes** on the `v2` branch are a starting point, not a contract:
+  - they serve only the V2 frontend while its screens are rebuilt
+  - they may change freely and need no `Deprecation`/`Sunset` headers
+  - each one is deleted from `v2` once the V2 frontend no longer calls it, and all are gone by V2 GA
 
-Endpoints removed **earlier** because their concept disappears:
+  Routes whose concept disappears go first:
 
-| V1 endpoint | Replacement | Removed when |
+| Inherited route | V2 replacement | Deleted from `v2` |
 |---|---|---|
 | `POST /api/auth/register/doctor` | Doctor applications (`POST /api/v2/doctor-applications`) | End of P1 |
 | `GET /api/admin/doctors/pending`, `POST /api/admin/doctors/{id}/approve` | Recruitment (`/api/v2/recruitment/applications`, interview / accept) | End of P1 |
 | `POST /api/admin/doctors/{id}/suspend` | `POST /api/v2/staff/{id}/deactivate` | End of P1 |
-| `/api/Specialty` write routes (already deprecated) | `/api/admin/specialties`, then `/api/v2/...` | P0 |
+| `/api/Specialty` write routes | `/api/v2/...` specialty management | P1 |
+| `POST /api/auth/register`, `POST /api/auth/login` | `/api/v2/auth/register`, `/api/v2/auth/login` (phone or email) | End of P1 |
 | `PUT /api/appointments/{id}/notes` | Encounter endpoints | End of P4 |
 
-## 4. Frontend migration
+## 4. The V2 frontend
 
-The frontend lives in a separate repository; each phase has a frontend track with the same exit criteria.
+The frontend repository follows the same split: `main` is V1, and `v2` is the V2 frontend, started from V1's code. Each phase has a frontend track with the same exit criteria.
 
 | Phase | Frontend work |
 |---|---|
-| P0 | Timestamps with `Z`; new appointment statuses displayed (ProblemDetails and paged lists already handled in V1) |
-| P1 | Arabic/English switch with RTL; sign-up by mobile with the SMS code step; login by phone or email; profile language and channels; staff app shell: login with MFA, `GET /api/v2/me`, permission-driven menus; admin screens (staff, roles, branches, rooms, services, prices); **doctor application form and "My application"; recruitment screens** (list, detail, CV download, interview / accept / reject with email preview); remove the V1 doctor sign-up and approval screens |
+| P0 | Point at the V2 API and database environment; timestamps with `Z`; new appointment statuses displayed (ProblemDetails and paged lists already handled in V1 code) |
+| P1 | Arabic/English switch with RTL; sign-up by mobile with the SMS code step; login by phone or email; profile language and channels; staff app shell: login with MFA, `GET /api/v2/me`, permission-driven menus; admin screens (staff, roles, branches, rooms, services, prices); **doctor application form and "My application"; recruitment screens** (list, detail, CV download, interview / accept / reject with email preview); remove the inherited doctor sign-up and approval screens |
 | P2 | Front desk (patient search/registration, calendar, booking on behalf, walk-in, check-in, queue board, waiting-room display); manager scheduling (schedules, leave, worklist); patient portal booking by branch/service with prices; notification channel choice; **admin dashboard** (KPI tiles, charts 1, 2, 4) |
 | P3 | Checkout at the desk (amount due, cash/card, receipt), invoices, refunds, approvals inbox, cash sessions; optional Paymob deposit in the portal; dashboard chart 3 (revenue) |
 | P4 | Nurse triage screen; doctor workspace (queue, history, encounter editor, prescriptions, orders, signing); patient visit summaries |
@@ -68,7 +77,9 @@ The frontend lives in a separate repository; each phase has a frontend track wit
 | P6 | Reports and exports |
 | P7 | Chatbot panel in the patient portal |
 
-**Training and rollout:** a pilot branch first for each operational phase (P2–P5), with super-users per role, a training sandbox seeded with demo data, and a two-week parallel run (paper backup) before the next branch.
+**Trying V2 and rolling it out:**
+- **Before the owner decides,** each phase's exit criteria are checked in a V2 staging environment seeded with V2's demo data.
+- **If the owner decides to pilot,** V2 runs for one branch with real data (imported, §2), with super-users per role and a two-week parallel run with a paper backup, while V1 keeps serving the rest.
 
 ## 5. Where each V1 issue is resolved
 

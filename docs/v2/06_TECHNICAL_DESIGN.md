@@ -250,7 +250,7 @@ MailKit stays, moved into `Infrastructure` and called only from outbox handlers,
 | Outbox | Events written with the business change; handler idempotency; retry and dead-letter | Integration |
 | Contract | `openapi.json` regenerated and diffed in CI; breaking changes fail unless the contract version is bumped | CI script |
 | Load | Booking burst on one slot (exactly one wins), queue board with 50 clients, search at 200k patients | k6 |
-| Migration | V1 → V2 data migration on a copy of production data, with row-count and checksum reports | Script + integration ([09](09_MIGRATION_FROM_V1.md)) |
+| Import | The V1 → V2 import tool: one test per step against a V1 sample database (V1's demo seed), run in CI so a V2 schema change that breaks the import fails the build; a full dry run on a copy of real data before any switch, with row-count and checksum reports | Integration + tool ([09 §2](09_MIGRATION_FROM_V1.md#2-importing-v1-data)) |
 
 CI (GitHub Actions; V1 has none, REVIEW §4.10): build with warnings as errors, unit tests, integration tests (Docker service), openapi diff, `dotnet list package --vulnerable`.
 
@@ -266,5 +266,6 @@ CI (GitHub Actions; V1 has none, REVIEW §4.10): build with warnings as errors, 
 - **Health checks:** V1 maps `/health` (anonymous). V2 splits it into `/health/live` and `/health/ready` (database, outbox lag, storage, SMS and Paymob reachability) (M12).
 - **Metrics:** queue length per branch, median wait, outbox lag, job duration and failures, payment webhook failures, login failures.
 - **Logs:** Serilog as V1, with a destructuring policy that masks phone numbers, national ids and clinical text; no request or response bodies on clinical or payment endpoints.
-- **Environments:** Development (demo seed), Staging (anonymised copy of production for UAT), Production.
+- **Separate from V1** ([ADR 0007](adr/0007-v2-separate-product-line.md)): V2 has its own database (`ClinicFlowV2`), connection string, user secrets id, compose project name, container names and host ports, so a V1 and a V2 stack can run side by side on one machine without touching each other. V2 never runs migrations against V1's database; the import tool reads V1 with a read-only login.
+- **Environments:** Development (V2 demo seed), Staging (V2 demo data, plus a test import of an anonymised V1 copy), Production (only once the owner chooses V2).
 - **Backups:** per [04 NFR-04](04_FUNCTIONAL_REQUIREMENTS.md#5-non-functional-requirements); file storage is backed up with the same retention.

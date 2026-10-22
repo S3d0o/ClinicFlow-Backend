@@ -107,6 +107,7 @@ The rule for V2 work: **if a design would have to change when a second organizat
 ## 7. Constraints
 
 - **Keep the V1 architecture** (Clean Architecture, Result pattern, `IUnitOfWork`, ASP.NET Identity, SQL Server, React frontend), following SOLID and clean-code rules. V2 extends it; see [06](06_TECHNICAL_DESIGN.md) and [ADR 0006](adr/0006-clean-architecture-modular-monolith.md).
+- **V1 stays untouched.** V2 is a separate product line on the `v2` branch of both repos, with its own database. The owner decides if and when it replaces V1 ([ADR 0007](adr/0007-v2-separate-product-line.md)).
 - **One developer** (working with Claude) builds both repos. Phases are sized relatively and estimated at their kickoff ([10](10_ROADMAP.md)).
 - **The API is shared with a separate frontend repo.** V2 is contract version 4.0.0 (V1 is 3.x) and follows the change process in [API_CONTRACT.md §11](../API_CONTRACT.md#11-how-to-change-this-contract).
 - **Medical and payment data are regulated.** No card numbers are stored; health data is sensitive personal data under Egyptian law ([08](08_SECURITY_PRIVACY_COMPLIANCE.md)).

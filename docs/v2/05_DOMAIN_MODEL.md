@@ -359,7 +359,7 @@ Every transition writes a `DoctorApplicationStageChange` and raises `DoctorAppli
 | V1 | V2 | Migration |
 |---|---|---|
 | `ApplicationUser` | Unchanged (global); MFA columns from Identity | — |
-| `DoctorProfile.ClinicAddress`, `ClinicCity` | `Branch` | Branches created from distinct values ([09 §2](09_MIGRATION_FROM_V1.md#2-data-migration)) |
+| `DoctorProfile.ClinicAddress`, `ClinicCity` | `Branch` | Branches created from distinct values ([09 §2](09_MIGRATION_FROM_V1.md#2-importing-v1-data)) |
 | `DoctorProfile.ConsultationFee` | `PriceListItem` for the doctor's consultation service | One item per doctor |
 | `DoctorProfile.IsApprovedByAdmin` | `StaffMember.Status` + `DoctorProfile.IsPublic`; `DoctorApplication` | Approved → `Active` staff + public; unapproved → a `DoctorApplication` in `Applied`, flagged "migrated from V1, no CV" |
 | `ApplicationUser.Email` required; `PhoneNumber` stored but never verified | `Email` optional for patients; `PhoneNumber` normalised to E.164 and verified by SMS | V1 users keep their email; their phone is normalised, left unverified, and verified at the first V2 login |
