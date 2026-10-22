@@ -1,0 +1,76 @@
+# CI for ClinicFlow V2 (docs/v2/plans/P0.md, PR 1).
+# This file exists only on the v2 line, so V1 branches cut from master never run it (docs/v2/adr/0007).
+name: V2 CI
+
+on:
+  push:
+    branches: [v2, "feature/**", "fix/**", "docs/**", "test/**", "chore/**"]
+  pull_request:
+    branches: [v2]
+
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the run still in progress
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore ClinicFlow.slnx
+
+      # The solution builds with zero warnings (CLAUDE.md); CI keeps it that way
+      - name: Build (warnings are errors)
+        run: dotnet build ClinicFlow.slnx --no-restore --configuration Release -p:TreatWarningsAsErrors=true
+
+      - name: Unit tests
+        run: >
+          dotnet test ClinicFlow.Tests --no-build --configuration Release
+          --logger trx --results-directory TestResults/unit
+
+      # Testcontainers starts SQL Server 2022 in the runner's Docker. ClinicFlowApiFactory supplies the
+      # connection string and a test JWT secret, so no secrets are needed here
+      - name: Integration tests
+        run: >
+          dotnet test ClinicFlow.IntegrationTests --no-build --configuration Release
+          --logger trx --results-directory TestResults/integration
+
+      # `dotnet list package --vulnerable` exits 0 even when it finds something, so check its output
+      - name: Vulnerable packages
+        run: |
+          dotnet list ClinicFlow.slnx package --vulnerable --include-transitive | tee vulnerable.txt
+          if grep -q "has the following vulnerable packages" vulnerable.txt; then
+            echo "::error::Vulnerable NuGet packages found (see the list above)"
+            exit 1
+          fi
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results
+          path: TestResults/
+          retention-days: 7
