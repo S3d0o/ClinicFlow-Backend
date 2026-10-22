@@ -12,21 +12,26 @@ Organization (one in V2)
      ├── Receptionist   front desk: patients, bookings, check-in, queue, payments at the desk
      ├── Nurse          triage, vitals, room preparation, assisting the doctor
      ├── Doctor         schedules, encounters, prescriptions, orders
-     └── Accountant     invoices, refunds, cash sessions, insurance claims (often organization-wide)
+     └── Accountant     optional: invoices, refunds, cash sessions, insurance claims (often organization-wide)
 Patient              outside the staff tree: their own bookings, records, invoices
+Doctor applicant     outside the staff tree, no role: their own application only
 ```
+
+**Clinics without an accountant.** Most Egyptian clinics have none: the receptionist takes the money and confirms the visit, and the manager approves exceptions. The default matrix (§6) lets `Receptionist` + `Manager` run billing end to end. `Accountant` is optional, for clinics that have one.
 
 ## 2. Roles
 
 | Role | Typical person | Scope | Main job in the system |
 |---|---|---|---|
 | `Admin` | IT officer, system owner | Organization | Staff accounts and roles, organization settings, integrations, audit log, security. **Does not** see clinical content by default |
-| `Manager` | Owner, medical director (organization); branch manager (branch) | Organization or Branch | Branches, rooms, services and prices, doctor schedules and leave, approvals (refunds, discounts, voids), reports |
-| `Receptionist` | Front-desk staff, call-centre agent | Branch | Register patients, book / reschedule / cancel, walk-ins, check-in, queue, collect payments, insurance card capture |
+| `Manager` | Owner, medical director (organization); branch manager (branch) | Organization or Branch | Branches, rooms, services and prices, doctor schedules and leave, **doctor applications**, approvals (refunds, discounts, voids, cash variances), daily close, reports |
+| `Receptionist` | Front-desk staff, call-centre agent | Branch | Register patients, book / reschedule / cancel, walk-ins, check-in, queue, **collect payments and issue invoices at checkout**, own cash session, insurance card capture |
 | `Nurse` | Nurse, medical assistant | Branch | Queue view, triage and vitals, prepare the patient for the doctor, upload documents |
 | `Doctor` | Physician, dentist, specialist | Own (+ Branch for reads) | Own schedule and appointments, encounters, diagnoses, prescriptions, orders, signing |
-| `Accountant` | Cashier supervisor, accountant, insurance officer | Branch or Organization | Invoices, payments, refunds, cash sessions, payers and plans, claims, financial reports |
-| `Patient` | Patient, or guardian for a minor (V2.x) | Own | Book online, manage own appointments, view own invoices, prescriptions and visit summaries, manage insurance policy |
+| `Accountant` (optional) | Cashier supervisor, accountant, insurance officer | Branch or Organization | Invoices, payments, refunds, cash sessions, payers and plans, claims, receivables, financial reports |
+| `Patient` | Patient, or guardian for a minor (V2.x) | Own | Book online, optionally pay a deposit, manage own appointments, view own invoices, prescriptions and visit summaries, manage insurance policy |
+
+A **doctor applicant** is a user with a doctor application and **no role**. They can only read and withdraw their own application ([04 §4.14](04_FUNCTIONAL_REQUIREMENTS.md#414-recruitment-rec)). Acceptance turns them into a `Doctor` staff member.
 
 ### 2.1 Personas
 
@@ -42,12 +47,12 @@ Patient              outside the staff tree: their own bookings, records, invoic
 
 **Manager (branch): Omar, branch manager.**
 - **Goals:** a smooth day at his branch; no idle doctors, no overflowing waiting room.
-- **Daily tasks:** publish doctor schedules, handle doctor leave and reschedules, manage rooms, approve discounts, handle complaints, check the daily close.
+- **Daily tasks:** publish doctor schedules, handle doctor leave and reschedules, manage rooms, review doctor applications and schedule interviews, approve discounts, refunds and cash variances, handle complaints, run the daily close.
 - **Pain:** finds out a doctor is on leave when patients are already waiting.
 
 **Receptionist: Mona, front desk.**
 - **Goals:** register and check in a patient in under a minute, keep the queue moving, never double-book.
-- **Daily tasks:** answer calls and book, register walk-ins, check patients in, print receipts, collect co-pays, capture insurance cards, reschedule when a doctor is late.
+- **Daily tasks:** answer calls and book, register walk-ins, check patients in, collect the visit fee (minus any online deposit) in cash or by card, print receipts, close her cash session, capture insurance cards, reschedule when a doctor is late.
 - **Pain:** online bookings appear in a different place than phone bookings; she can't see who is waiting for which doctor.
 
 **Nurse: Sara.**
@@ -60,7 +65,7 @@ Patient              outside the staff tree: their own bookings, records, invoic
 - **Daily tasks:** look at today's list, call the next patient, write notes, diagnoses and prescriptions, order tests, sign encounters, set leave.
 - **Pain:** V1 gives him one free-text notes field and no history.
 
-**Accountant: Youssef.**
+**Accountant (optional): Youssef.** Only in clinics that employ one; otherwise Mona and Omar cover his billing tasks.
 - **Goals:** every visit is billed, every drawer reconciles, insurers pay on time.
 - **Daily tasks:** review the daily close per branch, follow up unpaid invoices, prepare and submit monthly claims, record payer remittances, handle rejected claims.
 - **Pain:** reconciles cash against paper receipts; rebuilds claims from scratch every month.
@@ -78,7 +83,9 @@ Patient              outside the staff tree: their own bookings, records, invoic
   - Dr. Ahmed: `Doctor` @ Branch A and Branch B.
   - Youssef: `Accountant` @ Organization.
   - Mona: `Receptionist` @ Branch A.
-- **Doctors are staff.** V1's public doctor self-registration and admin approval are replaced by **invitation by a Manager or Admin** (see [04 FR-STF](04_FUNCTIONAL_REQUIREMENTS.md#42-staff-and-access-stf)).
+- **Doctors are staff.** A doctor joins in one of two ways:
+  - **Application** (the usual way): the doctor applies online with a CV; a reviewer with `recruitment.manage` moves the application to `Interview` and then `Accepted`, which creates the staff member ([04 FR-REC](04_FUNCTIONAL_REQUIREMENTS.md#414-recruitment-rec)). This replaces V1's self-registration and admin approval.
+  - **Invitation** by a Manager or Admin, for doctors hired outside the pipeline, as for every other staff role ([04 FR-STF](04_FUNCTIONAL_REQUIREMENTS.md#42-staff-and-access-stf)).
 - A **patient account** can also belong to a staff member (a nurse who is also a patient). The two capacities are separate: staff permissions never apply to their own patient record beyond what any patient sees.
 - Deactivating a staff member revokes their sessions immediately (refresh tokens) and their access tokens expire within 15 minutes, as in V1 H3.
 
@@ -112,6 +119,8 @@ Patient              outside the staff tree: their own bookings, records, invoic
 | | `staff.invite` | Invite staff, assign roles and branches |
 | | `staff.deactivate` | Deactivate staff, revoke sessions |
 | | `roles.manage` | Edit which permissions a role grants (Admin only; changes are audited) |
+| Recruitment | `recruitment.view` | See doctor applications and download CVs and cover letters |
+| | `recruitment.manage` | Move applications between stages (interview, accept, reject) and send the stage emails |
 | Catalog | `specialties.manage` | Specialty catalog (V1 feature) |
 | | `services.manage` | Service catalog |
 | | `prices.manage` | Price lists |
@@ -176,6 +185,8 @@ Legend: **O** = Organization, **B** = assigned Branch(es), **S** = own records o
 | `staff.invite` | O | B/O (not `Admin` / `Manager` roles) | — | — | — | — | — |
 | `staff.deactivate` | O | B/O | — | — | — | — | — |
 | `roles.manage` | O | — | — | — | — | — | — |
+| `recruitment.view` | — (grantable) | B/O | — | — | — | — | — |
+| `recruitment.manage` | — (grantable) | B/O | — | — | — | — | — |
 | `specialties.manage` | O | O | — | — | — | — | — |
 | `services.manage` | — | B/O | — | — | — | — | — |
 | `prices.manage` | — | B/O | — | — | — | O | — |
@@ -208,10 +219,10 @@ Legend: **O** = Organization, **B** = assigned Branch(es), **S** = own records o
 | `attachments.upload` | — | — | B (non-clinical: IDs, insurance cards) | B | B | — | S (own documents) |
 | `records.break_glass` | — | O (medical director) | — | — | B | — | — |
 | `invoices.view` | — | B/O | B | — | S (own visits, amounts only) | B/O | S |
-| `invoices.create` | — | B/O | B | — | — | B/O | — |
+| `invoices.create` | — | B/O | B (issue at checkout) | — | — | B/O | — |
 | `invoices.discount` | — | B/O (any amount) | B (≤ limit) | — | — | B/O (≤ limit) | — |
 | `invoices.void` | — | B/O (approver) | — | — | — | B/O (request) | — |
-| `payments.collect` | — | B/O | B | — | — | B/O | S (online) |
+| `payments.collect` | — | B/O | B (cash, card) | — | — | B/O | S (online deposit, Paymob) |
 | `refunds.request` | — | B/O | B | — | — | B/O | — |
 | `refunds.approve` | — | B/O | — | — | — | O (≤ limit) | — |
 | `cash_sessions.operate` | — | — | B | — | — | B | — |
@@ -231,13 +242,15 @@ Notes:
 - "Medical director" is a `Manager` @ Organization who is also a licensed doctor. It is a **flag on the staff member** (`IsMedicalDirector`), not a separate role, because it only changes clinical access.
 - A doctor's `B` read access to encounters means doctors of the same branch can read each other's encounters **for patients they are treating**. This is controlled by the setting `clinical.shareWithinBranch` (default on); when off, doctors see only encounters they wrote, plus break-glass.
 - The matrix is the **default**. `roles.manage` lets the Admin adjust it per organization; every change is audited, and clinical permissions can never be granted to `Admin` or `Accountant` (a hard rule in code).
+- **Recruitment** is a permission, not a role: `Manager` has it by default, and the Admin can grant `recruitment.*` to any role (e.g. to a staff member who does HR work). There is no `HR` role.
+- **Without an accountant**, every billing task has a default owner: `Receptionist` collects, issues invoices at checkout and operates their own cash session; `Manager` approves refunds, discounts, voids and cash variances and runs the daily close. The `Accountant` column only matters when the clinic has one.
 
 ## 7. Approvals (four-eyes rules)
 
 | Action | Who requests | Who approves | Rule (configurable per organization) |
 |---|---|---|---|
 | Discount above the requester's limit | Receptionist, Accountant | Manager | Receptionist default limit 10%, Accountant 20% |
-| Refund | Receptionist, Accountant | Accountant (≤ 1,000 EGP) or Manager (any) | Refunds over the threshold need a Manager |
+| Refund | Receptionist, Accountant | Accountant (≤ 1,000 EGP) or Manager (any) | Refunds over the threshold need a Manager; without an accountant, the Manager approves every refund |
 | Invoice void | Accountant | Manager | Only invoices with no payments; otherwise refund first |
 | Encounter void | Doctor (author) | Medical director | The encounter stays in the record, marked `Voided` with the reason |
 | Doctor leave | Doctor | Manager of the branch | Approval triggers the bulk reschedule flow ([03 J5](03_USER_JOURNEYS.md#j5-doctor-leave-and-bulk-reschedule)) |
@@ -251,20 +264,22 @@ Requester and approver must be different people. Every approval is audited with 
 | Role | Home screen |
 |---|---|
 | Admin | Staff list, pending invitations, integration health, recent security events |
-| Manager | Branch dashboard: today's appointments, queue length, wait time, no-shows, revenue today, unsigned encounters, pending approvals |
+| Manager | Dashboard (FR-RPT-11): KPI tiles and at most four charts; today's queue and wait time, unsigned encounters, pending approvals, open doctor applications |
 | Receptionist | Today's calendar for the branch, the queue, search-or-register patient, open cash session |
 | Nurse | Queue filtered to "waiting for triage", room status |
 | Doctor | Today's list across branches, next patient with triage summary, unsigned encounters |
 | Accountant | Unbilled visits, open cash sessions, claims by status, outstanding patient balances |
 | Patient | Upcoming appointments, book again, recent prescriptions and invoices |
+| Doctor applicant | Their application: current stage, history, interview details, start date |
 
 ## 9. Changes from V1
 
 | V1 | V2 |
 |---|---|
 | Roles `Admin`, `Doctor`, `Patient` checked as strings | Seven roles; code checks permissions; role names are constants |
-| `Admin` approves doctors and manages specialties | `Admin` is technical. Managers invite doctors; specialties are `specialties.manage` (Admin or org Manager) |
-| Doctors self-register and wait for approval (M1 gap: unapproved doctors can log in) | Doctors are invited staff; there is nothing to approve, and the M1 gap disappears |
+| `Admin` approves doctors and manages specialties | `Admin` is technical. Managers review doctor applications (or invite doctors); specialties are `specialties.manage` (Admin or org Manager) |
+| Doctors self-register and wait for approval (M1 gap: unapproved doctors can log in) | Doctors **apply** with a CV and go through `Applied` → `Interview` → `Accepted`. An applicant has no role, so the M1 gap disappears: only acceptance creates a `Doctor` staff member |
+| Patients register with an email | Patients register with a mobile number verified by SMS; email is optional |
 | Doctor cancels any own appointment any time | Same, plus reschedule and leave flows |
 | Patients cancel ≥ 2 h before | Unchanged; the window becomes an organization setting |
 | One role per user (`UserProfileResponse.role`) | Several roles; the profile returns `roles[]` and `branches[]` ([07](07_API_DESIGN.md)) |

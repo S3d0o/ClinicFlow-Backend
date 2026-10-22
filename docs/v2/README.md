@@ -3,13 +3,13 @@
 | | |
 |---|---|
 | **Status** | Draft for review |
-| **Last updated** | 2026-10-09 |
-| **Applies to** | ClinicFlow backend and frontend, contract version 2.0.0 |
+| **Last updated** | 2026-10-22 |
+| **Applies to** | ClinicFlow backend and frontend, contract version 4.0.0 (V1 is 3.x) |
 | **Builds on** | V1 docs: [PROJECT_OVERVIEW.md](../PROJECT_OVERVIEW.md), [API_CONTRACT.md](../API_CONTRACT.md), [REVIEW.md](../REVIEW.md) |
 
 V1 is a **patient-facing booking product**. Patients find doctors and book slots, doctors publish schedules, and one Admin approves doctors. The clinic itself is not modelled: each doctor carries their own address and fee, and the people who actually run a clinic (managers, receptionists, nurses, accountants) have no place in the system.
 
-V2 turns ClinicFlow into the **operating system of one clinic organization with several branches**. It covers the full visit, from booking to the front desk, the nurse, the doctor, the cashier and the insurer. Every design choice is **tenant-ready**, so a later V3 can host many clinic organizations on one platform without a rewrite.
+V2 turns ClinicFlow into the **operating system of one clinic organization with several branches**. It covers the full visit, from booking to the front desk, the nurse, the doctor, the cashier and the insurer. It also covers hiring doctors, sign-up by mobile number with SMS codes, Arabic and English throughout, and optional online deposits through Paymob. Every design choice is **tenant-ready**, so a later V3 can host many clinic organizations on one platform without a rewrite.
 
 ---
 
@@ -25,7 +25,7 @@ Read them in this order:
 | 4 | [04_FUNCTIONAL_REQUIREMENTS.md](04_FUNCTIONAL_REQUIREMENTS.md) | Every requirement, with an id, a priority and acceptance criteria |
 | 5 | [05_DOMAIN_MODEL.md](05_DOMAIN_MODEL.md) | Entities, relationships, state machines, tenancy rule, V1 → V2 mapping |
 | 6 | [06_TECHNICAL_DESIGN.md](06_TECHNICAL_DESIGN.md) | How V2 fits the existing architecture: authorization, tenancy, time zones, events, jobs, integrations |
-| 7 | [07_API_DESIGN.md](07_API_DESIGN.md) | Contract 2.0.0 direction: route groups, shapes, versioning, breaking changes |
+| 7 | [07_API_DESIGN.md](07_API_DESIGN.md) | Contract 4.0.0 direction: route groups, shapes, versioning, breaking changes |
 | 8 | [08_SECURITY_PRIVACY_COMPLIANCE.md](08_SECURITY_PRIVACY_COMPLIANCE.md) | Medical and payment data protection, audit, legal checklist |
 | 9 | [09_MIGRATION_FROM_V1.md](09_MIGRATION_FROM_V1.md) | Moving data, API and frontend from V1 to V2; where each open REVIEW item gets fixed |
 | 10 | [10_ROADMAP.md](10_ROADMAP.md) | Phases, exit criteria, risks, open questions |
@@ -40,6 +40,7 @@ Read them in this order:
 | [0003](adr/0003-branch-time-zones.md) | Each branch has a time zone; slots store local time plus UTC |
 | [0004](adr/0004-appointment-state-machine.md) | One appointment state machine, owned by the entity |
 | [0005](adr/0005-api-v2-versioning.md) | V2 endpoints live under `/api/v2`; V1 routes are frozen, then removed |
+| [0006](adr/0006-clean-architecture-modular-monolith.md) | Keep Clean Architecture as a modular monolith with CQRS-lite (no MediatR); patterns on merit; SOLID rules enforced by architecture tests |
 
 ## Canonical names
 
@@ -53,8 +54,11 @@ These names are defined once and used verbatim in every document and, later, in 
 | Encounter status | `Draft`, `Signed`, `Voided` | [05 §4.2](05_DOMAIN_MODEL.md#42-encounter) |
 | Invoice status | `Draft`, `Issued`, `PartiallyPaid`, `Paid`, `Void` | [05 §4.3](05_DOMAIN_MODEL.md#43-invoice) |
 | Claim status | `Draft`, `Submitted`, `Approved`, `PartiallyApproved`, `Rejected`, `Paid`, `Closed` | [05 §4.4](05_DOMAIN_MODEL.md#44-claim) |
-| Requirement ids | `FR-<MODULE>-nn`, `NFR-nn` | [04](04_FUNCTIONAL_REQUIREMENTS.md) |
-| Phases | `P0` … `P6` | [10](10_ROADMAP.md) |
+| Doctor application status | `Applied`, `Interview`, `Accepted`, `Rejected`, `Withdrawn` | [05 §4.6](05_DOMAIN_MODEL.md#46-doctor-application) |
+| Languages | `ar` (default), `en` | [04 FR-ACC-06](04_FUNCTIONAL_REQUIREMENTS.md#415-accounts-and-sign-in-acc) |
+| Notification channels | `Sms`, `Email`, `Both` (patient choice); in-app always | [04 FR-NTF-04](04_FUNCTIONAL_REQUIREMENTS.md#410-notifications-ntf) |
+| Requirement ids | `FR-<MODULE>-nn` (including `REC` recruitment, `ACC` accounts, `BOT` chatbot), `NFR-nn` | [04](04_FUNCTIONAL_REQUIREMENTS.md) |
+| Phases | `P0` … `P7` | [10](10_ROADMAP.md) |
 
 ## Glossary
 
@@ -82,7 +86,10 @@ These names are defined once and used verbatim in every document and, later, in 
 | **Pre-authorization** | The payer's approval for a service before it is performed |
 | **Claim** | The request sent to a payer to pay its share of one or more invoices |
 | **Break-glass** | Emergency access to a record outside one's normal permissions, with a mandatory reason and audit |
+| **Doctor application** | A doctor's request to join the clinic, with a CV and an optional cover letter. A reviewer with `recruitment.manage` moves it through `Applied` → `Interview` → `Accepted` |
+| **OTP** | A one-time code sent by SMS to verify a phone number or reset a password |
+| **Deposit** | An **optional** online prepayment through Paymob. A booking never waits for it; the rest is paid at the desk |
 
 ## Status of these documents
 
-These are **planning** documents. Nothing here is implemented yet. When a phase ships, the matching parts move into the V1-style living docs (`PROJECT_OVERVIEW.md`, `API_CONTRACT.md` 2.0.0, `SETUP_AND_DEPLOYMENT.md`) and these files record what was decided. Open business questions are collected in [10_ROADMAP.md §5](10_ROADMAP.md#5-open-questions).
+These are **planning** documents. Nothing here is implemented yet. When a phase ships, the matching parts move into the V1-style living docs (`PROJECT_OVERVIEW.md`, `API_CONTRACT.md` 4.0.0, `SETUP_AND_DEPLOYMENT.md`) and these files record what was decided. Open business questions are collected in [10_ROADMAP.md §5](10_ROADMAP.md#5-open-questions).

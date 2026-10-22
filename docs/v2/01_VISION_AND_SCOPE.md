@@ -50,16 +50,19 @@ V1 solves only the first minute of that day: a patient choosing a slot online.
 |---|---|
 | **Organization and branches** | One organization, many branches: addresses, time zones, working hours, holidays, rooms, settings |
 | **Staff and access** | Staff accounts by invitation, roles, branch assignments, permission-based access, deactivation, MFA |
+| **Doctor recruitment** | Doctors apply online with a CV and an optional cover letter; a reviewer moves the application through `Applied` → `Interview` → `Accepted` (or `Rejected`); an automatic email at each stage carries the details the reviewer entered (interview time and place, start date) |
+| **Accounts and sign-in** | Patient sign-up with an Egyptian mobile number verified by SMS code (email optional); login with phone or email; password reset by SMS or email; preferred language (Arabic or English) per user |
 | **Services and pricing** | Service catalog (consultation, follow-up, procedures) with duration and price per branch or doctor |
 | **Scheduling 2.0** | Doctor schedules per branch and room, exceptions, leave, holidays, a rolling slot window, blocking, controlled overbooking |
 | **Front desk** | Booking on behalf of patients, walk-ins, check-in, queue board, reschedule, no-show handling, patient registration |
 | **Clinical records (EMR)** | Encounters, triage vitals, SOAP notes, ICD-10 diagnoses, prescriptions, referrals and orders, attachments, signing, addenda, patient history |
-| **Billing and payments** | Invoices from visits, discounts, deposits, cash/card/online payments, receipts, refunds, cash sessions, branch numbering |
+| **Billing and payments** | Invoices from visits, discounts, cash/card payments collected by the **receptionist** at the desk, optional online deposits through **Paymob**, receipts, refunds, cash sessions, branch numbering. Works without an accountant |
 | **Insurance** | Payers, plans, coverage rules, patient policies, eligibility, co-pay split, pre-authorizations, claims, denials and resubmission |
-| **Notifications** | In-app (existing), email (existing), SMS/WhatsApp templates for reminders, confirmations and changes |
-| **Reporting** | Operational, clinical and financial reports and dashboards per role |
+| **Notifications** | In-app (existing), email (existing), SMS for verification, confirmations and reminders; the patient chooses SMS, email or both. Templates in Arabic and English. WhatsApp later |
+| **Reporting** | An admin dashboard with a few meaningful charts (at most four), plus operational, clinical and financial reports and exports |
 | **Audit** | Who did what, when, from where, on every sensitive record |
-| **Patient portal updates** | Book by branch and service, see prices, pay deposits, view invoices, prescriptions and visit summaries, upload insurance cards |
+| **Patient portal updates** | Book by branch and service, see prices, optionally pay a deposit, view invoices, prescriptions and visit summaries, upload insurance cards |
+| **Chatbot (last)** | A bilingual assistant in the patient portal for clinic questions and finding a slot. Built last (phase P7); scope decided at its kickoff |
 
 ### 4.2 Out of scope for V2 (candidates for later versions)
 
@@ -69,7 +72,7 @@ V1 solves only the first minute of that day: a patient choosing a slot online.
 | Inventory, consumables, equipment maintenance | Explicitly excluded by the business |
 | Lab and radiology information systems | V2 creates **orders/referrals** and stores **result attachments**; it does not run a lab |
 | Pharmacy dispensing | V2 writes prescriptions; dispensing is external |
-| HR and payroll (attendance, salaries, doctor commission payouts) | V2 reports revenue per doctor; payouts are calculated outside |
+| HR and payroll (attendance, salaries, doctor commission payouts) | V2 reports revenue per doctor; payouts are calculated outside. The one HR process in scope is **hiring doctors** (Doctor recruitment above) |
 | Telemedicine (video visits) | Separate product decision |
 | Direct electronic integration with insurers / TPAs | V2 produces claim exports and tracks status manually; integrations depend on each payer ([10 §5](10_ROADMAP.md#5-open-questions)) |
 | In-patient, beds, surgery theatre management | Outpatient clinics only |
@@ -92,7 +95,9 @@ The rule for V2 work: **if a design would have to change when a second organizat
 ## 6. Assumptions
 
 - The clinic operates in **Egypt**. Currency is **EGP**. Amounts are stored as `decimal(18,2)`.
-- The user interface is **Arabic and English**. The backend stores user-entered text as-is and returns error codes, so the frontend translates.
+- The user interface is **Arabic and English**, Arabic by default. The backend stores user-entered text as-is and returns error codes, so the frontend translates. Emails and SMS are rendered by the backend in each recipient's preferred language.
+- Most patients identify by **mobile number**; many have no email. Phone verification by SMS is the main sign-up path.
+- Most clinics have **no accountant**: the receptionist takes the money and the manager approves exceptions. The `Accountant` role is optional.
 - Each branch has a **time zone** (default `Africa/Cairo`). All slot dates and times are branch-local wall-clock times ([ADR 0003](adr/0003-branch-time-zones.md)).
 - Patients may visit **any branch**. Their record and history are shared across the organization's branches.
 - Staff use desktops at the front desk and in consultation rooms, and tablets or phones for the nurse station.
@@ -101,8 +106,9 @@ The rule for V2 work: **if a design would have to change when a second organizat
 
 ## 7. Constraints
 
-- **Keep the V1 architecture** (Clean Architecture, Result pattern, `IUnitOfWork`, ASP.NET Identity, SQL Server, React frontend). V2 extends it; see [06](06_TECHNICAL_DESIGN.md).
-- **The API is shared with a separate frontend repo.** V2 is contract version 2.0.0 and follows the change process in [API_CONTRACT.md §11](../API_CONTRACT.md#11-how-to-change-this-contract).
+- **Keep the V1 architecture** (Clean Architecture, Result pattern, `IUnitOfWork`, ASP.NET Identity, SQL Server, React frontend), following SOLID and clean-code rules. V2 extends it; see [06](06_TECHNICAL_DESIGN.md) and [ADR 0006](adr/0006-clean-architecture-modular-monolith.md).
+- **One developer** (working with Claude) builds both repos. Phases are sized relatively and estimated at their kickoff ([10](10_ROADMAP.md)).
+- **The API is shared with a separate frontend repo.** V2 is contract version 4.0.0 (V1 is 3.x) and follows the change process in [API_CONTRACT.md §11](../API_CONTRACT.md#11-how-to-change-this-contract).
 - **Medical and payment data are regulated.** No card numbers are stored; health data is sensitive personal data under Egyptian law ([08](08_SECURITY_PRIVACY_COMPLIANCE.md)).
 - **Open V1 defects block V2 work** where they touch the same code (slots, time zone, error shapes). They are fixed in phase P0 ([10](10_ROADMAP.md)).
 
@@ -111,6 +117,7 @@ The rule for V2 work: **if a design would have to change when a second organizat
 | Stakeholder | Interest |
 |---|---|
 | Clinic owner / medical director | Revenue, quality of care, compliance, growth to more branches |
+| Doctor applicants | A clear application, timely news at each stage, a known start date |
 | Branch managers | Smooth days, staff coverage, utilisation, complaints |
 | Doctors | Less admin, complete patient history, fair schedules |
 | Front desk | Fast booking, clear queue, fewer angry patients |

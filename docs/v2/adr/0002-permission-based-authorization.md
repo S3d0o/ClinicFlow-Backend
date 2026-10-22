@@ -19,10 +19,11 @@ V2 has seven roles. Staff can hold several roles, and most roles act only within
 3. Two layers:
    - **Endpoint:** `[HasPermission("...")]` rejects users who have the permission in no scope (403).
    - **Resource:** services call `IAccessGuard.EnsureAsync(permission, record.BranchId / ownerId)` and filter lists by `AllowedBranchIds(permission)`. This generalises V1's ownership checks.
-4. A **fallback policy** requires authentication everywhere; public endpoints opt out with `[AllowAnonymous]`, verified by an allowlist test.
+4. A **fallback policy** requires authentication everywhere; public endpoints opt out with `[AllowAnonymous]`, verified by an allowlist test. (V1 already has the fallback policy and a test that every action declares one or the other; V2 adds the allowlist.)
 5. Tokens carry identity, organization, staff id and role names, **not** permissions. Permissions are resolved on the server and cached; changes apply at the next refresh (≤ 15 min).
 6. Hard rules in code that configuration can't override: no clinical permissions for `Admin` or `Accountant`; approvals require requester ≠ approver.
 7. `GET /api/v2/me` returns the effective permissions with their scopes, and the frontend builds menus from them, never from role names.
+8. New responsibilities become **permissions, not roles**. For example, reviewing doctor applications is `recruitment.view` / `recruitment.manage`, which Managers hold by default and the Admin can grant to any role (2026-10-22). There is no `HR` role.
 
 ## Consequences
 

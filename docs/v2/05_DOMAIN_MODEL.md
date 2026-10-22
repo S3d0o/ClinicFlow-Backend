@@ -19,6 +19,7 @@
 ```
 Organization ─┬─ Branches ─ Rooms ─ Working hours ─ Holidays
               ├─ Staff ─ Roles ─ Branch assignments ─ Doctor profiles ─ Invitations
+              ├─ Recruitment ─ Doctor applications ─ Stage changes ─ Stored files
               ├─ Catalog ─ Services ─ Price list ─ Doctor services
               ├─ Scheduling ─ Schedules ─ Exceptions ─ Leave ─ Slots
               ├─ Patients ─ Patient records (MRN) ─ Clinical summary ─ Consents ─ Policies
@@ -26,7 +27,7 @@ Organization ─┬─ Branches ─ Rooms ─ Working hours ─ Holidays
               ├─ Clinical ─ Encounters ─ Vitals ─ Diagnoses ─ Prescriptions ─ Orders ─ Attachments ─ Addenda
               ├─ Billing ─ Invoices ─ Lines ─ Payments ─ Refunds ─ Cash sessions ─ Approvals
               ├─ Insurance ─ Payers ─ Plans ─ Coverage rules ─ Pre-authorizations ─ Claims
-              └─ Platform ─ Settings ─ Audit entries ─ Outbox messages ─ Notifications
+              └─ Platform ─ Settings ─ Audit entries ─ Outbox messages ─ Notifications ─ Phone verification codes
 ```
 
 ## 3. Entities
@@ -52,16 +53,35 @@ erDiagram
 | Entity | Key fields | Notes |
 |---|---|---|
 | `Organization` | `Id`, `LegalName`, `BrandName`, `LogoUrl`, `TaxRegistrationNo`, `CommercialRegistrationNo`, `DefaultTimeZoneId`, `IsActive` | One row in V2 |
-| `Branch` | `Id`, `OrganizationId`, `Code` (unique), `Name`, `Address`, `City`, `Latitude`, `Longitude`, `Phone`, `TimeZoneId`, `IsActive` | `Code` appears in invoice numbers |
-| `Room` | `Id`, `BranchId`, `Name`, `Type` (`Consultation`, `Procedure`, `Triage`), `IsActive` | |
+| `Branch` | `Id`, `OrganizationId`, `Code` (unique), `NameAr`, `NameEn`, `Address`, `City`, `Latitude`, `Longitude`, `Phone`, `TimeZoneId`, `IsActive` | `Code` appears in invoice numbers |
+| `Room` | `Id`, `BranchId`, `NameAr`, `NameEn`, `Type` (`Consultation`, `Procedure`, `Triage`), `IsActive` | |
 | `BranchWorkingHours` | `BranchId`, `DayOfWeek`, `OpensAt`, `ClosesAt` | Several rows per day allowed |
 | `BranchHoliday` | `BranchId` (null = all branches), `StartDate`, `EndDate`, `Name`, `RecursYearly` | |
 | `OrganizationSetting` | `OrganizationId`, `Key`, `Value` (JSON), `UpdatedBy`, `UpdatedAt` | Typed access via a settings service (FR-ORG-05) |
 | `StaffMember` | `Id`, `OrganizationId`, `UserId`, `EmployeeNo`, `JobTitle`, `IsMedicalDirector`, `Status` (`Invited`, `Active`, `Inactive`), `StartDate`, `EndDate` | *V3 note:* unique on `(OrganizationId, UserId)` |
 | `StaffRoleAssignment` | `StaffMemberId`, `Role`, `BranchId` (null = organization scope) | One row per role per branch |
 | `StaffInvitation` | `Id`, `OrganizationId`, `Email`, `RolesJson`, `TokenHash`, `ExpiresAt`, `AcceptedAt`, `RevokedAt`, `InvitedBy` | Token stored hashed, like refresh tokens |
-| `DoctorProfile` | V1 entity, now linked to `StaffMemberId`: `SpecialtyId`, `LicenseNo`, `Bio`, `YearsOfExperience`, `Languages`, `PhotoUrl`, `IsPublic`, `AverageRating`, `TotalReviews` | `ClinicAddress`, `ClinicCity`, `ConsultationFee`, `IsApprovedByAdmin` are retired ([§5](#5-v1-to-v2-mapping)) |
+| `DoctorProfile` | V1 entity, now linked to `StaffMemberId`: `SpecialtyId`, `LicenseNo`, `BioAr?`, `BioEn?`, `YearsOfExperience`, `Languages`, `PhotoUrl`, `IsPublic`, `AverageRating`, `TotalReviews` | `ClinicAddress`, `ClinicCity`, `ConsultationFee`, `IsApprovedByAdmin` are retired ([§5](#5-v1-to-v2-mapping)) |
 | `RolePermission` | `OrganizationId`, `Role`, `Permission`, `Scope` | Seeded from the default matrix ([02 §6](02_ROLES_AND_PERMISSIONS.md#6-role--permission-matrix)); editable (FR-STF-06) |
+
+### 3.1a Recruitment
+
+```mermaid
+erDiagram
+    APPLICATION_USER ||--o{ DOCTOR_APPLICATION : submits
+    DOCTOR_APPLICATION }o--|| SPECIALTY : "for"
+    DOCTOR_APPLICATION }o--o| BRANCH : prefers
+    DOCTOR_APPLICATION ||--o{ DOCTOR_APPLICATION_STAGE_CHANGE : "history"
+    DOCTOR_APPLICATION ||--|| STORED_FILE : "CV"
+    DOCTOR_APPLICATION ||--o| STORED_FILE : "cover letter"
+    DOCTOR_APPLICATION ||--o| STAFF_MEMBER : "accepted as"
+```
+
+| Entity | Key fields | Notes |
+|---|---|---|
+| `DoctorApplication` | `Id`, `OrganizationId`, `UserId`, `SpecialtyId`, `PreferredBranchId?`, `LicenseNo`, `YearsOfExperience`, `Status`, `CvFileId`, `CoverLetterFileId?`, `CoverLetterText?`, `InterviewAt?` (UTC), `InterviewBranchId?`, `InterviewLocation?`, `InterviewerName?`, `StartDate?` (branch-local date), `AcceptedBranchId?`, `StaffMemberId?`, `FilesDeletedAt?`, `SubmittedAt`, `RowVersion` | Status values and transitions in [§4.6](#46-doctor-application). Stage methods on the entity (`ScheduleInterview(...)`, `Accept(...)`, `Reject(...)`, `Withdraw(...)`) validate the variables and return `Result` |
+| `DoctorApplicationStageChange` | `Id`, `DoctorApplicationId`, `FromStatus`, `ToStatus`, `ChangedBy`, `ChangedAt`, `VariablesJson`, `MessageToApplicant?`, `OutboxMessageId?` | Append-only history; the variables are what the stage email was rendered from (FR-REC-03, FR-REC-04) |
+| `StoredFile` | `Id`, `OrganizationId`, `OwnerType`, `OwnerId`, `FileName`, `ContentType`, `SizeBytes`, `StorageKey`, `Sha256`, `ScanStatus`, `UploadedBy`, `UploadedAt` | Shared by applications now and by clinical attachments and card images later ([06 §8](06_TECHNICAL_DESIGN.md#8-files-and-documents)) |
 
 ### 3.2 Catalog and scheduling
 
@@ -81,7 +101,7 @@ erDiagram
 
 | Entity | Key fields | Notes |
 |---|---|---|
-| `Service` | `Id`, `OrganizationId`, `Code`, `NameAr`, `NameEn`, `Category` (`Consultation`, `FollowUp`, `Procedure`, `Package`), `DefaultDurationMinutes`, `SpecialtyId`, `RequiresDepositAmount`/`Percent`, `IsActive` | |
+| `Service` | `Id`, `OrganizationId`, `Code`, `NameAr`, `NameEn`, `Category` (`Consultation`, `FollowUp`, `Procedure`, `Package`), `DefaultDurationMinutes`, `SpecialtyId`, `OptionalDepositAmount?`, `IsActive` | A deposit is offered, never required (FR-APT-08) |
 | `PriceListItem` | `Id`, `ServiceId`, `BranchId?`, `DoctorProfileId?`, `Price`, `ValidFrom`, `ValidTo?` | Most specific valid item wins (FR-SVC-02) |
 | `DoctorService` | `DoctorProfileId`, `ServiceId`, `DurationMinutes?` | |
 | `PayerServiceCode` | `PayerId`, `ServiceId`, `Code` | For claims (FR-SVC-05) |
@@ -111,7 +131,7 @@ erDiagram
 
 | Entity | Key fields | Notes |
 |---|---|---|
-| `PatientProfile` | V1 entity: global identity data only (name via user, phone, gender, date of birth, national ID, preferred language and channel) | A desk-registered patient may have **no login yet**: `UserId` becomes nullable, and a portal invitation links it later |
+| `PatientProfile` | V1 entity: global identity data only (name, phone and language via the user; gender, date of birth, national ID) | A desk-registered patient may have **no login yet**: `UserId` becomes nullable, and a portal invitation links it later |
 | `PatientRecord` | `Id`, `OrganizationId`, `PatientProfileId`, `Mrn` (sequential per organization), `EmergencyContactName`, `EmergencyContactPhone`, `BloodType`, `MergedIntoId?`, `IsActive` | Clinical and organization-specific data. *V3 note:* one record per organization visited |
 | `Allergy` / `Condition` / `Medication` | `PatientRecordId`, coded or free-text value, `Status`, `RecordedBy`, `RecordedAt` | Replace V1's free-text `Allergies` and `ChronicConditions` |
 | `Consent` | `PatientRecordId`, `Type` (`Terms`, `DataProcessing`, `Treatment`), `Version`, `AcceptedAt`, `Channel` | FR-PAT-08 |
@@ -168,9 +188,9 @@ erDiagram
 | `Invoice` | `Id`, `OrganizationId`, `BranchId`, `Number` (`<BRANCH>-<YYYY>-<000001>`, set on issue), `PatientRecordId`, `AppointmentId?`, `Status`, `IssuedAt`, `Subtotal`, `DiscountTotal`, `PatientShareTotal`, `PayerShareTotal`, `PaidTotal`, `RefundedTotal`, `VoidReason`, `RowVersion` | Status values in [§4.3](#43-invoice) |
 | `InvoiceLine` | `InvoiceId`, `ServiceId`, `Description`, `Quantity`, `UnitPrice`, `DiscountAmount`, `DiscountReason`, `PatientShare`, `PayerShare`, `PatientPolicyId?`, `PreAuthorizationId?`, `DoctorProfileId` | `PatientShare + PayerShare = Quantity × UnitPrice − DiscountAmount` |
 | `InvoiceNumberSequence` | `BranchId`, `Year`, `LastNumber`, `RowVersion` | Incremented with a locking update in the issuing transaction (gapless) |
-| `Payment` | `Id`, `OrganizationId`, `BranchId`, `PatientRecordId`, `Method` (`Cash`, `Card`, `BankTransfer`, `Online`, `Wallet`), `Amount`, `Reference`, `GatewayTransactionId?`, `CashSessionId?`, `ReceivedBy`, `ReceivedAt`, `IdempotencyKey` | |
+| `Payment` | `Id`, `OrganizationId`, `BranchId`, `PatientRecordId`, `AppointmentId?` (deposits), `Method` (`Cash`, `Card`, `BankTransfer`, `Online`, `Wallet`), `Amount`, `Reference`, `Gateway?` (`Paymob`), `GatewayTransactionId?`, `CashSessionId?`, `ReceivedBy`, `ReceivedAt`, `IdempotencyKey` | Desk payments carry the receptionist and their cash session; online ones the Paymob transaction id |
 | `PaymentAllocation` | `PaymentId`, `InvoiceId`, `Amount` | One payment can settle several invoices; unallocated amount = patient credit |
-| `Deposit` | modelled as a `Payment` allocated to an `Appointment` until the invoice exists | |
+| `Deposit` | modelled as a `Payment` (`Method = Online`, via Paymob) with an `AppointmentId`, allocated to the visit invoice when it exists | Optional; its presence never changes the appointment status (FR-APT-08, FR-BIL-14) |
 | `Refund` | `Id`, `PaymentId`, `Amount`, `Reason`, `Status` (`Requested`, `Approved`, `Rejected`, `Paid`), `RequestedBy`, `ApprovedBy`, `PaidAt`, `CashSessionId?` | |
 | `CashDrawer` | `Id`, `BranchId`, `Name`, `IsActive` | |
 | `CashSession` | `Id`, `CashDrawerId`, `OpenedBy`, `OpenedAt`, `OpeningFloat`, `ClosedAt`, `CountedAmount`, `ExpectedAmount`, `Variance`, `Status` (`Open`, `Closed`, `Approved`), `ApprovedBy`, `Note` | |
@@ -211,7 +231,9 @@ erDiagram
 | `AuditEntry` | `Id`, `OrganizationId`, `OccurredAt`, `UserId`, `StaffMemberId?`, `Ip`, `Action` (`Create`, `Update`, `Delete`, `Read`, `Approve`, `BreakGlass`, `Export`), `EntityType`, `EntityId`, `PatientRecordId?`, `ChangesJson`, `Reason?`, `CorrelationId` | Append-only (FR-AUD-04) |
 | `OutboxMessage` | `Id`, `OccurredAt`, `Type`, `PayloadJson`, `ProcessedAt?`, `Attempts`, `LastError` | [06 §5](06_TECHNICAL_DESIGN.md#5-domain-events-and-the-outbox) |
 | `MessageDelivery` | `Id`, `OutboxMessageId`, `Channel`, `Recipient`, `TemplateKey`, `Status`, `ProviderMessageId`, `SentAt`, `Error` | FR-NTF-05 |
-| `MessageTemplate` | `OrganizationId`, `Key`, `Channel`, `Language`, `Body` | FR-NTF-02 |
+| `MessageTemplate` | `OrganizationId`, `Key`, `Channel`, `Language` (`ar`, `en`), `Subject?`, `Body`, `Placeholders` | FR-NTF-02; also the doctor-application stage emails (FR-REC-04) |
+| `ApplicationUser` (V1) | Adds `PreferredLanguage` (`ar`, `en`), `NotificationChannel` (`Sms`, `Email`, `Both`); uses Identity's `PhoneNumber` (E.164) and `PhoneNumberConfirmed`; `Email` becomes optional for patients | FR-ACC-01…06, FR-NTF-04. Global, not organization-owned |
+| `PhoneVerificationCode` | `Id`, `PhoneNumber`, `Purpose` (`SignUp`, `ChangePhone`, `PasswordReset`), `CodeHash`, `ExpiresAt`, `Attempts`, `ConsumedAt?`, `RequestIp`, `CreatedAt` | Global. Rows older than a day are purged (FR-ACC-02) |
 | `Notification`, `RefreshToken`, `Review`, `Specialty` | V1 entities. `Notification` and `Review` gain `OrganizationId`; `Review` gains `BranchId` | `Specialty` stays global reference data |
 
 ## 4. State machines
@@ -222,12 +244,8 @@ Transitions are entity methods. Anything not drawn is illegal and returns `<Enti
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Pending: book online (deposit required)
-    [*] --> Confirmed: book (no deposit) / staff booking
+    [*] --> Confirmed: book (online, phone, desk), deposit or not
     [*] --> CheckedIn: walk-in
-    Pending --> Confirmed: deposit paid
-    Pending --> Cancelled: cancel / deposit expired
-    Pending --> Rescheduled: reschedule
     Confirmed --> CheckedIn: check in
     Confirmed --> Cancelled: cancel
     Confirmed --> Rescheduled: reschedule
@@ -243,17 +261,16 @@ stateDiagram-v2
 
 | Transition | Who (permission) | Guard |
 |---|---|---|
-| book → `Pending`/`Confirmed` | Patient, `appointments.book_on_behalf` | Slot `Available`, not in the past (branch time), patient has current consent, doctor offers the service |
-| `Pending` → `Confirmed` | System (payment webhook), desk | Deposit fully paid |
+| book → `Confirmed` | Patient, `appointments.book_on_behalf` | Slot `Available`, not in the past (branch time), patient has current consent and a verified phone, doctor offers the service. A deposit is optional and never changes the status |
 | → `CheckedIn` | `appointments.check_in` | Appointment date is today (branch time), within the check-in window |
 | `CheckedIn` → `InProgress` | Doctor (own), `queue.manage` | Doctor has no other appointment `InProgress` |
-| `InProgress` → `Completed` | Doctor (own) | Encounter exists (signing may follow within 24 h) |
+| `InProgress` → `Completed` | Doctor (own) | From P4 (EMR): an encounter exists (signing may follow within 24 h). Before P4: no guard |
 | → `Cancelled` | Patient (window), doctor (own), `appointments.cancel` | Not `InProgress` or terminal |
 | → `Rescheduled` | Patient (window), `appointments.reschedule` | New appointment created in the same transaction |
 | `Confirmed` → `NoShow` | `appointments.mark_no_show` | Slot start + grace has passed |
 | `NoShow` → `Confirmed` | Manager | Same day; audited correction |
 
-V1 compatibility: `Pending` and `NoShow` already exist in the enum; `CheckedIn`, `InProgress` and `Rescheduled` are new values. V1 rows are `Confirmed`, `Cancelled` or `Completed` and stay valid.
+V1 compatibility: `Pending` and `NoShow` already exist in the enum; `CheckedIn`, `InProgress` and `Rescheduled` are new values. V1 rows are `Confirmed`, `Cancelled` or `Completed` and stay valid. **`Pending` is not used by V2**: deposits are optional (decision 2026-10-22), so no booking waits for payment. The value stays in the enum so V1 data and clients keep working; it is reserved for a future confirmation step (FR-APT-10).
 
 ### 4.2 Encounter
 
@@ -308,7 +325,34 @@ stateDiagram-v2
 | `LeaveRequest` | `Requested` → `Approved` / `Rejected`; `Requested`/`Approved` → `Cancelled` (before it starts) |
 | `Refund` | `Requested` → `Approved` → `Paid`; `Requested` → `Rejected` |
 | `CashSession` | `Open` → `Closed` → `Approved` |
-| `StaffMember` | `Invited` → `Active` → `Inactive` (→ `Active` on rehire) |
+| `StaffMember` | `Invited` → `Active` → `Inactive` (→ `Active` on rehire); from an accepted application: `Inactive` → `Active` on the start date |
+
+### 4.6 Doctor application
+
+```mermaid
+stateDiagram-v2
+    [*] --> Applied: apply (CV uploaded)
+    Applied --> Interview: schedule interview
+    Applied --> Rejected: reject
+    Applied --> Withdrawn: applicant withdraws
+    Interview --> Interview: reschedule interview
+    Interview --> Accepted: accept (start date)
+    Interview --> Rejected: reject
+    Interview --> Withdrawn: applicant withdraws
+    Accepted --> [*]
+    Rejected --> [*]
+    Withdrawn --> [*]
+```
+
+| Transition | Who (permission) | Required variables (FR-REC-03) | Guard |
+|---|---|---|---|
+| apply → `Applied` | The applicant (verified phone and email) | — | No other open application by the user; CV present and scanned clean |
+| `Applied` → `Interview`, `Interview` → `Interview` | `recruitment.manage` | Interview date and time, branch or address, interviewer name; optional notes | Interview time in the future (branch time) |
+| `Interview` → `Accepted` | `recruitment.manage` | Start date, branch; optional notes | Start date today or later; branch active; creates the staff member in the same transaction (FR-REC-05) |
+| `Applied`/`Interview` → `Rejected` | `recruitment.manage` | Optional message | — |
+| `Applied`/`Interview` → `Withdrawn` | The applicant | — | — |
+
+Every transition writes a `DoctorApplicationStageChange` and raises `DoctorApplicationStageChanged`. The outbox renders and sends the stage email from it (FR-REC-04). Accepting directly from `Applied` is not allowed: the clinic always interviews.
 
 ## 5. V1 to V2 mapping
 
@@ -317,7 +361,8 @@ stateDiagram-v2
 | `ApplicationUser` | Unchanged (global); MFA columns from Identity | — |
 | `DoctorProfile.ClinicAddress`, `ClinicCity` | `Branch` | Branches created from distinct values ([09 §2](09_MIGRATION_FROM_V1.md#2-data-migration)) |
 | `DoctorProfile.ConsultationFee` | `PriceListItem` for the doctor's consultation service | One item per doctor |
-| `DoctorProfile.IsApprovedByAdmin` | `StaffMember.Status` + `DoctorProfile.IsPublic` | Approved → `Active` + public; unapproved → `Invited` |
+| `DoctorProfile.IsApprovedByAdmin` | `StaffMember.Status` + `DoctorProfile.IsPublic`; `DoctorApplication` | Approved → `Active` staff + public; unapproved → a `DoctorApplication` in `Applied`, flagged "migrated from V1, no CV" |
+| `ApplicationUser.Email` required; `PhoneNumber` stored but never verified | `Email` optional for patients; `PhoneNumber` normalised to E.164 and verified by SMS | V1 users keep their email; their phone is normalised, left unverified, and verified at the first V2 login |
 | `PatientProfile.BloodType`, `Allergies`, `ChronicConditions`, emergency contact | `PatientRecord` + `Allergy` / `Condition` | Free text copied into one entry each, flagged "migrated" |
 | `DoctorSchedule` (one per weekday) | `DoctorSchedule` with `BranchId`, several per weekday | `BranchId` from the doctor's branch |
 | `AppointmentSlot` | + `BranchId`, `StartsAtUtc`, `EndsAtUtc`, `Capacity` | UTC computed with the branch time zone |
@@ -338,3 +383,6 @@ stateDiagram-v2
 8. A claim line references an invoice line with a payer share, at most once per active claim.
 9. Every organization-owned row has the organization id of its parent.
 10. Audit entries are never updated or deleted.
+11. A user has at most one open (`Applied` or `Interview`) doctor application; an accepted application links to exactly one staff member.
+12. A phone number belongs to at most one account, and only a verified phone can receive booking messages.
+13. A deposit never changes an appointment's status; the deposit plus desk payments never exceed the invoice's patient share without becoming patient credit.

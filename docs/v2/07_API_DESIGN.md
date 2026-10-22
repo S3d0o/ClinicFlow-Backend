@@ -1,6 +1,6 @@
-# 07: API Design (Contract 2.0.0 Direction)
+# 07: API Design (Contract 4.0.0 Direction)
 
-This is the **direction** for the V2 API, not the contract itself. When each phase ships, its endpoints move into `docs/API_CONTRACT.md` 2.x with full request/response tables, following [API_CONTRACT.md §11](../API_CONTRACT.md#11-how-to-change-this-contract).
+This is the **direction** for the V2 API, not the contract itself. When each phase ships, its endpoints move into `docs/API_CONTRACT.md` 4.x with full request/response tables, following [API_CONTRACT.md §11](../API_CONTRACT.md#11-how-to-change-this-contract).
 
 ## 1. Versioning
 
@@ -9,14 +9,19 @@ See [ADR 0005](adr/0005-api-v2-versioning.md).
 - V2 endpoints live under **`/api/v2/...`**.
 - The unversioned V1 routes (`/api/...`) are **frozen**: bug and security fixes only. They keep working until the frontend has moved every screen to V2, then they are removed, with dates agreed in the contract's §9.
 - V1 and V2 share the database and the services. V1 controllers become thin adapters over V2 services where behaviour still matches; V1 endpoints whose concept no longer exists (doctor self-registration, admin doctor approval) are deprecated first and removed at the end of the window.
-- The contract version becomes **2.0.0** when the first `/api/v2` endpoint ships; additive V2 changes after that are 2.x.
+- The contract version becomes **4.0.0** when the first `/api/v2` endpoint ships; additive V2 changes after that are 4.x. (V1 already used 2.0.0 for the M3 error-type fix and is at 3.1.2; V1 fixes during the coexistence window stay 3.x.)
 
 ## 2. Resource map
 
 ```
 /api/v2
-├── auth/…                         login (+ MFA step), refresh, logout, invitations/accept, password flows
-├── me                             profile, roles[], branches[], permissions[], preferences
+├── auth/…                         register (phone), SMS codes, login by phone or email (+ MFA step),
+│                                  refresh, logout, invitations/accept, password flows
+├── me                             profile, roles[], branches[], permissions[], language, channels
+├── doctor-applications            apply (multipart), my application, withdraw
+├── recruitment/applications/{id}  reviewer list, detail, files, interview / accept / reject, preview
+├── dashboard                      KPI tiles and the four charts (FR-RPT-11)
+├── chat                           chatbot conversation (P7)
 ├── organization                   profile, settings
 ├── branches/{branchId}            branch, working hours, holidays, rooms, drawers
 │   ├── calendar                   slots + appointments for a date range (staff view)
@@ -31,7 +36,7 @@ See [ADR 0005](adr/0005-api-v2-versioning.md).
 ├── encounters/{id}                vitals, notes, diagnoses, prescriptions, orders, addenda, sign, void
 ├── attachments/{id}               upload, download (streamed, audited)
 ├── invoices/{id}                  build, lines, discounts, issue, void, pdf
-├── payments/{id}                  collect, online checkout, webhooks/{provider}, refunds
+├── payments/{id}                  desk collect, Paymob checkout, webhooks/paymob, refunds
 ├── approvals/{id}                 inbox: approve / reject
 ├── payers, plans                  payers, plans, coverage rules
 ├── pre-authorizations/{id}        request / decide
@@ -47,10 +52,10 @@ See [ADR 0005](adr/0005-api-v2-versioning.md).
 
 | Topic | V2 rule | V1 difference |
 |---|---|---|
-| Lists | `PagedResponse<T>`: `{ "items": [...], "pageNumber": 1, "pageSize": 20, "totalCount": 134 }`. Defaults 1/20, max page size 100; out-of-range → 400 | V1 returns bare arrays with no count (NL2, H6) |
-| Errors | Always ProblemDetails (RFC 9457): `type`, `title` (error code), `status`, `detail`, `traceId`, and `errors` for validation. 401/403/404/500 included | V1 has empty bodies for middleware errors (M5, NL9) |
+| Lists | A bare JSON array body, with the total number of matching items in the **`X-Total-Count`** header (`HandlePagedResult`). `pageNumber` / `pageSize`: defaults 1/20, max page size 100; out-of-range → 400 | Same shape as V1; V1 sends `X-Total-Count` on two lists and has per-endpoint limits, V2 on every list with one rule |
+| Errors | Always ProblemDetails (RFC 9457): `type`, `title` (error code), `status`, `detail`, `traceId`, and `errors` for validation. 401/403/404/500 included | Same as V1 (M5, NL9 fixed in V1) |
 | Validation keys | camelCase property paths (`lines[0].unitPrice`) | V1 uses PascalCase |
-| Status codes | Conflicts 409, business-rule input 400, ownership/scope 403, unknown 404; 500 only for real faults | V1 returns 500 for several expected errors (M3) |
+| Status codes | Conflicts 409, business-rule input 400, ownership/scope 403, unknown 404; 500 only for real faults | Same as V1 since contract 2.0.0 (M3) |
 | Timestamps | UTC ISO 8601 **with `Z`** | V1 omits the `Z` on DB-read values |
 | Slot times | Branch-local `date` + `startTime`, plus `startsAtUtc` | V1 returns local times only |
 | Money | JSON number with 2 decimals, plus `currency: "EGP"` on documents | — |
@@ -60,7 +65,9 @@ See [ADR 0005](adr/0005-api-v2-versioning.md).
 | Actions | State changes are explicit sub-resources: `POST /appointments/{id}/check-in`, not `PATCH status` | Same style as V1 `cancel`/`complete` |
 | Enums | Strings (V1); new values are additive and listed in the changelog | — |
 | Partial updates | `PATCH` with only the sent fields; nullable value types fixed (V1 M15) | — |
-| Localisation | The API returns codes and stored texts; the client translates codes. `Accept-Language` only selects the language of generated PDFs and messages | — |
+| Localisation | The API returns codes and stored texts; the client translates codes. Bilingual reference data is returned with both names (`nameAr`, `nameEn`). Emails and SMS use the recipient's stored `preferredLanguage`; `Accept-Language` only selects the language of PDFs generated for the caller | V1 sends English emails only |
+| Phone numbers | Accepted as `01xxxxxxxxx` or `+201xxxxxxxxx`; always returned as E.164 (`+201…`) | V1 stores the number as typed |
+| Files | Uploads are `multipart/form-data`; downloads stream through an access-checked endpoint, never a public URL | — |
 
 ### Error code style
 
@@ -70,6 +77,17 @@ See [ADR 0005](adr/0005-api-v2-versioning.md).
 |---|---|---|
 | `Auth.MfaRequired` | 401 | Password accepted, MFA code needed (body carries the MFA token) |
 | `Auth.InvalidMfaCode` | 401 | Wrong TOTP code |
+| `Auth.PhoneNotVerified` | 403 | Booking or applying before the phone is verified |
+| `Auth.PhoneAlreadyUsed` | 409 | Changing to a number that belongs to another account (sign-up returns a generic response instead) |
+| `Otp.InvalidCode` | 400 | Wrong or expired code |
+| `Otp.TooManyAttempts` | 429 | 5 wrong attempts on one code, or the daily cap reached |
+| `Otp.ResendTooSoon` | 429 | A new code requested within 60 s |
+| `DoctorApplication.InvalidStatusTransition` | 409 | Stage move not allowed from the current status |
+| `DoctorApplication.AlreadyOpen` | 409 | The user already has an `Applied` or `Interview` application |
+| `DoctorApplication.CvRequired` | 400 | Applying without a CV |
+| `File.TypeNotAllowed` / `File.TooLarge` | 400 | Upload fails the type or size check |
+| `File.NotScanned` | 409 | Downloading a file whose virus scan hasn't passed |
+| `Payment.GatewayUnavailable` | 503 | Paymob can't be reached when creating a checkout; the booking itself is unaffected |
 | `Access.OutOfScope` | 403 | The record's branch is outside the user's scope for this permission |
 | `Concurrency.Conflict` | 409 | `rowVersion` mismatch |
 | `Idempotency.KeyReused` | 409 | Same key, different request body |
@@ -96,12 +114,33 @@ Each row is `METHOD path` → permission. "public" = anonymous.
 
 | Endpoint | Permission | Notes |
 |---|---|---|
-| `POST /api/v2/auth/login` | public | Returns tokens, or 401 `Auth.MfaRequired` with `mfaToken` |
+| `POST /api/v2/auth/register` | public; rate-limited | `{ firstName, lastName, phoneNumber, email?, password, preferredLanguage, ... }` → sends an SMS code; the account is usable after `/otp/verify` (FR-ACC-01) |
+| `POST /api/v2/auth/otp/send` | public; `Otp` rate limit | `{ phoneNumber, purpose }` (`SignUp`, `ChangePhone`, `PasswordReset`); always 204, whether or not the number exists |
+| `POST /api/v2/auth/otp/verify` | public; `Otp` rate limit | `{ phoneNumber, purpose, code }` → for `SignUp`: marks the phone verified and returns tokens |
+| `POST /api/v2/auth/password/reset-by-otp` | public; `Otp` rate limit | `{ phoneNumber, code, newPassword }`; revokes all refresh tokens |
+| `POST /api/v2/auth/login` | public | `{ identifier, password }`, where `identifier` is a phone or an email. Returns tokens, or 401 `Auth.MfaRequired` with `mfaToken` |
 | `POST /api/v2/auth/mfa` | public (MFA token) | `{ mfaToken, code }` → tokens |
 | `POST /api/v2/auth/mfa/enroll`, `/mfa/confirm` | authenticated | TOTP setup, recovery codes |
 | `POST /api/v2/auth/invitations/accept` | public (invitation token) | Set password, activate staff |
 | `POST /api/v2/auth/refresh-token`, `/logout` | as V1 | Unchanged rules ([API_CONTRACT §2.3](../API_CONTRACT.md#23-refresh-rules-frontend-must-follow-these)) |
-| `GET /api/v2/me` | authenticated | `{ user, roles[], branches[], permissions[{ name, scope, branchIds[] }], isMedicalDirector }`; the frontend builds its menus from `permissions` |
+| `GET /api/v2/me` | authenticated | `{ user, phoneVerified, emailConfirmed, preferredLanguage, notificationChannel, roles[], branches[], permissions[{ name, scope, branchIds[] }], isMedicalDirector, hasDoctorApplication }`; the frontend builds its menus from `permissions` |
+| `PATCH /api/v2/me` | authenticated | `preferredLanguage`, `notificationChannel` (`Sms`, `Email`, `Both`; `Email`/`Both` need a confirmed email) |
+| `POST /api/v2/me/phone`, `POST /api/v2/me/email` | authenticated | Change the phone (SMS code to the new number) or add an email (confirmation link) (FR-ACC-05) |
+
+### Recruitment
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `POST /api/v2/doctor-applications` | authenticated, phone and email verified | `multipart/form-data`: `specialtyId`, `licenseNo`, `yearsOfExperience`, `preferredBranchId?`, `cv` (file, required), `coverLetter` (file, optional) or `coverLetterText` → 201 |
+| `GET /api/v2/doctor-applications/mine` | authenticated (own) | Current application with stage history and interview details |
+| `POST /api/v2/doctor-applications/mine/withdraw` | authenticated (own) | Before acceptance only |
+| `GET /api/v2/recruitment/applications?status=&specialtyId=&branchId=&from=&to=` | `recruitment.view` | Paged, `X-Total-Count` |
+| `GET /api/v2/recruitment/applications/{id}` | `recruitment.view` | Detail and full history |
+| `GET /api/v2/recruitment/applications/{id}/files/{fileId}` | `recruitment.view` | Streams the CV or cover letter; audited |
+| `POST /api/v2/recruitment/applications/{id}/preview-message` | `recruitment.manage` | `{ toStatus, variables }` → the rendered email and SMS in the applicant's language, nothing saved |
+| `POST /api/v2/recruitment/applications/{id}/interview` | `recruitment.manage` | `{ interviewAt, branchId?, location?, interviewerName, notes?, rowVersion }` |
+| `POST /api/v2/recruitment/applications/{id}/accept` | `recruitment.manage` | `{ startDate, branchId, notes?, rowVersion }`; creates the staff member |
+| `POST /api/v2/recruitment/applications/{id}/reject` | `recruitment.manage` | `{ message?, rowVersion }` |
 
 ### Organization, branches, staff, catalog
 
@@ -129,7 +168,8 @@ Each row is `METHOD path` → permission. "public" = anonymous.
 | `POST /api/v2/slots/{id}/block`, `.../unblock` | `slots.block` |
 | `GET /api/v2/branches/{id}/calendar?from=&to=&doctorId=` | `appointments.view` |
 | `GET /api/v2/public/slots?branchId=&serviceId=&doctorId=&date=` | public (price included) |
-| `POST /api/v2/appointments` | patient (own) or `appointments.book_on_behalf`; `Idempotency-Key` |
+| `POST /api/v2/appointments` | patient (own, verified phone) or `appointments.book_on_behalf`; `Idempotency-Key`. Always returns a `Confirmed` appointment with the optional `depositAmount` |
+| `POST /api/v2/appointments/{id}/deposit` | patient (own); `Idempotency-Key` | Creates a Paymob payment intention for the optional deposit → `{ checkoutUrl }` |
 | `POST /api/v2/appointments/walk-in` | `appointments.check_in` |
 | `POST /api/v2/appointments/{id}/reschedule` | patient (window) or `appointments.reschedule` |
 | `POST /api/v2/appointments/{id}/cancel` | patient (window), doctor (own), `appointments.cancel` |
@@ -169,9 +209,10 @@ Each row is `METHOD path` → permission. "public" = anonymous.
 | `POST /api/v2/invoices`, `POST/DELETE .../{id}/lines[/{lineId}]` | `invoices.create` |
 | `POST /api/v2/invoices/{id}/discounts` | `invoices.discount` (limit, else approval request) |
 | `POST /api/v2/invoices/{id}/issue`, `.../void`, `GET .../{id}/pdf` | `invoices.create`, `invoices.void`, `invoices.view` |
-| `POST /api/v2/payments` | `payments.collect`; `Idempotency-Key` |
-| `POST /api/v2/payments/online-checkout` | patient (own) or staff; returns the gateway redirect |
-| `POST /api/v2/payments/webhooks/{provider}` | public (signature) |
+| `GET /api/v2/appointments/{id}/amount-due` | `payments.collect` | Price, paid deposit and the remainder the desk collects |
+| `POST /api/v2/payments` | `payments.collect` (the receptionist at the desk: cash or card, in their open cash session); `Idempotency-Key` |
+| `POST /api/v2/payments/online-checkout` | patient (own) or staff; Paymob checkout for an open invoice → `{ checkoutUrl }` |
+| `POST /api/v2/payments/webhooks/paymob` | public (Paymob HMAC) |
 | `POST /api/v2/payments/{id}/refunds` | `refunds.request`; `Idempotency-Key` |
 | `GET /api/v2/approvals?status=pending`, `POST .../{id}/approve`, `.../reject` | per approval type |
 | `POST /api/v2/branches/{id}/cash-sessions`, `POST .../cash-sessions/{sid}/close`, `.../approve` | `cash_sessions.operate`, `cash_sessions.reconcile` |
@@ -184,7 +225,8 @@ Each row is `METHOD path` → permission. "public" = anonymous.
 
 | Endpoint | Permission |
 |---|---|
-| `GET /api/v2/reports/dashboard?branchId=` | `reports.operational` |
+| `GET /api/v2/dashboard?branchId=` | `reports.operational` (revenue parts need `reports.financial`). Returns `{ tiles, appointmentsByDay[], noShowRateByWeek[], revenueByDay[], visitsByDoctor[] }`: ready-made series (FR-RPT-11) |
+| `POST /api/v2/chat/messages` | patient (own); P7 | Chatbot turn (FR-BOT-01); rate-limited |
 | `GET /api/v2/reports/{reportKey}?branchId=&from=&to=&format=json\|csv\|xlsx` | per report category |
 | `GET /api/v2/audit?userId=&patientId=&entityType=&from=&to=` | `audit.view` |
 | `GET /api/v2/public/branches`, `/public/services`, `/public/doctors`, `/public/specialties` | public |
@@ -196,10 +238,10 @@ Listed in `API_CONTRACT.md` §9 before they ship.
 
 | V1 | V2 | Frontend impact |
 |---|---|---|
-| Bare arrays on list endpoints | `PagedResponse<T>` | Every list screen reads `items` and shows paging |
-| Empty 401/403/404/500 bodies; PascalCase validation keys | ProblemDetails everywhere; camelCase keys | Error handler simplifies; field mapping changes |
-| 500 for expected errors (M3) | 409 / 400 | Key on codes (already recommended) |
-| `POST /api/auth/register/doctor`, `/api/admin/doctors/{id}/approve` | Removed; staff invitations | Remove the doctor sign-up and approval screens |
+| PascalCase validation keys | camelCase keys | Field mapping changes |
+| `POST /api/auth/register` with a required email | `POST /api/v2/auth/register` with a required phone and SMS code; email optional | New sign-up screen with a code step |
+| Login by email | Login by phone or email (`identifier`) | Login form accepts either |
+| `POST /api/auth/register/doctor`, `/api/admin/doctors/{id}/approve` | Doctor applications (`/api/v2/doctor-applications`, `/api/v2/recruitment/...`) | Doctor sign-up becomes an application form; approval becomes the recruitment screens |
 | `UserProfileResponse.role` (single) | `GET /api/v2/me` with `roles[]` and `permissions[]` | Menus driven by permissions |
 | `AppointmentResponse` without branch/service | Adds `branch`, `service`, `source`, `queueTicket`, `startsAtUtc`; new statuses | Status badges for the new values |
 | `DoctorNotes` on the appointment | Encounters | Doctor screens move to the encounter UI |
@@ -214,5 +256,5 @@ Listed in `API_CONTRACT.md` §9 before they ship.
 |---|---|---|
 | SignalR `/hubs/queue` | Queue board updates per branch | Access token (`queue.view`) or display device token |
 | SignalR `/hubs/notifications` | Live in-app notifications (replaces polling) | Access token |
-| `POST /api/v2/payments/webhooks/{provider}` | Payment confirmations and refunds | Provider signature |
+| `POST /api/v2/payments/webhooks/paymob` | Paymob payment confirmations and refunds | Paymob HMAC |
 | `POST /api/v2/messaging/webhooks/{provider}` | SMS/WhatsApp delivery receipts and replies (confirm/cancel links) | Provider signature |

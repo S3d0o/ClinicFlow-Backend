@@ -104,6 +104,14 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
 - **Constructors:** services, repositories, controllers and jobs use primary constructors (`public class XService(IUnitOfWork uow, IMapper mapper, ILogger<XService> logger) : IXService`).
 - **Logging:** structured Serilog templates with named placeholders (`"... {AppointmentId}"`), never string interpolation. Log a warning before returning an expected failure.
 
+### Design (V2 and enhancements)
+- **SOLID and clean code.** Follow `docs/v2/06_TECHNICAL_DESIGN.md` §2.1 and `docs/v2/adr/0006-clean-architecture-modular-monolith.md`. Write small use-case services, keep status rules in entity methods, use small interfaces, and keep controllers thin.
+- **CQRS-lite.** Inside a module, keep command services separate from query services:
+  - **Command services** load tracked entities through `IUnitOfWork`, call entity methods, then save.
+  - **Query services** use `AsNoTracking` and `Select` projections straight to response DTOs, and never write. Their interfaces live in `Services.Abstraction` and are implemented in `Persistence`.
+  - Use one database. Don't add MediatR or a separate read store.
+- **Patterns on merit.** Adopt a pattern (CQRS-lite, strategy, specification, domain events, …) when it makes the code clearer and the trade-off is worth it. That applies to new code **and** to enhancing existing V1 code. Don't add patterns that only add ceremony. Record a structural adoption in `docs/v2/10_ROADMAP.md` §6.
+
 ### Errors and results
 - Services never throw for expected failures. They return `Result` / `Result<T>`. Return an `Error` or a value directly; implicit conversions do the wrapping. A `Result` can't mix `Validation` errors with other types; doing so throws.
 - In `Shared/Errors/<Feature>Errors.cs`, declare fixed errors as `public static readonly Error X = Error.Conflict("Feature.Reason", "...")` and parameterized ones as `public static Error NotFound(int id) => Error.NotFound(...)`. Codes are `Feature.Reason`. Name the C# member after the error type: the 403 ownership errors are `AppointmentErrors.Forbidden`, `ReviewErrors.Forbidden` and `NotificationErrors.Forbidden`, though their codes keep the contract names `*.Unauthorized`.
@@ -158,6 +166,10 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
 
 ## Tests
 
+- **Every service ships with its tests.** When you finish a new service, or change an existing one, write the tests in the same change:
+  - **Unit tests:** one test class per public method, following the pattern below. Cover the success path, each expected error, and the edge cases.
+  - **Integration tests:** add them where HTTP behaviour matters: status codes, authorization and ownership, validation, transactions and concurrency.
+  - Run them. Don't call a service done until its tests pass.
 - **Unit (`ClinicFlow.Tests`):** xUnit + NSubstitute. Each service gets a folder with a `*TestsBase` that substitutes every constructor dependency and builds `_sut` (see `Services/AppointmentServiceTests/AppointmentServiceTestsBase.cs`), plus one test class per method (`BookAppointmentAsyncTests`, ...).
 - **Integration (`ClinicFlow.IntegrationTests`):** xUnit + FluentAssertions + `Microsoft.AspNetCore.Mvc.Testing`.
   - **Factory:** `ClinicFlowApiFactory` starts an MsSql Testcontainer, points `ClinicDbContext` at it, removes the background jobs (`AppointmentReminderJob`, `SlotGenerationJob`), and replaces JWT auth with `TestAuthHandler`.

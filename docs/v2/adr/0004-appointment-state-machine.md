@@ -14,8 +14,8 @@ V2 adds check-in, in-progress, reschedule, no-show, deposits and walk-ins. Witho
 
 ## Decision
 
-1. The appointment statuses are `Pending`, `Confirmed`, `CheckedIn`, `InProgress`, `Completed`, `Cancelled`, `NoShow`, `Rescheduled`, with the transitions in [05 §4.1](../05_DOMAIN_MODEL.md#41-appointment).
-2. Each transition is a **method on `Appointment`** (`Confirm`, `CheckIn`, `Start`, `Complete`, `Cancel`, `MarkNoShow`, `RevertNoShow`, `RescheduleTo`) taking the actor and `now`, returning `Result`. The method checks the current status and time guards and records the timestamps and actor.
+1. The appointment statuses are `Pending`, `Confirmed`, `CheckedIn`, `InProgress`, `Completed`, `Cancelled`, `NoShow`, `Rescheduled`, with the transitions in [05 §4.1](../05_DOMAIN_MODEL.md#41-appointment). (Since 2026-10-22 deposits are optional, so no V2 flow enters `Pending`; the value stays for V1 data and a possible confirmation step.)
+2. Each transition is a **method on `Appointment`** (`CheckIn`, `Start`, `Complete`, `Cancel`, `MarkNoShow`, `RevertNoShow`, `RescheduleTo`) taking the actor and `now`, returning `Result`. The method checks the current status and time guards and records the timestamps and actor.
 3. Services handle what the entity can't see: permissions and scope (via `IAccessGuard`), loading related data, slot updates, and saving. They never set `Status` directly; the setter is private.
 4. An illegal transition returns `Appointment.InvalidStatusTransition` (409).
 5. Each transition raises a domain event (`AppointmentCheckedIn`, …) for the outbox ([06 §5](../06_TECHNICAL_DESIGN.md#5-domain-events-and-the-outbox)).

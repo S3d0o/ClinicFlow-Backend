@@ -2,27 +2,22 @@
 
 ## 1. Phases at a glance
 
-```mermaid
-gantt
-    dateFormat  YYYY-MM-DD
-    axisFormat  %b %Y
-    title V2 phases (indicative; re-planned at each phase review)
-    section Foundation
-    P0 Foundation                 :p0, 2026-11-01, 6w
-    section Clinic setup
-    P1 Organization, staff, catalog :p1, after p0, 6w
-    section Operations
-    P2 Scheduling 2.0 + front desk  :p2, after p1, 8w
-    P3 Clinical records (EMR)       :p3, after p2, 8w
-    P4 Billing and payments         :p4, after p3, 8w
-    P5 Insurance                    :p5, after p4, 6w
-    section Insight
-    P6 Reporting + V3 groundwork    :p6, after p5, 4w
-```
+| Phase | Goal | Relative size | Depends on |
+|---|---|---|---|
+| P0 Foundation | Fix what V2 builds on; cross-cutting pieces | M | — |
+| P1 Organization, staff, catalog, recruitment, sign-up | The clinic, its people and prices exist; doctors apply; patients sign up by mobile | L | P0 |
+| P2 Scheduling 2.0 and front desk | One calendar and a live waiting room; SMS/email reminders; the admin dashboard | L | P1 |
+| P3 Billing and payments | The receptionist takes the money; optional Paymob deposits | L | P2 |
+| P4 Clinical records (EMR) | Every visit has a structured, signed record | L | P2 |
+| P5 Insurance | Insurance visits are split and claims get paid | M | P3, P4 |
+| P6 Reporting | Reports and exports beyond the dashboard; V3 groundwork | S | P3, P5 |
+| P7 Chatbot | A bilingual patient assistant | S | P6 |
 
-The durations assume a team of two backend developers, two frontend developers and one QA engineer, with a part-time product owner from the clinic. They are estimates for sequencing, not commitments; each phase is re-estimated at its kickoff. P3 and P4 can overlap partly if the team is larger, because they share only the appointment and patient record.
+**Sizes, not dates.** V2 is built by **one developer working with Claude** on both repos (backend and frontend). Sizes are relative (S < M < L) and only for sequencing; each phase is estimated in weeks at its kickoff, and the estimate is recorded in the decisions log (§6). A phase can start its backend while the frontend of the previous one finishes, as long as the previous phase's exit criteria are met before its pilot.
 
-Each phase ends with a **phase review**: exit criteria met, docs updated (`API_CONTRACT.md` 2.x, `PROJECT_OVERVIEW.md`, REVIEW entries), pilot feedback recorded, next phase re-planned.
+**Order changed on 2026-10-22:** billing (now P3) comes **before** EMR (now P4). Taking money at the desk is part of every visit in the clinic, while EMR needs legal sign-off first (R2). The two phases share only the appointment and the patient record.
+
+Each phase ends with a **phase review**: exit criteria met, docs updated (`API_CONTRACT.md` 4.x, `PROJECT_OVERVIEW.md`, REVIEW entries), pilot feedback recorded, next phase re-planned and estimated. Each finished phase is tagged `v2.0.0-p<n>` in both repos; `v2.0.0` is tagged at general availability.
 
 ## 2. Phases
 
@@ -30,51 +25,69 @@ Each phase ends with a **phase review**: exit criteria met, docs updated (`API_C
 
 **Goal:** fix what V2 would otherwise build on top of, and lay the cross-cutting pieces.
 
+**Already delivered by V1** (finished 2026-10-18, contract 3.1.2; see [09 §5](09_MIGRATION_FROM_V1.md#5-where-each-v1-issue-is-resolved)), so P0 no longer includes:
+
+| Area | Delivered in V1 |
+|---|---|
+| Errors and shapes | Global exception handler and ProblemDetails for every error (M5, NL9); corrected error catalog (M3); paging with `X-Total-Count` (H6, NL2) |
+| Authorization | Fallback policy and the explicit-attribute test (NM5) |
+| Time | One configured clinic time zone with `IDateTimeProvider.ClinicNow` (M2 for one zone) |
+| Scheduling | `SlotGenerationJob` rolling 14-day window (H8); safe schedule edits (H4) |
+| Ops | `/health` (M12); per-IP rate limit on auth endpoints and login lockout (M6); least-privilege `clinicflow_app` login in compose (NM6); demo seeding gated by `Seeding:DemoData` |
+
+**Remaining P0 work:**
+
 | Area | Deliverables | Resolves |
 |---|---|---|
-| Errors and shapes | Global exception handler, ProblemDetails everywhere, error catalog corrected, `PagedResponse<T>`, timestamps with `Z` | M3, M5, NL9, H6, NL2 |
-| Authorization | Permission constants, `IAccessGuard`, `ICurrentUser`, `[HasPermission]`, fallback policy, anonymous allowlist test | NM5, NL10, §4.7 |
+| Architecture | `Infrastructure` project (email moved out of `Services`); drop `Services → Persistence` behind `ITransaction`; module folders for new code; architecture tests; AutoMapper decision (explicit mapping preferred) | §4.6, [ADR 0006](adr/0006-clean-architecture-modular-monolith.md) |
+| Authorization | Permission constants, `IAccessGuard`, `ICurrentUser`, `[HasPermission]`, anonymous-endpoint allowlist in the existing test | NL10, §4.7 |
 | Tenancy | `Organization`, `OrganizationId` backfill, global query filters, tenant interceptor, model test | [ADR 0001](adr/0001-single-organization-tenant-ready.md) |
-| Time | `Branch` with time zone (one default branch), `IClock`, `StartsAtUtc` on slots, ban on `DateTime.UtcNow` | M2, §4.1, FR-ORG-06 |
-| State | Appointment state machine with the new statuses | M14, FR-APT-01 |
-| Events | Domain events, outbox, dispatcher; existing notifications and emails moved onto it | M4 follow-up, NM3, NL6, §4.4 |
+| Time | `Branch` with time zone (one default branch), `IClock` extending `IDateTimeProvider`, `StartsAtUtc` on slots, ban on `DateTime.UtcNow` | §4.1, FR-ORG-06 |
+| State | Appointment state machine in the entity, with the new statuses | §4.3, FR-APT-01 |
+| Events | Domain events, outbox, dispatcher; existing notifications and emails moved onto it | NM3, NL6, §4.4 |
 | Audit | `AuditEntry` interceptor, append-only permissions | FR-AUD-01, FR-AUD-04 |
-| Ops | Health checks, migration bundle, least-privilege DB login, rate limiting, retry strategy, CI pipeline | M12, M6, NM6, NL14, §4.9, §4.10 |
+| Ops | `/health/live` and `/health/ready`, migration bundle (migrations leave startup), deploy login, SQL retry strategy, CI pipeline (build, tests, openapi diff, vulnerable packages) | M12, NM6, NL14, §4.9, §4.10 |
 
 **FRs:** FR-ORG-06, FR-APT-01, FR-AUD-01, FR-AUD-04, and the platform parts of NFR-01…NFR-12.
-**Exit criteria:** all V1 tests pass; V1 API behaviour unchanged except the documented fixes (contract 1.x changelog); CI green; permission and tenancy tests in place; outbox delivers V1 notifications.
+**Exit criteria:** all V1 tests pass; V1 API behaviour unchanged except documented fixes (contract 3.x changelog); CI green; architecture, permission and tenancy tests in place; the outbox delivers V1 notifications.
 
-### P1: Organization, staff and catalog
+### P1: Organization, staff, catalog, recruitment and sign-up
 
-**Goal:** the clinic exists in the system with its branches, people and price list.
+**Goal:** the clinic exists in the system with its branches, people and price list; doctors join by application; patients sign up with a mobile number.
 
-**FRs:** FR-ORG-01…05, FR-STF-01…09, FR-SVC-01…03, FR-AUD-03.
-**Deliverables:** branches, rooms, working hours, holidays; staff invitations, roles, scopes, MFA, deactivation; doctor profiles; service catalog and price list; audit viewer; data migration steps 3–5 ([09 §2](09_MIGRATION_FROM_V1.md#2-data-migration)); V1 doctor registration and approval removed.
-**Exit criteria:** the clinic's real branches, staff and prices are entered in staging; every role can log in with MFA and sees only its menus; the permission matrix test passes for all P1 permissions.
+**FRs:** FR-ORG-01…05, FR-STF-01…09, FR-SVC-01…03, FR-REC-01…08, FR-ACC-01…06, FR-NTF-01 (SMS), FR-NTF-02, FR-AUD-03.
+**Deliverables:**
+- branches, rooms, working hours, holidays; staff invitations, roles, scopes, MFA, deactivation; doctor profiles; service catalog and price list; audit viewer
+- **SMS provider** behind `ISmsSender`; **sign-up by mobile number** with SMS codes; login by phone or email; password reset by SMS; preferred language; AR/EN message templates (V1's emails rewritten)
+- **file storage** with virus scanning (moved here from the EMR phase)
+- **doctor recruitment**: applications with CV and cover letter, the Applied → Interview → Accepted pipeline, stage emails with the reviewer's variables and a preview, staff activation on the start date
+- data migration steps 3–5 and 4a ([09 §2](09_MIGRATION_FROM_V1.md#2-data-migration)); V1 doctor registration and approval removed
+
+**Exit criteria:** the clinic's real branches, staff and prices are entered in staging; every role can log in with MFA and sees only its menus; a test applicant goes from application to an active doctor with all four emails in both languages; a patient signs up with only a phone number; the permission matrix test passes for all P1 permissions.
 
 ### P2: Scheduling 2.0 and front desk
 
-**Goal:** one calendar for every booking, and a live waiting room.
+**Goal:** one calendar for every booking, a live waiting room, and the first dashboard.
 
-**FRs:** FR-SCH-01…10, FR-APT-02…07, FR-APT-09, FR-APT-10, FR-FD-01…06, FR-FD-08, FR-NTF-01…06, FR-SVC-04, FR-RPT-01 (operational part), FR-RPT-04, FR-PAT-01, FR-PAT-02, FR-PAT-08, FR-PAT-09.
-**Deliverables:** schedules per branch with shifts, rooms, exceptions, leave and the reschedule worklist; rolling slot generation; booking on behalf, walk-ins, check-in, queue board with SignalR, waiting-room display; reschedule and no-show; SMS/WhatsApp reminders; patient registration with duplicate detection; portal booking by branch and service with prices; consent capture; data migration steps 6–9.
-**Exit criteria:** pilot branch runs all bookings (online, phone, walk-in) in ClinicFlow for two weeks; zero double bookings; the queue board is used by desk, nurses and doctors; no-show rate measured.
+**FRs:** FR-SCH-01…10, FR-APT-02…07, FR-APT-09, FR-APT-10, FR-FD-01…06, FR-FD-08, FR-NTF-03…06, FR-SVC-04, FR-RPT-01 (operational part), FR-RPT-04, FR-RPT-11 (charts 1, 2, 4), FR-PAT-01, FR-PAT-02, FR-PAT-08, FR-PAT-09.
+**Deliverables:** schedules per branch with shifts, rooms, exceptions, leave and the reschedule worklist; rolling slot generation per branch; booking on behalf, walk-ins, check-in, queue board with SignalR, waiting-room display; reschedule and no-show; **booking confirmations and reminders by SMS, email or both, as the patient chooses**; patient registration with duplicate detection; portal booking by branch and service with prices; consent capture; **admin dashboard** with KPI tiles and three of the four charts; data migration steps 6–9.
+**Exit criteria:** the pilot branch runs all bookings (online, phone, walk-in) in ClinicFlow for two weeks; zero double bookings; the queue board is used by desk, nurses and doctors; no-show rate measured and shown on the dashboard.
 
-### P3: Clinical records (EMR)
+### P3: Billing and payments
+
+**Goal:** every visit is billed, the receptionist takes the money, and every pound is reconciled. Works without an accountant.
+
+**FRs:** FR-BIL-01…03, FR-BIL-05…15, FR-APT-08, FR-FD-07, FR-SVC-06, FR-RPT-05, FR-RPT-06, FR-RPT-07, FR-RPT-11 (chart 3), FR-PAT-03, FR-PAT-04.
+**Deliverables:** invoices from visits (from the booked service and manual lines until EMR ships); **desk checkout by the receptionist** (amount due minus any deposit, cash or card, receipt); discounts with approvals; refunds; cash sessions; branch numbering; daily close by the manager; **optional Paymob deposits** (hosted checkout, HMAC-verified webhook, refunds) and online payment of open invoices; no-show fees; patient balances and statements; approvals inbox; the revenue chart.
+**Exit criteria:** penetration test of the payment flows passed; the pilot branch closes every day in ClinicFlow for two weeks with recorded variances and **no accountant involved**; 100% of completed visits invoiced; a Paymob sandbox and then a live deposit is received, deducted at the desk and refunded once; the manager signs off the daily close report against the POS terminal and the Paymob settlement.
+
+### P4: Clinical records (EMR)
 
 **Goal:** every visit has a structured, signed record.
 
 **FRs:** FR-EMR-01…15, FR-APT-11, FR-RPT-09, FR-AUD-02, FR-PAT-05, FR-PAT-06.
-**Deliverables:** encounters, triage vitals, SOAP templates, ICD-10, prescriptions with allergy checks and PDFs, orders, attachments with storage and scanning, signing and addenda, voids, history timeline, patient visit summaries, read logging, break-glass; data migration step 10.
+**Deliverables:** encounters, triage vitals, SOAP templates, ICD-10, prescriptions with allergy checks and PDFs, orders, clinical attachments (on P1's file storage), signing and addenda, voids, history timeline, patient visit summaries, read logging, break-glass; the "encounter exists" guard on completing a visit; data migration step 10.
 **Exit criteria:** penetration test passed; privacy checklist items P1, P3, P4 done ([08 §5](08_SECURITY_PRIVACY_COMPLIANCE.md#5-privacy-and-consent)); ≥ 90% of pilot visits have a signed encounter within 24 h; doctors' documentation time measured and accepted by the medical director.
-
-### P4: Billing and payments
-
-**Goal:** every visit is billed and every pound is reconciled.
-
-**FRs:** FR-BIL-01…03, FR-BIL-05…15, FR-APT-08, FR-FD-07, FR-SVC-06, FR-RPT-05, FR-RPT-06, FR-RPT-07, FR-PAT-03, FR-PAT-04.
-**Deliverables:** invoices from visits, discounts with approvals, payments by all methods, online gateway with webhooks, receipts, refunds, cash sessions, branch numbering, daily close, deposits and no-show fees, patient balances and statements, approvals inbox.
-**Exit criteria:** penetration test of payment flows passed; the pilot branch closes every day in ClinicFlow for two weeks with recorded variances; 100% of completed visits invoiced; the accountant signs off the daily close report against the bank and the POS terminal.
 
 ### P5: Insurance
 
@@ -89,44 +102,61 @@ Each phase ends with a **phase review**: exit criteria met, docs updated (`API_C
 **Goal:** managers decide from data; the platform is ready for more organizations.
 
 **FRs:** FR-RPT-02, FR-RPT-03, FR-RPT-10, FR-APT-12, FR-PAT-07.
-**Deliverables:** reporting tables and dashboards, exports, waitlist, dependants; V3 readiness review (tenant resolution by host, platform-operator role design, organization onboarding flow, per-organization settings and branding).
+**Deliverables:** reporting tables, report pages and exports (the dashboard stays at four charts), waitlist, dependants; V3 readiness review (tenant resolution by host, platform-operator role design, organization onboarding flow, per-organization settings and branding).
 **Exit criteria:** success metrics of [01 §3](01_VISION_AND_SCOPE.md#3-goals) reported monthly; V3 readiness review signed off.
+
+### P7: Chatbot
+
+**Goal:** patients get quick answers and find slots by chatting, in Arabic or English.
+
+**FRs:** FR-BOT-01.
+**Deliverables:** scope and provider decided (Q16); the assistant in the patient portal, grounded in clinic data and an approved FAQ, booking through the normal booking endpoint ([06 §9.5](06_TECHNICAL_DESIGN.md#95-chatbot-p7)).
+**Exit criteria:** answers checked against a test set of common questions in both languages; no medical advice in a red-team test; cost per conversation measured and within the agreed cap.
 
 ### Not in V2
 
-FR-BIL-16 (e-receipt integration) and FR-INS-13 (electronic payer integration) are *Won't* for V2 and revisited after GA, depending on the open questions below.
+FR-BIL-16 (e-receipt integration) and FR-INS-13 (electronic payer integration) are *Won't* for V2 and revisited after GA, depending on the open questions below. WhatsApp (part of FR-NTF-01) is *Could* and comes after SMS works.
 
 ## 3. Dependencies
 
 ```mermaid
 flowchart LR
-    P0[P0 Foundation] --> P1[P1 Org, staff, catalog]
+    P0[P0 Foundation] --> P1[P1 Org, staff, catalog,<br/>recruitment, sign-up]
     P1 --> P2[P2 Scheduling + front desk]
-    P2 --> P3[P3 EMR]
-    P2 --> P4[P4 Billing]
-    P3 -. diagnoses on claims .-> P5[P5 Insurance]
-    P4 --> P5
-    P4 --> P6[P6 Reporting]
+    P2 --> P3[P3 Billing + Paymob]
+    P2 --> P4[P4 EMR]
+    P3 --> P5[P5 Insurance]
+    P4 -. diagnoses on claims .-> P5
+    P3 --> P6[P6 Reporting]
     P5 --> P6
+    P6 --> P7[P7 Chatbot]
 ```
 
-External dependencies: payment gateway contract and sandbox (needed at P4 start), SMS/WhatsApp provider and approved templates (P2), hosting and storage decisions (P0), legal sign-off on the privacy checklist (before P3 go-live), payer claim formats (P5 start).
+External dependencies:
+- **P0:** hosting and storage decisions.
+- **P1:** an SMS provider and Arabic/English sender-name approval.
+- **P3:** a Paymob merchant account (contract, sandbox, then live keys); start onboarding during P2.
+- **P4:** legal sign-off on the privacy checklist before go-live.
+- **P5:** payer claim formats.
+- **P7:** an LLM provider and its data terms.
 
 ## 4. Risks
 
 | # | Risk | Likelihood | Impact | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R1 | Scope is too large for the team; phases slip | High | High | Strict MoSCoW; *Should*/*Could* items move to the next phase rather than delay a phase; phase reviews re-plan | Product owner |
-| R2 | Legal requirements (licence, hosting location, retention) delay the EMR go-live | Medium | High | Start legal review in P0; hosting decision before P1; P3 can pilot with consent-based processing once confirmed | Clinic management |
-| R3 | Free-text doctor addresses don't map cleanly to branches | High | Low | Manual branch mapping sheet ([09 §2](09_MIGRATION_FROM_V1.md#2-data-migration)) | Backend lead |
-| R4 | Frontend capacity (separate repo) lags behind the backend | Medium | High | Shared phase exit criteria; API-first with mock servers from `openapi.json` | Tech lead |
+| R1 | Scope is too large for **one developer**; phases slip | High | High | Strict MoSCoW; *Should*/*Could* items move to the next phase rather than delay a phase; each phase estimated at kickoff; Claude used for routine code, tests and docs; phase reviews re-plan | Developer + product owner |
+| R2 | Legal requirements (licence, hosting location, retention) delay the EMR go-live | Medium | High | Start legal review in P0; hosting decision before P1; EMR moved to P4 so billing ships first | Clinic management |
+| R3 | Free-text doctor addresses don't map cleanly to branches | High | Low | Manual branch mapping sheet ([09 §2](09_MIGRATION_FROM_V1.md#2-data-migration)) | Developer |
+| R4 | The frontend (separate repo, same developer) lags behind the backend | Medium | High | Each phase's exit criteria include its frontend track; API-first with mocks from `openapi.json`; backend of the next phase starts only after the current frontend is usable | Developer |
 | R5 | Staff resistance; front desk falls back to paper | Medium | High | Pilot branch, super-users, training sandbox, measure adoption weekly, fix friction quickly | Branch managers |
-| R6 | Insurer formats differ and change | High | Medium | Configurable export templates per payer; start with the top three payers | Accountant + backend |
-| R7 | Payment gateway onboarding takes longer than expected | Medium | Medium | Start the contract in P2; P4 can go live with cash/card POS and add online payments later | Clinic management |
+| R6 | Insurer formats differ and change | High | Medium | Configurable export templates per payer; start with the top three payers | Developer + clinic |
+| R7 | Paymob onboarding takes longer than expected | Medium | Medium | Start the merchant application in P2; P3 can go live with desk payments only (cash and POS) and add online deposits later, because deposits are optional | Clinic management |
 | R8 | Internet outage at a branch stops the front desk | Medium | High | Offline is out of scope; mitigate with a backup 4G link and a printed day list exported each morning; revisit offline support if outages are frequent | IT |
 | R9 | A security incident exposes medical data | Low | Very high | [08](08_SECURITY_PRIVACY_COMPLIANCE.md) controls, pen tests before P3/P4, audit and alerts, incident runbook | IT + DPO |
-| R10 | Real-time queue doesn't scale with more instances | Low | Medium | Single instance at first; SignalR backplane when scaling | Backend lead |
+| R10 | Real-time queue doesn't scale with more instances | Low | Medium | Single instance at first; SignalR backplane when scaling | Developer |
 | R11 | Doctors find structured notes slower than free text | Medium | Medium | Specialty templates, free-text sections allowed, measure documentation time in the pilot | Medical director |
+| R12 | SMS cost or abuse (code pumping) grows; SMS delivery in Egypt is unreliable | Medium | Medium | Caps, cooldowns and a spend alert ([08 §2](08_SECURITY_PRIVACY_COMPLIANCE.md#2-threats-and-controls)); delivery receipts; email as a fallback channel when the patient has one; a second provider behind `ISmsSender` if needed | Developer |
+| R13 | The chatbot gives wrong or unsafe answers | Medium | Medium | Built last; grounded in clinic data only; no medical advice; red-team test before launch | Developer + medical director |
 
 ## 5. Open questions
 
@@ -134,21 +164,22 @@ Each needs an owner and a decision date at the phase where it's needed.
 
 | # | Question | Needed by | Options / notes |
 |---|---|---|---|
-| Q1 | Which payment gateway? | P4 (contract in P2) | Paymob, Fawry, Kashier: compare fees, settlement time, refunds API, card + wallet support |
-| Q2 | Which SMS / WhatsApp provider? | P2 | Local SMS aggregator vs international (Twilio, Vonage); WhatsApp Business template approval lead time |
+| Q1 | ~~Which payment gateway?~~ | — | **Decided 2026-10-22: Paymob** (hosted checkout, cards and wallets) |
+| Q2 | Which SMS provider (and later WhatsApp)? | **P1** (sign-up codes) | A local Egyptian SMS aggregator vs an international one (Twilio, Vonage): compare price per Arabic segment, delivery rates on Egyptian networks, sender-name registration time |
 | Q3 | Where is the system hosted, and may data leave Egypt? | P0 | Depends on the legal answer (08 P6); affects storage and provider choices |
-| Q4 | Is the clinic in scope of the Egyptian Tax Authority e-receipt / e-invoice system? | P4 | If yes, FR-BIL-16 becomes *Must* and P4 grows |
-| Q5 | Which insurers / TPAs does the clinic work with, and what are their claim formats and deadlines? | P5 | Collect sample files from the accountant |
+| Q4 | Is the clinic in scope of the Egyptian Tax Authority e-receipt / e-invoice system? | P3 | If yes, FR-BIL-16 becomes *Must* and P3 grows |
+| Q5 | Which insurers / TPAs does the clinic work with, and what are their claim formats and deadlines? | P5 | Collect sample files from the clinic |
 | Q6 | Does the clinic participate in the Universal Health Insurance system? | P5 | Would require a separate integration project |
-| Q7 | Drug catalog source for prescriptions? | P3 | Free text only, a licensed Egyptian drug database, or a clinic-maintained list |
-| Q8 | Deposit and no-show fee policy? | P4 | Which services, amounts, refund rules |
+| Q7 | Drug catalog source for prescriptions? | P4 | Free text only, a licensed Egyptian drug database, or a clinic-maintained list |
+| Q8 | Deposit policy? | P3 | **Partly decided 2026-10-22:** deposits are optional and never block a booking. Still open: the amount per service, and whether a cancelled deposit is refunded or kept (and the no-show fee) |
 | Q9 | May doctors edit their own schedules, or only request changes? | P2 | Setting exists; the default needs a decision |
-| Q10 | Retention periods for clinical and financial records? | P3 | Legal answer (08 §6) |
-| Q11 | Who are the medical director(s) and the DPO? | P1 | Needed for approvals and privacy duties |
+| Q10 | Retention periods for clinical and financial records, and for rejected applicants' CVs? | P1 (CVs), P4 | Legal answer (08 §6); CV default 6 months |
+| Q11 | Who are the medical director(s) and the DPO? | P1 | Needed for approvals and privacy duties. (Who reviews doctor applications is decided: holders of `recruitment.manage`, Managers by default) |
 | Q12 | Keep `BackgroundService` jobs or adopt Hangfire? | P2 | Decide when jobs need retries and dashboards |
-| Q13 | PDF library: QuestPDF licence vs HTML → PDF? | P3 | Depends on the clinic's revenue tier and Arabic rendering tests |
+| Q13 | PDF library: QuestPDF licence vs HTML → PDF? | P3 | Receipts need it first now; depends on the clinic's revenue tier and Arabic rendering tests |
 | Q14 | Waiting-room display hardware? | P2 | Smart TV browser vs small PC per branch |
 | Q15 | Doctor revenue share: report only, or calculate payouts? | P6 | V2 reports revenue per doctor; payouts are out of scope unless decided |
+| Q16 | Chatbot scope, LLM provider and data rules? | P7 | FAQ only vs FAQ + booking; e.g. the Claude API; what patient data may be sent (legal); cost cap |
 
 ## 6. Decisions log
 
@@ -160,3 +191,15 @@ Each needs an owner and a decision date at the phase where it's needed.
 | 2026-10-09 | Appointment state machine in the entity | [ADR 0004](adr/0004-appointment-state-machine.md) |
 | 2026-10-09 | `/api/v2` prefix; V1 frozen then removed | [ADR 0005](adr/0005-api-v2-versioning.md) |
 | 2026-10-09 | Modules in V2: EMR, billing and payments, insurance; inventory out of scope | [01 §4](01_VISION_AND_SCOPE.md#4-scope) |
+| 2026-10-22 | V2 is **contract 4.0.0** (V1 used 2.0.0 and is at 3.1.2) | [ADR 0005](adr/0005-api-v2-versioning.md) (amended) |
+| 2026-10-22 | Lists keep V1's shape: JSON array + `X-Total-Count`; no `PagedResponse<T>` envelope | [07 §3](07_API_DESIGN.md#3-conventions) |
+| 2026-10-22 | One developer; phases sized S/M/L and estimated at kickoff; no calendar dates | §1 |
+| 2026-10-22 | Doctors join by **application** (CV, optional cover letter; Applied → Interview → Accepted, with stage emails); reviewing is the `recruitment.*` permission, Manager by default; no HR role | [04 §4.14](04_FUNCTIONAL_REQUIREMENTS.md#414-recruitment-rec) |
+| 2026-10-22 | Patients sign up with a **mobile number verified by SMS**; email optional; login with phone or email | [04 §4.15](04_FUNCTIONAL_REQUIREMENTS.md#415-accounts-and-sign-in-acc) |
+| 2026-10-22 | Patients choose **SMS, email or both** for confirmations and reminders; every message in the user's language (Arabic default) | FR-NTF-04, R10 |
+| 2026-10-22 | Payment gateway: **Paymob**; deposits are **optional**, a booking is confirmed without one; the **receptionist** collects at the desk; billing works without an accountant | FR-APT-08, FR-BIL-05, FR-BIL-06 |
+| 2026-10-22 | Billing (P3) before EMR (P4) | §1 |
+| 2026-10-22 | Admin dashboard: KPI tiles and at most four charts | FR-RPT-11 |
+| 2026-10-22 | Chatbot is the last phase (P7) | FR-BOT-01 |
+| 2026-10-22 | Keep Clean Architecture as a modular monolith; SOLID rules enforced by architecture tests; **CQRS-lite** (separate command and query services, no MediatR, one database); patterns adopted on merit, for new code and enhancements; no microservices or event sourcing | [ADR 0006](adr/0006-clean-architecture-modular-monolith.md) |
+| 2026-10-22 | Every finished or changed service ships with unit tests for its methods, plus integration tests where HTTP behaviour matters | [06 §2.1](06_TECHNICAL_DESIGN.md#21-design-principles), CLAUDE.md |
