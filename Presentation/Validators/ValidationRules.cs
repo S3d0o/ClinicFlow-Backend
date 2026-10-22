@@ -9,6 +9,14 @@ namespace Presentation.Validators
         public static IRuleBuilderOptions<T, string?> ValidPhoneNumber<T>(this IRuleBuilder<T, string?> rule, string label = "Phone number")
             => rule.Matches(PhonePattern).WithMessage($"{label} must be in E.164 format.");
 
+        // An absolute http(s) URL. UriKind.Absolute alone isn't enough: on Linux (the Docker image) it also accepts
+        // "/images/me.png" as a file:// URI, and on every OS it accepts schemes such as javascript: or file:
+        public static IRuleBuilderOptions<T, string?> AbsoluteHttpUrl<T>(this IRuleBuilder<T, string?> rule, string label)
+            => rule
+                .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                    && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
+                .WithMessage($"{label} must be an absolute http or https URL.");
+
         public static IRuleBuilderOptions<T, string> StrongPassword<T>(this IRuleBuilder<T, string> rule)
             => rule
                 .NotEmpty().WithMessage("Password is required.")

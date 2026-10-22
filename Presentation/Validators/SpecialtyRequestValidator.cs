@@ -17,8 +17,7 @@ namespace Presentation.Validators
                 .When(x => x.Description is not null);
 
             RuleFor(x => x.IconUrl)
-                .Must(uri => Uri.TryCreate(uri, UriKind.Absolute, out _))
-                .WithMessage("IconUrl must be a valid URL.")
+                .AbsoluteHttpUrl("IconUrl")
                 .When(x => x.IconUrl is not null);
         }
     }
