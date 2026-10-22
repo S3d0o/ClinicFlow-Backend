@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Unit tests: `dotnet test ClinicFlow.Tests`
 - Integration tests: `dotnet test ClinicFlow.IntegrationTests`. **Docker must be running**, because Testcontainers starts a SQL Server 2022 container.
 - Single test or class: `dotnet test ClinicFlow.Tests --filter "FullyQualifiedName~BookAppointmentAsyncTests"` (or `~ClassName.MethodName`)
-- Docker image: `docker build -t clinicflow-backend .` (the Dockerfile is at the repo root). `docker compose up` runs db + backend + frontend.
+- Docker image: `docker build -t clinicflow-backend-v2 .` (the Dockerfile is at the repo root). `docker compose up` runs the V2 stack (compose project `clinicflow-v2`): db on `127.0.0.1:1434`, backend on 5002, frontend on 3001, so it never collides with V1's stack (1433, 5001, 3000).
 - Packages: `dotnet list ClinicFlow.slnx package --vulnerable --include-transitive` and `dotnet list ClinicFlow.slnx package --outdated`
 
 No linter or CI workflow is configured.
@@ -31,13 +31,14 @@ No linter or CI workflow is configured.
 ## Configuration and secrets
 
 Nothing secret lives in `appsettings.json`, and nothing secret should be added to it. Supply secrets from one of these sources:
-- user secrets (`UserSecretsId` is set in `ClinicFlow/ClinicFlow.csproj`)
-- the git-ignored `ClinicFlow/appsettings.Development.json`
+- user secrets (`UserSecretsId` is set in `ClinicFlow/ClinicFlow.csproj`; V2 has its own id, so its secrets are separate from V1's)
+- the git-ignored `ClinicFlow/appsettings.Development.json`. It is **shared by both branches** because it lives in the working tree, and it normally points at V1's `ClinicFlow` database. Put V2's connection string in V2's user secrets, which override the file.
 - environment variables, using `__` as the separator (e.g. `JwtSettings__Secret`)
 
 | Key | Required | Notes |
 |---|---|---|
-| `ConnectionStrings:DefaultConnection` | Yes | Startup throws without it (`InfraStructureServiceExtensions.cs`). Integration tests need it too, because `Program` registers services before the test factory swaps in the Testcontainers DbContext; any value works there |
+| `ConnectionStrings:DefaultConnection` | Yes | Startup throws without it, and also when it names any database other than `Database:ExpectedName` (`InfraStructureServiceExtensions.cs`). That check also stops `dotnet ef` from migrating V1's database. Integration tests don't need it: `ClinicFlowApiFactory` sets it, with the expected name and a JWT secret, to the Testcontainers database `ClinicFlowV2TestDb` |
+| `Database:ExpectedName` | No | Default `ClinicFlowV2` (in `appsettings.json`). The only database V2 will start against (`docs/v2/adr/0007-v2-separate-product-line.md`) |
 | `JwtSettings:Secret` | Yes | HMAC-SHA256 key, at least 32 bytes. **Validated at startup** (`ValidateOnStart`), along with issuer, audience and lifetimes, which live in `appsettings.json` |
 | `EmailSettings:Username`, `EmailSettings:Password`, `EmailSettings:FromAddress` | For email | SMTP (Gmail, port 587, StartTLS). Host, port and from-name are in `appsettings.json` |
 | `Frontend:BaseUrl` | No | Default `http://localhost:3000`. Used for the CORS origin and for links in emails |
@@ -47,14 +48,14 @@ Nothing secret lives in `appsettings.json`, and nothing secret should be added t
 | `Seeding:AdminEmail`, `Seeding:AdminPassword` | No | When both are set, an admin with these credentials is created on startup if one doesn't exist |
 
 ```
-dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=localhost,1433;Database=ClinicFlow;User Id=sa;Password=<pwd>;TrustServerCertificate=True" --project ClinicFlow
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=localhost,1433;Database=ClinicFlowV2;User Id=sa;Password=<pwd>;TrustServerCertificate=True" --project ClinicFlow
 dotnet user-secrets set "JwtSettings:Secret" "<at-least-32-byte-random-string>" --project ClinicFlow
 dotnet user-secrets set "EmailSettings:Username" "<smtp user>" --project ClinicFlow
 dotnet user-secrets set "EmailSettings:Password" "<smtp app password>" --project ClinicFlow
 dotnet user-secrets set "EmailSettings:FromAddress" "<from address>" --project ClinicFlow
 ```
 
-- `docker-compose.yml` reads `DB_PASSWORD`, `APP_DB_PASSWORD`, `JWT_SECRET`, `EMAIL_USERNAME`, `EMAIL_PASSWORD`, `EMAIL_FROM_ADDRESS` and optionally `ADMIN_EMAIL` / `ADMIN_PASSWORD` and `SEED_DEMO_DATA` from `.env` (git-ignored, also excluded from the Docker build context). It runs with `ASPNETCORE_ENVIRONMENT=Production`, so it creates no demo data unless `SEED_DEMO_DATA=true` (local demos only). SQL Server is published on `127.0.0.1:1433` only. The backend connects as `clinicflow_app`, which the one-shot `db-init` service creates with `docker/db-init.sql`; only `db` and `db-init` use `sa`.
+- `docker-compose.yml` reads `DB_PASSWORD`, `APP_DB_PASSWORD`, `JWT_SECRET`, `EMAIL_USERNAME`, `EMAIL_PASSWORD`, `EMAIL_FROM_ADDRESS` and optionally `ADMIN_EMAIL` / `ADMIN_PASSWORD` and `SEED_DEMO_DATA` from `.env` (git-ignored, also excluded from the Docker build context). It runs with `ASPNETCORE_ENVIRONMENT=Production`, so it creates no demo data unless `SEED_DEMO_DATA=true` (local demos only). SQL Server is published on `127.0.0.1:1434` only (V1's stack uses 1433), with its own volume `clinicflow_v2_data`. The backend connects to `ClinicFlowV2` as `clinicflow_v2_app`, which the one-shot `db-init` service creates with `docker/db-init.sql` (database and login names come from `APP_DATABASE` / `APP_LOGIN`); only `db` and `db-init` use `sa`. Both stacks read the same `.env`.
 - Serilog writes to the console, `logs/log-.txt` and Seq at `http://localhost:5341`. Seq is optional; if it isn't running, that sink simply drops events.
 - Client IPs come from `Connection.RemoteIpAddress`. `X-Forwarded-For` is applied by `UseForwardedHeaders`, which trusts loopback only; add the proxy to `ForwardedHeadersOptions.KnownProxies` (`WebApiExtensions.cs`) when deploying behind one.
 - Demo logins (Development, or `Seeding:DemoData=true`) are listed in the doc comment at the top of `Persistance/AppData/DataSeeder.cs`, e.g. `admin@clinicflow.com / Admin@1234`. Generated accounts are `doctor01`…`doctor53@clinicflow.test` (`Doctor@1234`; 49–53 are pending approval, 46–48 suspended) and `patient01`…`patient75@clinicflow.test` (`Patient@1234`).
@@ -93,7 +94,7 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
 - **Two product lines** (`docs/v2/adr/0007-v2-separate-product-line.md`):
   - **`master` is V1.** V1 is finished and stays untouched. Change it only when the owner explicitly asks for a V1 fix.
   - **`v2` is V2.** It has its own database, `ClinicFlowV2`; never point V2 at V1's database or run V2 migrations against it.
-  - **Separation isn't done yet.** Until P0's separation step lands, the `v2` branch still shares V1's `UserSecretsId` and database name. Don't run `dotnet run` or `dotnet ef database update` on `v2` before that step (`docs/v2/10_ROADMAP.md` P0).
+  - **Separation is enforced** (P0 PR 0): `v2` has its own `UserSecretsId`, and startup refuses any database but `ClinicFlowV2` (`Database:ExpectedName`). Never weaken that check or point `ExpectedName` at V1's database.
   - **V1 fixes:** when one lands on `master`, check whether it applies to `v2` and cherry-pick it.
 - **Every new V2 feature gets its own branch off `v2`.** Create the branch before writing any code: `git switch v2 && git pull && git switch -c feature/p<phase>-<kebab-case-name>`. Merge it back into `v2`. Never build a feature on `v2`, `master` or another feature's branch.
 - **V1 fixes**, only when asked: branch off `master` as `fix/<name>`.

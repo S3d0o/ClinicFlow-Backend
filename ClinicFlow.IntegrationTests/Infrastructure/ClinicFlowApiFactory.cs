@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -30,12 +31,27 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
             await base.DisposeAsync();
         }
 
+        private const string TestDatabaseName = "ClinicFlowV2TestDb";
+
+        // The Testcontainers server, pointed at the test database instead of master
+        private string TestConnectionString => new SqlConnectionStringBuilder(_dbContainer.GetConnectionString())
+        {
+            InitialCatalog = TestDatabaseName
+        }.ConnectionString;
+
         // Override the ConfigureWebHost method to configure the test server
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             // Every test class resets the database and seeds its own data, so the large demo clinic
             // (DataSeeder.LargeDemo.cs) would only slow down the test host's startup
             builder.UseSetting("Seeding:DemoData", "false");
+
+            // Program reads these before this factory swaps the DbContext below. Set them here, so the tests don't
+            // depend on local secrets: the shared appsettings.Development.json names V1's database, which the
+            // V2 database guard rejects (docs/v2/adr/0007), and CI has no secrets at all
+            builder.UseSetting("ConnectionStrings:DefaultConnection", TestConnectionString);
+            builder.UseSetting("Database:ExpectedName", TestDatabaseName);
+            builder.UseSetting("JwtSettings:Secret", "integration-tests-only-signing-key-0123456789");
 
             builder.ConfigureServices(services =>
             {
@@ -49,8 +65,7 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
                 }
 
                 // 2. Register the test DbContext pointing at the Testcontainers DB
-                services.AddDbContext<ClinicDbContext>(opt=>
-                opt.UseSqlServer(_dbContainer.GetConnectionString() + ";Database=ClinicFlowTestDb;"));
+                services.AddDbContext<ClinicDbContext>(opt => opt.UseSqlServer(TestConnectionString));
 
                 // 3. (Optional) Disable hosted services that shouldn't run during tests
                 // e.g. background email reminders

@@ -1,17 +1,21 @@
+# V2 stack. V1 (master) has its own compose project, database and ports, so both can run side by side
+# without touching each other (docs/v2/adr/0007-v2-separate-product-line.md)
+name: clinicflow-v2
+
 services:
 
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: clinicflow-db
+    container_name: clinicflow-v2-db
     restart: unless-stopped
     environment:
       SA_PASSWORD: ${DB_PASSWORD}
       ACCEPT_EULA: "Y"
       MSSQL_PID: "Developer"
     ports:
-      - "127.0.0.1:1433:1433" # host-only; the backend reaches SQL Server over the compose network
+      - "127.0.0.1:1434:1433" # host-only; V1 uses 1433. The backend reaches SQL Server over the compose network
     volumes:
-      - clinicflow_data:/var/opt/mssql
+      - clinicflow_v2_data:/var/opt/mssql
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P ${DB_PASSWORD} -Q 'SELECT 1' -C"]
       interval: 10s
@@ -23,13 +27,14 @@ services:
   # doesn't connect as sa (REVIEW.md NM6). Uses sqlcmd from the SQL Server image.
   db-init:
     image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: clinicflow-db-init
+    container_name: clinicflow-v2-db-init
     depends_on:
       db:
         condition: service_healthy
     environment:
       SQLCMDPASSWORD: ${DB_PASSWORD}
-      APP_LOGIN: clinicflow_app
+      APP_DATABASE: ClinicFlowV2
+      APP_LOGIN: clinicflow_v2_app
       APP_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env (see .env.example)}
     volumes:
       - ./docker/db-init.sql:/db-init.sql:ro
@@ -49,8 +54,8 @@ services:
     restart: "no"
 
   backend:
-    image: clinicflow-backend
-    container_name: clinicflow-backend
+    image: clinicflow-backend-v2
+    container_name: clinicflow-v2-backend
     # Safety net: startup already retries while SQL Server recovers (DataSeeder.MigrateWithRetryAsync)
     restart: unless-stopped
     depends_on:
@@ -59,12 +64,13 @@ services:
       db-init:
         condition: service_completed_successfully
     environment:
-      ConnectionStrings__DefaultConnection: "Server=db;Database=ClinicFlow;User Id=clinicflow_app;Password=${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env (see .env.example)};MultipleActiveResultSets=true;TrustServerCertificate=True"
+      ConnectionStrings__DefaultConnection: "Server=db;Database=ClinicFlowV2;User Id=clinicflow_v2_app;Password=${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env (see .env.example)};MultipleActiveResultSets=true;TrustServerCertificate=True"
       ASPNETCORE_ENVIRONMENT: "Production"
       ASPNETCORE_URLS: "http://+:8080"
       JwtSettings__Secret: ${JWT_SECRET}
       JwtSettings__Issuer: "http://backend:8080"
-      JwtSettings__Audience: "http://localhost:3000"
+      JwtSettings__Audience: "http://localhost:3001"
+      Frontend__BaseUrl: "http://localhost:3001" # CORS origin and email links: the V2 frontend's port
       JwtSettings__AccessTokenExpirationMinutes: "15"
       JwtSettings__RefreshTokenExpirationDays: "7"
       JwtSettings__TheftDetectionWindowMinutes: "5"
@@ -77,15 +83,16 @@ services:
       # Local demos only: SEED_DEMO_DATA=true loads the demo clinic (published passwords). Never on a real deployment
       Seeding__DemoData: ${SEED_DEMO_DATA:-false}
     ports:
-      - "5001:8080"
+      - "5002:8080" # V1 uses 5001
 
+  # The V2 frontend image, built from the frontend repo's v2 branch (V1's is clinicflow-frontend on port 3000)
   frontend:
-    image: clinicflow-frontend
-    container_name: clinicflow-frontend
+    image: clinicflow-frontend-v2
+    container_name: clinicflow-v2-frontend
     depends_on:
       - backend
     ports:
-      - "3000:80"
+      - "3001:80"
 
 volumes:
-  clinicflow_data:
+  clinicflow_v2_data:

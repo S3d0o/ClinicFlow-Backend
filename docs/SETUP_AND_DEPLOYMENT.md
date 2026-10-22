@@ -2,6 +2,8 @@
 
 How to run the API locally, configure it, test it, and deploy it. For what the system does, see [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md). For the API itself, see [API_CONTRACT.md](API_CONTRACT.md).
 
+> **V2 (`v2` branch).** V2 is a separate product line with its own database, `ClinicFlowV2` ([ADR 0007](v2/adr/0007-v2-separate-product-line.md)). This branch has its own user-secrets id, and the app **refuses to start against any other database**, including V1's `ClinicFlow`. That check also covers `dotnet ef`. Its compose stack uses its own project name, volume and ports. The git-ignored `appsettings.Development.json` is shared with V1 (same working tree) and normally names V1's database, so set V2's connection string in V2's user secrets, which take precedence.
+
 ---
 
 ## 1. Prerequisites
@@ -20,7 +22,8 @@ How to run the API locally, configure it, test it, and deploy it. For what the s
 
 | Key | Required | Default / notes |
 |---|---|---|
-| `ConnectionStrings:DefaultConnection` | **Yes** | The app refuses to start without it |
+| `ConnectionStrings:DefaultConnection` | **Yes** | The app refuses to start without it, or when it names a database other than `Database:ExpectedName` |
+| `Database:ExpectedName` | No | `ClinicFlowV2` in `appsettings.json`: the only database V2 starts against |
 | `JwtSettings:Secret` | **Yes** | At least 32 bytes. Checked at startup |
 | `JwtSettings:Issuer`, `JwtSettings:Audience` | Yes | Set in `appsettings.json` (`https://localhost:7129` / `https://localhost:3000`) |
 | `JwtSettings:AccessTokenExpirationMinutes` / `RefreshTokenExpirationDays` / `TheftDetectionWindowMinutes` | Yes | 15 / 7 / 5 in `appsettings.json` |
@@ -31,7 +34,7 @@ How to run the API locally, configure it, test it, and deploy it. For what the s
 | `Seeding:AdminEmail`, `Seeding:AdminPassword` | No | When both are set, an admin with these credentials is created at startup if one doesn't exist |
 
 ```bash
-dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=127.0.0.1,1433;Database=ClinicFlow;User Id=sa;Password=<pwd>;TrustServerCertificate=True" --project ClinicFlow
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=127.0.0.1,1433;Database=ClinicFlowV2;User Id=sa;Password=<pwd>;TrustServerCertificate=True" --project ClinicFlow
 dotnet user-secrets set "JwtSettings:Secret" "<random string of at least 32 characters>" --project ClinicFlow
 dotnet user-secrets set "EmailSettings:Username" "<smtp user>" --project ClinicFlow
 dotnet user-secrets set "EmailSettings:Password" "<smtp app password>" --project ClinicFlow
@@ -82,7 +85,7 @@ dotnet ef database update --project Persistance/Persistence.csproj --startup-pro
 dotnet ef migrations remove --project Persistance/Persistence.csproj --startup-project ClinicFlow
 ```
 
-`dotnet ef` builds the host, so `ConnectionStrings:DefaultConnection` must be configured. Startup also applies migrations automatically.
+`dotnet ef` builds the host, so `ConnectionStrings:DefaultConnection` must be configured, and it must name `ClinicFlowV2`. Startup also applies migrations automatically.
 
 ## 5. Tests
 
@@ -92,31 +95,31 @@ dotnet test ClinicFlow.IntegrationTests    # needs Docker running (starts SQL Se
 dotnet test ClinicFlow.Tests --filter "FullyQualifiedName~BookAppointmentAsyncTests"
 ```
 
-Integration tests also need `ConnectionStrings:DefaultConnection` and `JwtSettings:Secret` in the local configuration. The connection string's value is irrelevant, because the tests replace the database.
+Integration tests need no local configuration. `ClinicFlowApiFactory` sets the connection string (the Testcontainers database `ClinicFlowV2TestDb`), the expected database name and a test JWT secret itself.
 
 ## 6. Docker
 
 ### Image
 
 ```bash
-docker build -t clinicflow-backend .      # Dockerfile is at the repo root
+docker build -t clinicflow-backend-v2 .   # Dockerfile is at the repo root
 ```
 
 ### Compose (db + backend + frontend)
 
-1. Build `clinicflow-backend` (above) and `clinicflow-frontend` (from the frontend repo).
-2. Copy [`../.env.example`](../.env.example) to `.env` and fill it in.
-3. `docker compose up -d`
+1. Build `clinicflow-backend-v2` (above) and `clinicflow-frontend-v2` (from the frontend repo's `v2` branch).
+2. Copy [`../.env.example`](../.env.example) to `.env` and fill it in. V1's and V2's stacks read the same file.
+3. `docker compose up -d`. The compose project is `clinicflow-v2`, with its own containers and the volume `clinicflow_v2_data`, so V1's stack can run at the same time.
 
-| Service | URL |
+| Service | URL (V1's stack uses 3000 / 5001 / 1433) |
 |---|---|
-| Frontend | http://localhost:3000 |
-| Backend | http://localhost:5001 |
-| SQL Server | `127.0.0.1:1433` (host only) |
+| Frontend | http://localhost:3001 |
+| Backend | http://localhost:5002 |
+| SQL Server | `127.0.0.1:1434` (host only) |
 
 Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data** by default. Set `ADMIN_EMAIL` / `ADMIN_PASSWORD` to get a first admin. For a local demo, set `SEED_DEMO_DATA=true` in `.env` to load the demo clinic (published passwords: never on a real deployment).
 
-**Database login.** The backend doesn't connect as `sa`. Before it starts, the one-shot `db-init` service runs [`docker/db-init.sql`](../docker/db-init.sql) as `sa`. The script creates the `ClinicFlow` database and the login `clinicflow_app` with the password `APP_DB_PASSWORD`. That login is `db_owner` of `ClinicFlow` only, with no server-level rights. It needs DDL because the app applies migrations at startup. The script is idempotent, and it re-applies `APP_DB_PASSWORD`, so a changed password takes effect on the next `docker compose up`. **Upgrading from an `.env` without `APP_DB_PASSWORD`:** add it (and `EMAIL_FROM_ADDRESS`). Compose refuses to start without it. The existing database volume is kept, and the script adds the login to it.
+**Database login.** The backend doesn't connect as `sa`. Before it starts, the one-shot `db-init` service runs [`docker/db-init.sql`](../docker/db-init.sql) as `sa`. The script creates the `ClinicFlowV2` database and the login `clinicflow_v2_app` with the password `APP_DB_PASSWORD` (names from `APP_DATABASE` / `APP_LOGIN` in compose). That login is `db_owner` of `ClinicFlowV2` only, with no server-level rights. It needs DDL because the app applies migrations at startup. The script is idempotent, and it re-applies `APP_DB_PASSWORD`, so a changed password takes effect on the next `docker compose up`. **Upgrading from an `.env` without `APP_DB_PASSWORD`:** add it (and `EMAIL_FROM_ADDRESS`). Compose refuses to start without it. The existing database volume is kept, and the script adds the login to it.
 
 ## 7. Production checklist
 
@@ -129,7 +132,7 @@ Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data** by de
 - [ ] `RateLimiting:Auth` suits the deployment. The default is 10 requests per minute per client IP, shared across login, registration, confirm-email and the password-reset endpoints. Clients behind one NAT address share that budget.
 - [ ] Behind a reverse proxy, the proxy is added to `ForwardedHeadersOptions.KnownProxies` (`ClinicFlow/Extensions/WebApiExtensions.cs`). Otherwise client IPs show as the proxy's address.
 - [ ] HTTPS terminates at the proxy or at Kestrel.
-- [ ] The database login is a dedicated user, not `sa`. Compose does this with `db-init` (`clinicflow_app`, `db_owner` of `ClinicFlow` only); elsewhere, run [`docker/db-init.sql`](../docker/db-init.sql) the same way (REVIEW NM6).
+- [ ] The database login is a dedicated user, not `sa`. Compose does this with `db-init` (`clinicflow_v2_app`, `db_owner` of `ClinicFlowV2` only); elsewhere, run [`docker/db-init.sql`](../docker/db-init.sql) the same way (REVIEW NM6).
 - [ ] Only one instance runs the reminder job (there is no distributed lock yet; REVIEW M9).
 - [ ] Logs: the Seq URL is configured, or the Seq sink is removed; `logs/` is on persistent storage, if file logs are wanted.
 - [ ] The orchestrator restarts the container on failure (compose: `restart: unless-stopped`), and probes `GET /health` (liveness only; it doesn't check the database). Startup failures exit with 1.
@@ -139,6 +142,7 @@ Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data** by de
 | Symptom | Cause / fix |
 |---|---|
 | `Connection string 'DefaultConnection' not found` at startup | Set the connection string (section 2) |
+| `... points at database 'ClinicFlow', but V2 must use 'ClinicFlowV2'` at startup or from `dotnet ef` | The connection string comes from the shared `appsettings.Development.json`, which names V1's database. Set V2's own connection string with `Database=ClinicFlowV2` in V2's user secrets (section 2). Don't change `Database:ExpectedName` |
 | `OptionsValidationException: JwtSettings:Secret must be at least 32 bytes` | Set a longer secret |
 | `A network-related or instance-specific error … wait operation timed out` with `Server=localhost,<port>` | `localhost` may resolve to IPv6 while SQL Server is bound to IPv4. Use `127.0.0.1` |
 | Integration tests fail to start | Docker isn't running |

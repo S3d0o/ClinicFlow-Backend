@@ -20,6 +20,15 @@ namespace ClinicFlow.Extensions
             var connectionString = config.GetConnectionString("DefaultConnection")
                 ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
+            // V1 and V2 share the git-ignored appsettings.Development.json, which points at V1's database. Fail
+            // before anything (startup migrations, `dotnet ef`) can touch it (docs/v2/adr/0007-v2-separate-product-line.md)
+            var databaseSettings = config.GetSection("Database").Get<DatabaseSettings>() ?? new DatabaseSettings();
+            if (!databaseSettings.Allows(connectionString))
+                throw new InvalidOperationException(
+                    $"ConnectionStrings:DefaultConnection points at database '{DatabaseSettings.DatabaseName(connectionString) ?? "(none)"}', " +
+                    $"but V2 must use '{databaseSettings.ExpectedName}' (Database:ExpectedName). V2 never runs against V1's database. " +
+                    "Set the V2 connection string in user secrets or the environment.");
+
             services.AddDbContext<ClinicDbContext>(options =>
             {
                 options.UseSqlServer(connectionString);

@@ -11,6 +11,8 @@ ClinicFlow lets patients find doctors and book appointment slots, doctors publis
 
 This repository is the backend. The React frontend lives in its own repository, and both apps follow the shared **[API contract](docs/API_CONTRACT.md)**.
 
+> **This is the `v2` branch: ClinicFlow V2, in development.** V2 is a separate product line with its own database (`ClinicFlowV2`); V1 lives on `master` and is untouched. See [docs/v2](docs/v2/README.md) and [ADR 0007](docs/v2/adr/0007-v2-separate-product-line.md). The rest of this README still describes V1's features until V2 phases ship.
+
 > **Status: V1 complete.** Tagged `v1.0.0-rc1` in both repositories (API contract 3.1.2, 325 unit and 151 integration tests passing). Deployment is the next step; V2 is planned in [docs/v2](docs/v2/README.md).
 
 **→ [Frontend Repository](https://github.com/S3d0o/ClinicFlow-Frontend) · [Live API Docs](https://registry.scalar.com/@default-team-2gu37/apis/clinicflow-v1@1.0.0) · [Live Demo on LinkedIn](https://www.linkedin.com/posts/saad-mohamed-li_dotnet-csharp-react-ugcPost-7483058574588379136-R35x/?utm_source=social_share_send&utm_medium=member_desktop_web&rcm=ACoAAFtidxABr0vs0HxJVu7Xnwvp_d1T8J8FNdM)** *(video walkthrough)*
@@ -137,8 +139,8 @@ cd ClinicFlow-Backend
 # SQL Server (or use a local instance)
 docker run -d --name clinicflow-sql -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='<pwd>' -p 127.0.0.1:1433:1433 mcr.microsoft.com/mssql/server:2022-latest
 
-# required secrets
-dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=127.0.0.1,1433;Database=ClinicFlow;User Id=sa;Password=<pwd>;TrustServerCertificate=True" --project ClinicFlow
+# required secrets (V2 has its own user-secrets id; the database must be ClinicFlowV2, or startup refuses)
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=127.0.0.1,1433;Database=ClinicFlowV2;User Id=sa;Password=<pwd>;TrustServerCertificate=True" --project ClinicFlow
 dotnet user-secrets set "JwtSettings:Secret" "<at least 32 random characters>" --project ClinicFlow
 
 # run: applies migrations and seeds demo data in Development
@@ -163,13 +165,13 @@ dotnet test ClinicFlow.IntegrationTests    # integration tests (Docker must be r
 ## 🐳 Docker
 
 ```bash
-docker build -t clinicflow-backend .                        # Dockerfile is at the repo root
-docker build -t clinicflow-frontend -f DockerFile .         # run in the frontend repo
+docker build -t clinicflow-backend-v2 .                     # Dockerfile is at the repo root
+docker build -t clinicflow-frontend-v2 -f DockerFile .      # run in the frontend repo, on its v2 branch
 cp .env.example .env    # fill in DB_PASSWORD, APP_DB_PASSWORD, JWT_SECRET, EMAIL_*, optionally ADMIN_*
-docker compose up -d    # frontend http://localhost:3000, backend http://localhost:5001
+docker compose up -d    # frontend http://localhost:3001, backend http://localhost:5002, SQL 127.0.0.1:1434
 ```
 
-Compose runs SQL Server, a one-shot `db-init` that creates the app's own database login (the backend doesn't connect as `sa`), the backend and the frontend. It runs in Production mode with no demo accounts; set `SEED_DEMO_DATA=true` in `.env` to load the demo clinic on a local machine (never on a real deployment).
+Compose runs the V2 stack (project `clinicflow-v2`) next to V1's without sharing anything: SQL Server with its own volume, a one-shot `db-init` that creates the `ClinicFlowV2` database and the app's own login (the backend doesn't connect as `sa`), the backend and the frontend. It runs in Production mode with no demo accounts; set `SEED_DEMO_DATA=true` in `.env` to load the demo clinic on a local machine (never on a real deployment).
 
 ## 🔐 Authentication flow
 
