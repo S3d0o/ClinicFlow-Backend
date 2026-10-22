@@ -100,5 +100,18 @@ namespace ClinicFlow.Tests.Validators
             result.ShouldHaveValidationErrorFor(x => x.Description);
             result.ShouldHaveValidationErrorFor(x => x.IconUrl);
         }
+
+        // "/icons/heart.svg" passed on Linux, where Uri.TryCreate(UriKind.Absolute) reads it as a file:// path
+        [Theory]
+        [InlineData("/icons/heart.svg")]
+        [InlineData("javascript:alert(1)")]
+        [InlineData("file:///icons/heart.svg")]
+        public void Validate_NonHttpIconUrl_FailsOnIconUrl(string iconUrl)
+            => _validator.TestValidate(new SpecialtyRequest("Neurology", null, iconUrl)).ShouldHaveValidationErrorFor(x => x.IconUrl);
+
+        [Fact]
+        public void Validate_HttpsIconUrl_IsAllowed()
+            => _validator.TestValidate(new SpecialtyRequest("Neurology", null, "https://cdn.example.com/icons/heart.svg"))
+                .ShouldNotHaveAnyValidationErrors();
     }
 }

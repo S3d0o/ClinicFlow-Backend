@@ -101,6 +101,24 @@ namespace ClinicFlow.Tests.Validators
             => _validator.TestValidate(new UpdateUserProfileRequest { ProfilePictureUrl = "/images/me.png" })
                 .ShouldHaveValidationErrorFor(x => x.ProfilePictureUrl);
 
+        // On Linux, Uri.TryCreate(UriKind.Absolute) alone accepted "/images/me.png" as file:///images/me.png,
+        // and on every OS it accepted non-web schemes
+        [Theory]
+        [InlineData("javascript:alert(1)")]
+        [InlineData("file:///etc/passwd")]
+        [InlineData("ftp://example.com/me.png")]
+        [InlineData("images/me.png")]
+        public void Validate_NonHttpPictureUrl_FailsOnProfilePictureUrl(string url)
+            => _validator.TestValidate(new UpdateUserProfileRequest { ProfilePictureUrl = url })
+                .ShouldHaveValidationErrorFor(x => x.ProfilePictureUrl);
+
+        [Theory]
+        [InlineData("https://cdn.example.com/me.png")]
+        [InlineData("http://localhost:5143/uploads/me.png")]
+        public void Validate_HttpOrHttpsPictureUrl_IsAllowed(string url)
+            => _validator.TestValidate(new UpdateUserProfileRequest { ProfilePictureUrl = url })
+                .ShouldNotHaveValidationErrorFor(x => x.ProfilePictureUrl);
+
         [Fact]
         public void Validate_DateOfBirthTodayOrLater_FailsOnDateOfBirth()
             => _validator.TestValidate(new UpdateUserProfileRequest { DateOfBirth = DateOnly.FromDateTime(DateTime.UtcNow) })
