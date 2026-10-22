@@ -126,5 +126,5 @@ From [REVIEW.md](../REVIEW.md). **Status 2026-10-22:** V1 was finished on 2026-1
 | §4.7 | Role strings and hardcoded config | 🟡 | Role and permission constants; settings service | P0–P1 |
 | §4.9 | Startup migrations and seeding | 🟡 seeding gated by `Seeding:DemoData`; migrations still at startup | Migration bundle in the deploy step | P0 |
 | §4.10 | Little test coverage, no CI | 🟡 tests added through V1; no CI workflow | CI pipeline and architecture tests ([06 §12](06_TECHNICAL_DESIGN.md#12-testing-strategy)) | P0 |
-| — | AutoMapper logs that production use needs a paid licence | ⏸ (left open at V1 sign-off) | Decide: licence, pin a free version, or explicit mapping (preferred, [06 §2.1](06_TECHNICAL_DESIGN.md#21-design-principles)) | P0 |
+| — | AutoMapper logs that production use needs a paid licence | ⏸ (left open at V1 sign-off) | Deferred (Q17): licence, pin a free version, or explicit mapping ([06 §2.1](06_TECHNICAL_DESIGN.md#21-design-principles)); decided before V2 goes to production | Later |
 | Duplicated logic | Three cancel flows, two review routes, double specialty CRUD, validator copies | 🟡 | Replaced by the state machine, V2 routes and shared helpers | P0–P2 |

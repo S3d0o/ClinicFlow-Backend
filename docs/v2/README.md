@@ -30,6 +30,7 @@ Read them in this order:
 | 9 | [09_MIGRATION_FROM_V1.md](09_MIGRATION_FROM_V1.md) | Moving data, API and frontend from V1 to V2; where each open REVIEW item gets fixed |
 | 10 | [10_ROADMAP.md](10_ROADMAP.md) | Phases, exit criteria, risks, open questions |
 | — | [adr/](adr/) | Architecture decision records for the big choices |
+| — | [plans/](plans/) | Implementation plan per phase: [P0](plans/P0.md) |
 
 ### Architecture decision records
 

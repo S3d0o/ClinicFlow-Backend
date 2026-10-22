@@ -42,7 +42,7 @@ Nothing stops new shortcuts: the project boundaries are documented, not enforced
    - one contract test per provider interface
    - small interfaces
    - the CLAUDE.md conventions
-7. **Mapping.** Prefer explicit mapping to AutoMapper. This is decided in P0, together with AutoMapper's licence question.
+7. **Mapping.** AutoMapper stays for now; replacing it (explicit mapping is the candidate) is deferred and decided together with its licence question (open question Q17, [10 §5](../10_ROADMAP.md#5-open-questions)). Mapping stays isolated in per-module profiles so the switch is a contained refactor.
 8. **CQRS-lite, without a framework.** Inside a module, writes and reads are separate classes:
    - **Commands:** command services (e.g. `AppointmentBookingService`) load tracked entities through `IUnitOfWork`, call the entity's methods (the state machine), save, and raise events.
    - **Queries:** query services (e.g. `IAppointmentQueries`) never change data. They use `AsNoTracking()` and project straight to response DTOs with `Select`, including paging and the dashboard series. The interfaces live in `Services.Abstraction` and are implemented in `Persistence`, so the dependency still points inward.
@@ -59,5 +59,5 @@ Nothing stops new shortcuts: the project boundaries are documented, not enforced
 - Positive: module folders keep a large codebase navigable, and they leave a path to split a module into its own project later if one grows too big.
 - Positive: with CQRS-lite, read code is plain projections that are easy to optimise, and write code is small and rule-focused. Neither drags the other's concerns along.
 - Negative: more, smaller classes and interfaces than a "fat service" style, plus some one-time P0 work to remove the existing leaks.
-- Negative: explicit mapping means writing mapping code by hand. In exchange, it is searchable and compile-checked.
+- Negative (if explicit mapping is adopted later): mapping code is written by hand. In exchange, it is searchable and compile-checked.
 - CLAUDE.md's solution-layout table and new-feature checklist are updated when the P0 changes land.

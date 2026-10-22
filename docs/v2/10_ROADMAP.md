@@ -45,14 +45,14 @@ Each phase ends with a **phase review**: exit criteria met, docs updated (`API_C
 | Area | Deliverables | Resolves |
 |---|---|---|
 | **Separation from V1 (first)** | Before any V2 migration: a new `UserSecretsId`; database name `ClinicFlowV2` in every connection string, compose file and `db-init` script; a distinct compose project name, container names and host ports; a check at startup that refuses to run V2 migrations against a database that has V1's migration history but no V2 marker | [ADR 0007](adr/0007-v2-separate-product-line.md) |
-| Architecture | `Infrastructure` project (email moved out of `Services`); drop `Services → Persistence` behind `ITransaction`; module folders for new code; architecture tests; AutoMapper decision (explicit mapping preferred) | §4.6, [ADR 0006](adr/0006-clean-architecture-modular-monolith.md) |
+| Architecture | `Infrastructure` project (email moved out of `Services`); drop `Services → Persistence` behind `ITransaction`; module folders for new code; architecture tests (AutoMapper stays; its replacement is deferred, Q17) | §4.6, [ADR 0006](adr/0006-clean-architecture-modular-monolith.md) |
 | Authorization | Permission constants, `IAccessGuard`, `ICurrentUser`, `[HasPermission]`, anonymous-endpoint allowlist in the existing test | NL10, §4.7 |
 | Tenancy | `Organization`, `OrganizationId` backfill, global query filters, tenant interceptor, model test | [ADR 0001](adr/0001-single-organization-tenant-ready.md) |
 | Time | `Branch` with time zone (one default branch), `IClock` extending `IDateTimeProvider`, `StartsAtUtc` on slots, ban on `DateTime.UtcNow` | §4.1, FR-ORG-06 |
 | State | Appointment state machine in the entity, with the new statuses | §4.3, FR-APT-01 |
 | Events | Domain events, outbox, dispatcher; existing notifications and emails moved onto it | NM3, NL6, §4.4 |
 | Audit | `AuditEntry` interceptor, append-only permissions | FR-AUD-01, FR-AUD-04 |
-| Ops | `/health/live` and `/health/ready`, migration bundle (migrations leave startup), deploy login, SQL retry strategy, CI pipeline (build, tests, openapi diff, vulnerable packages) | M12, NM6, NL14, §4.9, §4.10 |
+| Ops | `/health/live` and `/health/ready`, migration bundle for Docker and production (automatic migration at startup stays for Development and tests only), deploy login, SQL retry strategy, CI pipeline (build, tests, openapi diff, vulnerable packages) | M12, NM6, NL14, §4.9, §4.10 |
 
 **FRs:** FR-ORG-06, FR-APT-01, FR-AUD-01, FR-AUD-04, and the platform parts of NFR-01…NFR-12.
 **Exit criteria:** the inherited V1 tests pass on the `v2` branch against the V2 database; `master` (V1) unchanged; CI green on `v2`; architecture, permission and tenancy tests in place; the outbox delivers V1 notifications.
@@ -187,6 +187,7 @@ Each needs an owner and a decision date at the phase where it's needed.
 | Q14 | Waiting-room display hardware? | P2 | Smart TV browser vs small PC per branch |
 | Q15 | Doctor revenue share: report only, or calculate payouts? | P6 | V2 reports revenue per doctor; payouts are out of scope unless decided |
 | Q16 | Chatbot scope, LLM provider and data rules? | P7 | FAQ only vs FAQ + booking; e.g. the Claude API; what patient data may be sent (legal); cost cap |
+| Q17 | Keep AutoMapper (licence) or replace it with explicit mapping? | Before V2 goes to production | Deferred on 2026-10-23; mapping stays isolated in per-module profiles so the replacement is a contained refactor |
 
 ## 6. Decisions log
 
@@ -211,3 +212,4 @@ Each needs an owner and a decision date at the phase where it's needed.
 | 2026-10-22 | Keep Clean Architecture as a modular monolith; SOLID rules enforced by architecture tests; **CQRS-lite** (separate command and query services, no MediatR, one database); patterns adopted on merit, for new code and enhancements; no microservices or event sourcing | [ADR 0006](adr/0006-clean-architecture-modular-monolith.md) |
 | 2026-10-22 | Every finished or changed service ships with unit tests for its methods, plus integration tests where HTTP behaviour matters | [06 §2.1](06_TECHNICAL_DESIGN.md#21-design-principles), CLAUDE.md |
 | 2026-10-22 | **V2 is a separate product line:** `v2` branch in both repos, its own database (`ClinicFlowV2`); V1 on `master`/`main` stays untouched; the owner decides if and when to switch, using a one-time import tool. Supersedes ADR 0005 decisions 2–5 | [ADR 0007](adr/0007-v2-separate-product-line.md) |
+| 2026-10-23 | P0 plan agreed ([plans/P0.md](plans/P0.md)): automatic migration at startup only in Development and tests; AutoMapper kept for now (Q17); the `v2` contract doc starts a pre-release "4.0.0-p0" changelog in P0; the outbox delivers in-app notifications too (about 2 s delay) | [plans/P0.md](plans/P0.md) |
