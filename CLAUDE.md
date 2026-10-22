@@ -14,7 +14,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Docker image: `docker build -t clinicflow-backend-v2 .` (the Dockerfile is at the repo root). `docker compose up` runs the V2 stack (compose project `clinicflow-v2`): db on `127.0.0.1:1434`, backend on 5002, frontend on 3001, so it never collides with V1's stack (1433, 5001, 3000).
 - Packages: `dotnet list ClinicFlow.slnx package --vulnerable --include-transitive` and `dotnet list ClinicFlow.slnx package --outdated`
 
-No linter or CI workflow is configured.
+CI: `.github/workflows/v2.yml` (V2 line only) runs on pushes to `v2` and to `feature/**`, `fix/**`, `docs/**`, `test/**` and `chore/**` branches, and on PRs into `v2`. It runs:
+- a Release build with warnings as errors
+- unit tests
+- integration tests (Testcontainers on the runner)
+- a vulnerable-package check that fails the run
+
+Keep it green before merging into `v2`. No linter is configured.
 
 ## Migrations
 

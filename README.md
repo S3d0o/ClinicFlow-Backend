@@ -1,5 +1,7 @@
 # 🏥 ClinicFlow
 
+[![V2 CI](https://github.com/S3d0o/ClinicFlow-Backend/actions/workflows/v2.yml/badge.svg?branch=v2)](https://github.com/S3d0o/ClinicFlow-Backend/actions/workflows/v2.yml)
+
 > Full-stack clinic management system: a **.NET 10** REST API + **React/TypeScript** frontend, built with Clean Architecture.
 
 ClinicFlow lets patients find doctors and book appointment slots, doctors publish weekly schedules and manage their visits, and admins approve doctors and manage specialties. It covers:
