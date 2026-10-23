@@ -35,6 +35,8 @@ try
 
     builder.Services.AddCoreServices(builder.Configuration);
 
+    builder.Services.AddProviderServices(builder.Configuration);
+
     builder.Services.AddHostedService<AppointmentReminderJob>();
     builder.Services.AddHostedService<SlotGenerationJob>();
 

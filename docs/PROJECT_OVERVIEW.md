@@ -132,8 +132,9 @@ Clean Architecture, one project per layer:
 ClinicFlow (host: DI, middleware, background job, startup seeding)
  ├── Presentation        controllers, FluentValidation validators, ValidationFilter
  │    └── Services.Abstraction   service interfaces
- ├── Services            business logic, AutoMapper profiles, email (MailKit), JWT
+ ├── Services            business logic, AutoMapper profiles, JWT
  │    └── Persistence    EF Core DbContext, configurations, migrations, repositories, UnitOfWork, DataSeeder
+ ├── Infrastructure      adapters for outside services: email (MailKit)
  └── Domain              entities, enums, repository interfaces
 Shared                   DTOs, Result/Error types, error catalogues, settings
 ```

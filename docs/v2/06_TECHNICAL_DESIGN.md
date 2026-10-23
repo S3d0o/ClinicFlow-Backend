@@ -41,7 +41,12 @@ ClinicFlow              host: DI, middleware, JWT setup, jobs, health checks
 - `Infrastructure` references `Services.Abstraction` only. The host wires it up.
 - **Drop the `Services → Persistence` project reference in P0** (REVIEW §4.6): services use `IUnitOfWork` and interfaces only, and `IDbContextTransaction` is hidden behind an `ITransaction` abstraction in Domain. MailKit and JwtBearer leave `Services` (to `Infrastructure` and the host).
 - **Why drop `Services → Persistence`:** today `Services` uses no type from `Persistence`. The reference only lets a service reach `ClinicDbContext` directly, bypassing `IUnitOfWork`, which nothing in the build would catch. EF Core types also leak into services through it (`DbUpdateException` in `ReviewService`, `DbUpdateConcurrencyException` in `TokenService`, `IDbContextTransaction` on `IUnitOfWork`). Removing the reference turns "services only talk to `IUnitOfWork` and abstractions" from a convention into a compile error. It also keeps services unit-testable with substitutes, and keeps EF out of business rules: those exceptions become `Result` errors or domain exceptions mapped in `Persistence`. Neither project is removed. `Persistence` is still wired in by the host.
-- **Architecture tests** (e.g. NetArchTest, in `ClinicFlow.Tests`) fail the build on a forbidden reference: `Services` → `Persistence`, `Presentation` → `Domain` or `Persistence`, `Domain` → anything but Identity's EF package, `Infrastructure` → `Services`, and query classes that change data.
+- **Architecture tests** (`ClinicFlow.Tests/Architecture/LayerDependencyTests.cs`, since P0 PR 2) fail the build when a layer uses a type it mustn't. They read the types each compiled layer refers to from its metadata, so they catch real use, including use the compiler allows transitively, and ignore a project reference nothing uses. Rules:
+  - `Domain` uses none of our other layers. Identity's EF package is the accepted exception (ADR 0006).
+  - `Services` uses neither `Persistence`, `Infrastructure` nor `Presentation`, nor EF Core, MailKit/MimeKit or the JWT libraries. EF Core and JWT are listed known exceptions until P0 PR 3; a test fails once an exception is no longer needed, so it can't linger.
+  - `Infrastructure` and `Persistence` use neither `Services` nor `Presentation` nor each other.
+  - `Presentation` uses neither `Services`, `Persistence` nor `Infrastructure`. From `Domain` it may use **enums only**, because the request and response DTOs carry Domain enums (`Gender`, `BloodType`, …); any other Domain type fails.
+  - Still to come: query classes that change data (with the first query class).
 
 ### 2.1 Design principles
 
@@ -243,7 +248,7 @@ MailKit stays, moved into `Infrastructure` and called only from outbox handlers,
 | Level | What | Tooling |
 |---|---|---|
 | Unit | State machines (appointment and doctor application: every legal and illegal transition), price resolution, coverage split, invoice totals, deposit deduction, discount limits, slot generation including DST, OTP rules (expiry, attempts, cooldown), phone normalisation, template rendering in both languages, `IAccessGuard` against the default matrix | xUnit + NSubstitute (V1 conventions) |
-| Architecture | Forbidden project references (§2), controllers inherit `ApiController`, services don't reference `ClinicDbContext` | NetArchTest (or equivalent) in `ClinicFlow.Tests` |
+| Architecture | Forbidden project references (§2), controllers inherit `ApiController`, services don't reference `ClinicDbContext` | Metadata-reading tests in `ClinicFlow.Tests/Architecture` (no package needed) |
 | Provider contracts | Each `IPaymentGateway`, `ISmsSender`, `IFileStorage` implementation and its fake pass the same contract tests (§2.1) | xUnit; Paymob sandbox in a manual/nightly run |
 | Integration | Every endpoint: success, validation, not-found, and **permission matrix tests** generated from [02 §6](02_ROLES_AND_PERMISSIONS.md#6-role--permission-matrix) (each role × permission × in-scope / out-of-scope branch) | WebApplicationFactory + Testcontainers SQL Server (V1); `TestAuthHandler` gains `X-Test-Org`, `X-Test-Staff`, `X-Test-Branches` headers |
 | Tenancy | A second organization is seeded in every integration test class; tests assert its data never appears | Integration |

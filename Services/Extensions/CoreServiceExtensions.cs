@@ -13,7 +13,6 @@ namespace Services.Extensions
             
 
             services.AddScoped<ISpecialtyService, SpecialtyService>();
-            services.AddScoped<IEmailService,EmailService>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<ITokenService, TokenService>();
             services.AddScoped<IDoctorService, DoctorService>();
@@ -24,9 +23,6 @@ namespace Services.Extensions
             services.AddScoped<IAdminService, AdminService>();
             services.AddScoped<IProfileService, ProfileService>();
             services.AddSingleton<IDateTimeProvider, DateTimeProvider>();
-
-            services.Configure<EmailSettings>(config.GetSection("EmailSettings"));
-            services.Configure<FrontendSettings>(config.GetSection("Frontend"));
 
             // An unknown zone would make every slot-time rule wrong, so fail at startup (REVIEW.md M2)
             services.AddOptions<ClinicSettings>()
