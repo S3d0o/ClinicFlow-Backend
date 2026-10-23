@@ -34,7 +34,7 @@ Only report problems in **changed lines**, and their immediate context. Pre-exis
 - No `.Result`, `.Wait()` or `async void`.
 - Read-only queries use `AsNoTracking()`.
 - Bulk updates use `ExecuteUpdateAsync` / `ExecuteDeleteAsync`.
-- Multi-step writes use `await using var tx = await uow.BeginTransactionAsync(...)`.
+- Multi-step writes use `uow.ExecuteInTransactionAsync(async tx => { ...; await tx.CommitAsync(ct); ... }, ct)`, with the commit as the operation's last step. Flag emails, notifications or other side effects inside the operation: a retry would repeat them.
 - No N+1: no queries inside loops over query results.
 
 **Wiring**

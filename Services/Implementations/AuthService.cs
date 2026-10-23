@@ -78,49 +78,55 @@ namespace Services.Implementations
 
         // Shared by both registrations. The user, the role and the profile are created in one transaction,
         // so a failure at any step leaves no account without a role or profile. addProfileAsync adds the
-        // role's profile (user.Id is set once CreateAsync succeeds); the confirmation email is sent after the commit.
+        // role's profile (user.Id is set once CreateAsync succeeds); the confirmation email is sent after the commit,
+        // outside the transaction, so a retried transaction can't send it twice.
         private async Task<Result<RegisterResponse>> RegisterAsync(
             ApplicationUser user, string password, string role, Func<CancellationToken, Task> addProfileAsync, CancellationToken ct)
         {
-            await using var transaction = await uow.BeginTransactionAsync(ct);
+            Result registered;
             try
             {
-                var createResult = await userManager.CreateAsync(user, password);
-                if (!createResult.Succeeded)
+                registered = await uow.ExecuteInTransactionAsync<Result>(async transaction =>
                 {
-                    await transaction.RollbackAsync(ct);
-                    logger.LogWarning("{Role} registration failed for {Email}: {Errors}",
-                        role, user.Email, string.Join(", ", createResult.Errors.Select(e => e.Description)));
-                    return AuthErrors.RegistrationFailed(createResult.Errors.Select(e => e.Description));
-                }
+                    var createResult = await userManager.CreateAsync(user, password);
+                    if (!createResult.Succeeded)
+                    {
+                        logger.LogWarning("{Role} registration failed for {Email}: {Errors}",
+                            role, user.Email, string.Join(", ", createResult.Errors.Select(e => e.Description)));
+                        return AuthErrors.RegistrationFailed(createResult.Errors.Select(e => e.Description));
+                    }
 
-                var roleResult = await userManager.AddToRoleAsync(user, role);
-                if (!roleResult.Succeeded)
-                {
-                    await transaction.RollbackAsync(ct);
-                    logger.LogWarning("Failed to add {Role} role to user {Email}: {Errors}",
-                        role, user.Email, string.Join(", ", roleResult.Errors.Select(e => e.Description)));
-                    // A missing role is a server problem, not something the caller can fix
-                    return AuthErrors.RegistrationError;
-                }
+                    var roleResult = await userManager.AddToRoleAsync(user, role);
+                    if (!roleResult.Succeeded)
+                    {
+                        logger.LogWarning("Failed to add {Role} role to user {Email}: {Errors}",
+                            role, user.Email, string.Join(", ", roleResult.Errors.Select(e => e.Description)));
+                        // A missing role is a server problem, not something the caller can fix
+                        return AuthErrors.RegistrationError;
+                    }
 
-                await addProfileAsync(ct);
-                await uow.SaveChangesAsync(ct);
-                await transaction.CommitAsync(ct);
-
-                await TrySendConfirmationEmailAsync(user);
-
-                logger.LogInformation("{Role} registered successfully: {Email}", role, user.Email);
-                return new RegisterResponse(
-                    "Registration successful. Please check your email to confirm your account.",
-                    user.Email!);
+                    await addProfileAsync(ct);
+                    await uow.SaveChangesAsync(ct);
+                    await transaction.CommitAsync(ct);
+                    return Result.Ok();
+                }, ct);
             }
             catch (Exception ex)
             {
+                // The transaction has been rolled back
                 logger.LogError(ex, "An error occurred while registering {Role} with email: {Email}", role, user.Email);
-                await transaction.RollbackAsync(CancellationToken.None); // must run even if the request was cancelled
                 return AuthErrors.RegistrationError;
             }
+
+            if (registered.IsFailure)
+                return Result<RegisterResponse>.Fail(registered.Errors);
+
+            await TrySendConfirmationEmailAsync(user);
+
+            logger.LogInformation("{Role} registered successfully: {Email}", role, user.Email);
+            return new RegisterResponse(
+                "Registration successful. Please check your email to confirm your account.",
+                user.Email!);
         }
 
         // ConfirmEmailAsync is responsible for confirming a user's email address using a token. It retrieves the user by ID, decodes the token,

@@ -1,5 +1,4 @@
 ﻿using Domain.Interfaces.IRepositories;
-using Microsoft.EntityFrameworkCore.Storage;
 using Persistence.Repositories;
 
 namespace Domain.Interfaces
@@ -16,9 +15,14 @@ namespace Domain.Interfaces
         IPatientRepo Patients { get; }
         IAdminRepo Admins { get; }
 
+        // Runs the operation in one transaction, inside the SQL retry strategy: a transient error re-runs it, with the
+        // tracked entities rewound to how they were before it started. Commit as the operation's last step; returning
+        // without committing rolls back. Keep emails and notifications outside it, or a retry would repeat them
+        Task<T> ExecuteInTransactionAsync<T>(Func<ITransaction, Task<T>> operation, CancellationToken ct);
 
-        Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken ct = default);
         Task<int> SaveChangesAsync(CancellationToken ct = default);
 
+        // False, and nothing saved, when a concurrency token (RowVersion) changed since the entity was loaded
+        Task<bool> TrySaveChangesAsync(CancellationToken ct);
     }
 }

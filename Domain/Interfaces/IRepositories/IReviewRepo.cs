@@ -9,7 +9,9 @@ namespace Persistence.Repositories
         Task<(IReadOnlyList<Review> Reviews, int TotalCount)> GetByDoctorIdAsync(int doctorProfileId, ReviewFilterParams filters, CancellationToken ct);
 
         // Write
-        Task AddAsync(Review review, CancellationToken ct);
+        // Adds and saves the review. False when the appointment already has one: a concurrent submission won the
+        // unique index on AppointmentId. Any other failure throws
+        Task<bool> TryAddAsync(Review review, CancellationToken ct);
         void Delete(Review review);
     }
 }

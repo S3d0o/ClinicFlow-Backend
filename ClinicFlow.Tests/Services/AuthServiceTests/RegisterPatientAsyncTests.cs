@@ -7,6 +7,7 @@ using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Auth;
 using Shared.Enums;
 using Shared.Errors;
+using Shared.ResultPattern;
 
 namespace ClinicFlow.Tests.Services.AuthServiceTests
 {
@@ -74,7 +75,6 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             Assert.Equal("+201112223334", profile.EmergencyContactPhone);
             await _uow.Received(1).SaveChangesAsync(_ct);
             await _transaction.Received(1).CommitAsync(_ct);
-            await _transaction.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
         }
 
         [Fact]
@@ -89,6 +89,19 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
         }
 
         [Fact]
+        public async Task RegisterPatientAsync_WhenValid_SendsTheEmailOnlyAfterTheCommit()
+        {
+            // A retried transaction re-runs its operation, so the email must stay outside it (REVIEW.md NL14)
+            await _sut.RegisterPatientAsync(_request, _ct);
+
+            Received.InOrder(() =>
+            {
+                _transaction.CommitAsync(_ct);
+                _emailService.SendEmailConfirmationAsync(_email, _userId, Arg.Any<string>(), Arg.Any<CancellationToken>());
+            });
+        }
+
+        [Fact]
         public async Task RegisterPatientAsync_WhenEmailAlreadyExists_ReturnsEmailAlreadyExistsError()
         {
             _userManager.FindByEmailAsync(_email).Returns(new ApplicationUser { Email = _email });
@@ -97,7 +110,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
 
             Assert.True(result.IsFailure);
             Assert.Contains(AuthErrors.EmailAlreadyExists, result.Errors);
-            await _uow.DidNotReceive().BeginTransactionAsync(Arg.Any<CancellationToken>());
+            await _uow.DidNotReceiveWithAnyArgs().ExecuteInTransactionAsync<Result>(default!, default);
             await _userManager.DidNotReceive().CreateAsync(Arg.Any<ApplicationUser>(), Arg.Any<string>());
         }
 
@@ -111,7 +124,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
 
             Assert.True(result.IsFailure);
             Assert.Contains(AuthErrors.RegistrationFailed(["Passwords must have at least one digit.", "Username is invalid."]), result.Errors);
-            await _transaction.Received(1).RollbackAsync(Arg.Any<CancellationToken>());
+            await _transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
             await _userManager.DidNotReceive().AddToRoleAsync(Arg.Any<ApplicationUser>(), Arg.Any<string>());
             await _uow.Patients.DidNotReceive().AddAsync(Arg.Any<PatientProfile>(), Arg.Any<CancellationToken>());
             await _emailService.DidNotReceive().SendEmailConfirmationAsync(
@@ -128,7 +141,6 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             Assert.True(result.IsFailure);
             // A missing role is a server problem (500), not the caller's (REVIEW.md M3)
             Assert.Contains(AuthErrors.RegistrationError, result.Errors);
-            await _transaction.Received(1).RollbackAsync(Arg.Any<CancellationToken>());
             await _transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
             await _uow.Patients.DidNotReceive().AddAsync(Arg.Any<PatientProfile>(), Arg.Any<CancellationToken>());
         }
@@ -143,7 +155,6 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             Assert.True(result.IsFailure);
             Assert.Contains(AuthErrors.RegistrationError, result.Errors);
             // The rollback must run even if the request was cancelled
-            await _transaction.Received(1).RollbackAsync(CancellationToken.None);
             await _transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
             await _emailService.DidNotReceive().SendEmailConfirmationAsync(
                 Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -159,7 +170,6 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
 
             Assert.True(result.IsSuccess);
             await _transaction.Received(1).CommitAsync(_ct);
-            await _transaction.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
         }
 
         [Fact]
@@ -171,7 +181,6 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             var result = await _sut.RegisterPatientAsync(_request, _ct);
 
             Assert.True(result.IsSuccess);
-            await _transaction.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
         }
     }
 }

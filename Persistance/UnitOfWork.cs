@@ -1,5 +1,5 @@
 ﻿using Domain.Interfaces;
-using Microsoft.EntityFrameworkCore.Storage;
+using Persistence.Transactions;
 using Persistence.Repositories;
 
 namespace Persistence
@@ -46,10 +46,24 @@ namespace Persistence
 
         public IAdminRepo Admins => _admins ??= new AdminRepo(_context);
 
-        public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken ct = default)
-        => _context.Database.BeginTransactionAsync(ct);
+        public Task<T> ExecuteInTransactionAsync<T>(Func<ITransaction, Task<T>> operation, CancellationToken ct)
+            => _context.ExecuteInTransactionAsync(operation, ct);
+
         public Task<int> SaveChangesAsync(CancellationToken ct = default)
             => _context.SaveChangesAsync(ct);
+
+        public async Task<bool> TrySaveChangesAsync(CancellationToken ct)
+        {
+            try
+            {
+                await _context.SaveChangesAsync(ct);
+                return true;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return false;
+            }
+        }
 
     }
 }

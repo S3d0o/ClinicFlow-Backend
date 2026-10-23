@@ -49,14 +49,8 @@ namespace ClinicFlow.Tests.Architecture
             ("Presentation", "Domain"),
         ];
 
-        // Known violations, each with the PR that removes it (docs/v2/plans/P0.md). Delete the entry in that PR
-        private static readonly HashSet<(string Layer, string Reference)> KnownExceptions =
-        [
-            // PR 3: ITransaction in Domain replaces IDbContextTransaction; DbUpdateException handling moves into repositories
-            ("Services", "Microsoft.EntityFrameworkCore"),
-            // PR 3: JWT creation moves to IAccessTokenFactory in Infrastructure
-            .. Jwt.Select(reference => ("Services", reference)),
-        ];
+        // Known violations, each with the PR that removes it. Empty since P0 PR 3; add one only with a plan to remove it
+        private static readonly HashSet<(string Layer, string Reference)> KnownExceptions = [];
 
         public static TheoryData<string> LayerNames => [.. Forbidden.Keys];
 

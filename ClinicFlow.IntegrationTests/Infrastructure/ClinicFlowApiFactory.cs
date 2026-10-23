@@ -33,8 +33,9 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
         private const string TestDatabaseName = "ClinicFlowV2TestDb";
 
-        // The Testcontainers server, pointed at the test database instead of master
-        private string TestConnectionString => new SqlConnectionStringBuilder(_dbContainer.GetConnectionString())
+        // The Testcontainers server, pointed at the test database instead of master. Persistence tests that need their
+        // own DbContext options (e.g. a retry strategy with a simulated error) connect with it too
+        public string TestConnectionString => new SqlConnectionStringBuilder(_dbContainer.GetConnectionString())
         {
             InitialCatalog = TestDatabaseName
         }.ConnectionString;
@@ -46,28 +47,17 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
             // (DataSeeder.LargeDemo.cs) would only slow down the test host's startup
             builder.UseSetting("Seeding:DemoData", "false");
 
-            // Program reads these before this factory swaps the DbContext below. Set them here, so the tests don't
-            // depend on local secrets: the shared appsettings.Development.json names V1's database, which the
-            // V2 database guard rejects (docs/v2/adr/0007), and CI has no secrets at all
+            // The app's own DbContext registration (with its SQL retry strategy) connects to the Testcontainers
+            // database through this setting. Set here, so the tests don't depend on local secrets: the shared
+            // appsettings.Development.json names V1's database, which the V2 database guard rejects
+            // (docs/v2/adr/0007), and CI has no secrets at all
             builder.UseSetting("ConnectionStrings:DefaultConnection", TestConnectionString);
             builder.UseSetting("Database:ExpectedName", TestDatabaseName);
             builder.UseSetting("JwtSettings:Secret", "integration-tests-only-signing-key-0123456789");
 
             builder.ConfigureServices(services =>
             {
-                // 1. remove the existing DbContext registration
-                var descriptor = services.SingleOrDefault(
-                     d => d.ServiceType == typeof(DbContextOptions<ClinicDbContext>));
-
-                if (descriptor != null)
-                {
-                    services.Remove(descriptor);
-                }
-
-                // 2. Register the test DbContext pointing at the Testcontainers DB
-                services.AddDbContext<ClinicDbContext>(opt => opt.UseSqlServer(TestConnectionString));
-
-                // 3. (Optional) Disable hosted services that shouldn't run during tests
+                // 1. (Optional) Disable hosted services that shouldn't run during tests
                 // e.g. background email reminders
 
                 var hostedServiceDescriptors = services.Where(
@@ -78,14 +68,14 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
                 foreach (var d in hostedServiceDescriptors)
                     services.Remove(d);
 
-                // 4. Never send real email: appsettings.Development.json may hold real SMTP credentials
+                // 2. Never send real email: appsettings.Development.json may hold real SMTP credentials
                 foreach (var d in services.Where(d => d.ServiceType == typeof(IEmailService)).ToList())
                     services.Remove(d);
 
                 services.AddSingleton<FakeEmailService>();
                 services.AddSingleton<IEmailService>(sp => sp.GetRequiredService<FakeEmailService>());
 
-                // 5. Every test client shares one (unknown) IP, so the auth rate limit would trip across tests.
+                // 3. Every test client shares one (unknown) IP, so the auth rate limit would trip across tests.
                 //    RateLimitTests lowers it again on its own host
                 services.PostConfigure<RateLimitSettings>(s => s.PermitLimit = int.MaxValue);
 

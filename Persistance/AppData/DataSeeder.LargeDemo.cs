@@ -2,6 +2,7 @@ using ClinicFlow.Domain.Enums;
 using Domain.Enums;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
+using Persistence.Transactions;
 using Shared.Enums;
 
 namespace Persistence.AppData;
@@ -125,37 +126,40 @@ public static partial class DataSeeder
         }
 
         // One transaction: the check at the top must never find half a clinic
-        await using var transaction = await context.Database.BeginTransactionAsync();
-
-        context.Users.AddRange(users);
-        context.UserRoles.AddRange(userRoles);
-        context.DoctorProfiles.AddRange(doctors.Select(d => d.Profile));
-        context.PatientProfiles.AddRange(patients);
-        await context.SaveChangesAsync();
-
-        // Approved doctors (suspended ones included) get one schedule per working weekday, as the app allows
-        var schedules = new List<DoctorSchedule>();
-        foreach (var (n, profile) in doctors.Where(d => d.Profile.IsApprovedByAdmin))
+        // Inside the SQL retry strategy (REVIEW.md NL14); a transient error re-runs the block from a rewound tracker
+        var scheduleCount = await context.ExecuteInTransactionAsync(async transaction =>
         {
-            foreach (var shift in ScheduleTemplates[n % ScheduleTemplates.Length])
+            context.Users.AddRange(users);
+            context.UserRoles.AddRange(userRoles);
+            context.DoctorProfiles.AddRange(doctors.Select(d => d.Profile));
+            context.PatientProfiles.AddRange(patients);
+            await context.SaveChangesAsync();
+
+            // Approved doctors (suspended ones included) get one schedule per working weekday, as the app allows
+            var schedules = new List<DoctorSchedule>();
+            foreach (var (n, profile) in doctors.Where(d => d.Profile.IsApprovedByAdmin))
             {
-                schedules.Add(new DoctorSchedule
+                foreach (var shift in ScheduleTemplates[n % ScheduleTemplates.Length])
                 {
-                    DoctorProfileId = profile.Id,
-                    DayOfWeek = shift.Day,
-                    StartTime = shift.Start,
-                    EndTime = shift.End,
-                    SlotDurationMinutes = shift.SlotMinutes,
-                    IsActive = true,
-                });
+                    schedules.Add(new DoctorSchedule
+                    {
+                        DoctorProfileId = profile.Id,
+                        DayOfWeek = shift.Day,
+                        StartTime = shift.Start,
+                        EndTime = shift.End,
+                        SlotDurationMinutes = shift.SlotMinutes,
+                        IsActive = true,
+                    });
+                }
             }
-        }
-        context.DoctorSchedules.AddRange(schedules);
-        await context.SaveChangesAsync();
-        await transaction.CommitAsync();
+            context.DoctorSchedules.AddRange(schedules);
+            await context.SaveChangesAsync();
+            await transaction.CommitAsync(CancellationToken.None);
+            return schedules.Count;
+        }, CancellationToken.None);
 
         logger.LogInformation("Generated demo clinic: {Doctors} doctors, {Patients} patients, {Schedules} schedules",
-            doctors.Count, patients.Count, schedules.Count);
+            doctors.Count, patients.Count, scheduleCount);
     }
 
     // ── Generated activity: appointments, reviews, notifications ──────────────
@@ -262,91 +266,95 @@ public static partial class DataSeeder
             appointments.Add(appointment);
         }
 
-        await using var transaction = await context.Database.BeginTransactionAsync();
-
-        context.Appointments.AddRange(appointments);
-        await context.SaveChangesAsync();
-
-        // About 60% of completed visits are reviewed; ratings scatter around the doctor's quality
-        var reviews = new List<Review>();
-        foreach (var appointment in appointments.Where(a => a.Status == AppointmentStatus.Completed))
+        // Inside the SQL retry strategy (REVIEW.md NL14). A retry repeats the random draws below from where the
+        // failed attempt left the generator, so only an uninterrupted seed is reproducible
+        var (reviewCount, notificationCount) = await context.ExecuteInTransactionAsync(async transaction =>
         {
-            if (rng.NextDouble() >= 0.6) continue;
+            context.Appointments.AddRange(appointments);
+            await context.SaveChangesAsync();
 
-            var quality = doctors[appointment.DoctorProfileId].Quality;
-            var rating = Math.Clamp((int)Math.Round(quality + (rng.NextDouble() + rng.NextDouble() - 1) * 1.8), 1, 5);
-            var reviewedAt = SlotEndUtc(appointment, clock).AddHours(rng.Next(1, 72));
-            reviews.Add(new Review
+            // About 60% of completed visits are reviewed; ratings scatter around the doctor's quality
+            var reviews = new List<Review>();
+            foreach (var appointment in appointments.Where(a => a.Status == AppointmentStatus.Completed))
             {
-                AppointmentId = appointment.Id,
-                PatientProfileId = appointment.PatientProfileId,
-                DoctorProfileId = appointment.DoctorProfileId,
-                Rating = rating,
-                Comment = rng.NextDouble() < 0.75 ? Pick(rng, ReviewComments[rating]) : null,
-                CreatedAt = reviewedAt < clock.UtcNow ? reviewedAt : clock.UtcNow,
-                IsVisible = true,
-            });
-        }
-        context.Reviews.AddRange(reviews);
+                if (rng.NextDouble() >= 0.6) continue;
 
-        // The same notifications the hand-written appointments get (AddAppointmentNotifications), plus
-        // the approval and suspension notices AdminService sends to the generated doctors
-        var appointmentIds = appointments.Select(a => a.Id).ToList();
-        var withPeople = await context.Appointments
-            .Include(a => a.Slot)
-            .Include(a => a.Patient).ThenInclude(p => p.User)
-            .Include(a => a.Doctor).ThenInclude(d => d.User)
-            .Where(a => appointmentIds.Contains(a.Id))
-            .ToListAsync();
+                var quality = doctors[appointment.DoctorProfileId].Quality;
+                var rating = Math.Clamp((int)Math.Round(quality + (rng.NextDouble() + rng.NextDouble() - 1) * 1.8), 1, 5);
+                var reviewedAt = SlotEndUtc(appointment, clock).AddHours(rng.Next(1, 72));
+                reviews.Add(new Review
+                {
+                    AppointmentId = appointment.Id,
+                    PatientProfileId = appointment.PatientProfileId,
+                    DoctorProfileId = appointment.DoctorProfileId,
+                    Rating = rating,
+                    Comment = rng.NextDouble() < 0.75 ? Pick(rng, ReviewComments[rating]) : null,
+                    CreatedAt = reviewedAt < clock.UtcNow ? reviewedAt : clock.UtcNow,
+                    IsVisible = true,
+                });
+            }
+            context.Reviews.AddRange(reviews);
 
-        var notifications = new List<Notification>();
-        foreach (var appointment in withPeople)
-            AddAppointmentNotifications(notifications, appointment, clock);
+            // The same notifications the hand-written appointments get (AddAppointmentNotifications), plus
+            // the approval and suspension notices AdminService sends to the generated doctors
+            var appointmentIds = appointments.Select(a => a.Id).ToList();
+            var withPeople = await context.Appointments
+                .Include(a => a.Slot)
+                .Include(a => a.Patient).ThenInclude(p => p.User)
+                .Include(a => a.Doctor).ThenInclude(d => d.User)
+                .Where(a => appointmentIds.Contains(a.Id))
+                .ToListAsync();
 
-        var generatedDoctorUserIds = Enumerable.Range(1, GeneratedDoctorCount).Select(GeneratedDoctorId).ToList();
-        var approvedDoctorUsers = await context.DoctorProfiles
-            .Where(d => d.IsApprovedByAdmin && generatedDoctorUserIds.Contains(d.UserId))
-            .Select(d => new { d.UserId, d.User.CreatedAt, d.User.IsActive })
-            .ToListAsync();
-        foreach (var doctorUser in approvedDoctorUsers)
-        {
-            notifications.Add(new Notification
+            var notifications = new List<Notification>();
+            foreach (var appointment in withPeople)
+                AddAppointmentNotifications(notifications, appointment, clock);
+
+            var generatedDoctorUserIds = Enumerable.Range(1, GeneratedDoctorCount).Select(GeneratedDoctorId).ToList();
+            var approvedDoctorUsers = await context.DoctorProfiles
+                .Where(d => d.IsApprovedByAdmin && generatedDoctorUserIds.Contains(d.UserId))
+                .Select(d => new { d.UserId, d.User.CreatedAt, d.User.IsActive })
+                .ToListAsync();
+            foreach (var doctorUser in approvedDoctorUsers)
             {
-                UserId = doctorUser.UserId,
-                Title = "Profile Approved",
-                Message = "Your doctor profile has been approved. You can now set your schedule and accept appointments.",
-                Type = NotificationType.SystemAlert,
-                IsRead = true,
-                CreatedAt = doctorUser.CreatedAt.AddDays(1),
-            });
-            if (!doctorUser.IsActive)
                 notifications.Add(new Notification
                 {
                     UserId = doctorUser.UserId,
-                    Title = "Profile Suspended",
-                    Message = "Your doctor profile has been suspended. Please contact support for more information.",
+                    Title = "Profile Approved",
+                    Message = "Your doctor profile has been approved. You can now set your schedule and accept appointments.",
                     Type = NotificationType.SystemAlert,
-                    IsRead = false,
-                    CreatedAt = clock.ToUtc(suspendedBefore.ToDateTime(new TimeOnly(10, 0))),
+                    IsRead = true,
+                    CreatedAt = doctorUser.CreatedAt.AddDays(1),
                 });
-        }
-        context.Notifications.AddRange(notifications);
-        await context.SaveChangesAsync();
+                if (!doctorUser.IsActive)
+                    notifications.Add(new Notification
+                    {
+                        UserId = doctorUser.UserId,
+                        Title = "Profile Suspended",
+                        Message = "Your doctor profile has been suspended. Please contact support for more information.",
+                        Type = NotificationType.SystemAlert,
+                        IsRead = false,
+                        CreatedAt = clock.ToUtc(suspendedBefore.ToDateTime(new TimeOnly(10, 0))),
+                    });
+            }
+            context.Notifications.AddRange(notifications);
+            await context.SaveChangesAsync();
 
-        // Every doctor's rating cache from the visible reviews, the way DoctorRepo.RefreshRatingCacheAsync does it
-        await context.DoctorProfiles.ExecuteUpdateAsync(s => s
-            .SetProperty(d => d.AverageRating, d => context.Reviews
-                .Where(r => r.DoctorProfileId == d.Id && r.IsVisible)
-                .Average(r => (double?)r.Rating) ?? 0.0)
-            .SetProperty(d => d.TotalReviews, d => context.Reviews
-                .Count(r => r.DoctorProfileId == d.Id && r.IsVisible)));
+            // Every doctor's rating cache from the visible reviews, the way DoctorRepo.RefreshRatingCacheAsync does it
+            await context.DoctorProfiles.ExecuteUpdateAsync(s => s
+                .SetProperty(d => d.AverageRating, d => context.Reviews
+                    .Where(r => r.DoctorProfileId == d.Id && r.IsVisible)
+                    .Average(r => (double?)r.Rating) ?? 0.0)
+                .SetProperty(d => d.TotalReviews, d => context.Reviews
+                    .Count(r => r.DoctorProfileId == d.Id && r.IsVisible)));
 
-        await transaction.CommitAsync();
+            await transaction.CommitAsync(CancellationToken.None);
+            return (reviews.Count, notifications.Count);
+        }, CancellationToken.None);
 
         logger.LogInformation(
             "Generated demo activity: {Appointments} appointments ({Past} past, {Upcoming} upcoming), {Reviews} reviews, {Notifications} notifications",
             appointments.Count, appointments.Count(a => IsPast(a.Slot)), appointments.Count(a => !IsPast(a.Slot)),
-            reviews.Count, notifications.Count);
+            reviewCount, notificationCount);
     }
 
     // Past visits: mostly completed, some cancelled or missed, and a few recent ones still waiting
