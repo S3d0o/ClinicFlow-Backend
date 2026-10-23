@@ -6,7 +6,8 @@ using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Review;
 using Shared.Errors;
-using Shared.ResultPattern;
+using Domain.Errors;
+using Domain.ResultPattern;
 using Domain.Interfaces;
 
 namespace ClinicFlow.Tests.Services.ReviewServiceTests
@@ -35,8 +36,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
                 Id = _appointmentId,
                 PatientProfileId = _patientId,
                 DoctorProfileId = _doctorId,
-                Status = AppointmentStatus.Completed
-            };
+            }.WithStatus(AppointmentStatus.Completed);
 
             _uow.Patients.GetPatientByUserIdAsync(_patientUserId, _ct).Returns(_patient);
             _uow.Reviews.GetByAppointmentIdAsync(_appointmentId, _ct).Returns((Review?)null);
@@ -155,7 +155,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         [InlineData(AppointmentStatus.NoShow)]
         public async Task SubmitReviewAsync_WhenAppointmentNotCompleted_ReturnsReviewNotAllowedError(AppointmentStatus status)
         {
-            _appointment.Status = status;
+            _appointment.WithStatus(status);
 
             var result = await _sut.SubmitReviewAsync(_patientUserId, _request, _ct);
 

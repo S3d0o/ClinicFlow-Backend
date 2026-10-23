@@ -7,7 +7,7 @@ using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Auth;
 using Shared.Enums;
 using Shared.Errors;
-using Shared.ResultPattern;
+using Domain.ResultPattern;
 
 namespace ClinicFlow.Tests.Services.AuthServiceTests
 {

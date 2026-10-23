@@ -233,19 +233,12 @@ public static partial class DataSeeder
             var status = past ? PastStatus(rng, start, clock) : rng.NextDouble() < 0.9 ? AppointmentStatus.Confirmed : AppointmentStatus.Cancelled;
             var bookedLocal = (past ? start : clock.ClinicNow).AddHours(-rng.Next(2, 14 * 24));
 
-            var appointment = new Appointment
-            {
-                Slot = slot,
-                BranchId = slot.BranchId,
-                PatientProfileId = patientId.Value,
-                DoctorProfileId = slot.DoctorProfileId,
-                Status = status,
-                ReasonForVisit = Pick(rng, VisitReasons.GetValueOrDefault(doctor.Specialty, GeneralReasons)),
-                DoctorNotes = status == AppointmentStatus.Completed && rng.NextDouble() < 0.75
-                    ? Pick(rng, DoctorNotesBySpecialty.GetValueOrDefault(doctor.Specialty, GeneralNotes))
-                    : null,
-                BookedAt = clock.ToUtc(bookedLocal),
-            };
+            // The random draws stay in their original order (reason, notes, cancellation), so the data is unchanged
+            var reason = Pick(rng, VisitReasons.GetValueOrDefault(doctor.Specialty, GeneralReasons));
+            var notes = status == AppointmentStatus.Completed && rng.NextDouble() < 0.75
+                ? Pick(rng, DoctorNotesBySpecialty.GetValueOrDefault(doctor.Specialty, GeneralNotes))
+                : null;
+            var appointment = Book(slot, patientId.Value, reason, clock.ToUtc(bookedLocal));
 
             if (status == AppointmentStatus.Cancelled)
             {
@@ -254,14 +247,14 @@ public static partial class DataSeeder
                 // Patients can only cancel up to 2 hours before the start; nobody cancels in the future
                 var latest = by == CancelledBy.Patient ? start.AddHours(-2) : start;
                 if (latest > clock.ClinicNow) latest = clock.ClinicNow;
-                if (latest <= bookedLocal) latest = bookedLocal.AddMinutes(30);
-                appointment.CancelledAt = clock.ToUtc(bookedLocal + (latest - bookedLocal) * rng.NextDouble());
-                appointment.CancelledBy = by;
-                appointment.CancellationReason = Pick(rng, CancellationReasons[by]);
+                if (latest < bookedLocal) latest = bookedLocal;
+                Apply(appointment, appointment.Cancel(by, clock.ToUtc(bookedLocal + (latest - bookedLocal) * rng.NextDouble()),
+                    Pick(rng, CancellationReasons[by])));
                 // The slot stays Available, as after a real cancellation
             }
             else
             {
+                ApplyHistory(appointment, status, notes, clock);
                 slot.Status = SlotStatus.Booked;
             }
 

@@ -4,10 +4,11 @@ using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Notification;
 using Shared.Errors;
+using Domain.Errors;
 
-namespace ClinicFlow.Tests.Services.AppointmentServiceTests
+namespace ClinicFlow.Tests.Services.AppointmentVisitServiceTests
 {
-    public class CompleteAppointmentAsyncTests : AppointmentServiceTestsBase
+    public class CompleteAppointmentAsyncTests : AppointmentVisitServiceTestsBase
     {
         private const int _appointmentId = 1;
         private const int _doctorId = 5;
@@ -27,14 +28,13 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             {
                 Id = _appointmentId,
                 DoctorProfileId = _doctorId,
-                Status = AppointmentStatus.Confirmed,
                 Patient = new PatientProfile { UserId = _patientUserId },
                 Slot = new AppointmentSlot
                 {
                     Date = new DateOnly(2026, 10, 18), StartTime = new TimeOnly(10, 0), EndTime = new TimeOnly(10, 30),
                     StartsAtUtc = new DateTime(2026, 10, 18, 7, 0, 0, DateTimeKind.Utc)
                 }
-            };
+            }.WithStatus(AppointmentStatus.Confirmed);
             _uow.Appointments.GetByIdAsync(_appointmentId, _ct).Returns(_appointment);
         }
 
@@ -146,7 +146,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         [Fact]
         public async Task CompleteAppointmentAsync_WhenCancelled_ReturnsCannotCompleteCancelledError()
         {
-            _appointment.Status = AppointmentStatus.Cancelled;
+            _appointment.WithStatus(AppointmentStatus.Cancelled);
 
             var result = await _sut.CompleteAppointmentAsync(_doctorUserId, _appointmentId, _ct);
 
@@ -159,7 +159,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         [Fact]
         public async Task CompleteAppointmentAsync_WhenAlreadyCompleted_ReturnsAlreadyCompletedError()
         {
-            _appointment.Status = AppointmentStatus.Completed;
+            _appointment.WithStatus(AppointmentStatus.Completed);
 
             var result = await _sut.CompleteAppointmentAsync(_doctorUserId, _appointmentId, _ct);
 
@@ -168,6 +168,26 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
             await _notificationService.DidNotReceive()
                 .CreateRangeAsync(Arg.Any<IEnumerable<CreateNotificationRequest>>(), Arg.Any<CancellationToken>());
+        }
+
+        [Fact]
+        public async Task CompleteAppointmentAsync_WhenCheckedInButNotStarted_ReturnsInvalidStatusTransition()
+        {
+            // Once a patient is checked in, the visit is completed from InProgress (05 §4.1)
+            _appointment.WithStatus(AppointmentStatus.CheckedIn);
+
+            var result = await _sut.CompleteAppointmentAsync(_doctorUserId, _appointmentId, _ct);
+
+            Assert.Contains(AppointmentErrors.InvalidStatusTransition(AppointmentStatus.CheckedIn, AppointmentStatus.Completed), result.Errors);
+            await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
+        }
+
+        [Fact]
+        public async Task CompleteAppointmentAsync_WhenCompleted_RecordsTheTime()
+        {
+            await _sut.CompleteAppointmentAsync(_doctorUserId, _appointmentId, _ct);
+
+            Assert.Equal(new DateTime(2026, 10, 18, 7, 30, 0, DateTimeKind.Utc), _appointment.CompletedAt);
         }
     }
 }

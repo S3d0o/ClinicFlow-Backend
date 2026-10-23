@@ -45,8 +45,9 @@ ClinicFlow              host: DI, middleware, JWT setup, jobs, health checks
   - `Domain` uses none of our other layers. Identity's EF package is the accepted exception (ADR 0006).
   - `Services` uses neither `Persistence`, `Infrastructure` nor `Presentation`, nor EF Core, MailKit/MimeKit or the JWT libraries. Since P0 PR 3 nothing is listed as a known exception; a test fails if a listed one is no longer needed, so none can linger.
   - `Infrastructure` and `Persistence` use neither `Services` nor `Presentation` nor each other.
-  - `Presentation` uses neither `Services`, `Persistence` nor `Infrastructure`. From `Domain` it may use **enums only**, because the request and response DTOs carry Domain enums (`Gender`, `BloodType`, …); any other Domain type fails.
-  - Still to come: query classes that change data (with the first query class).
+  - `Presentation` uses neither `Services`, `Persistence` nor `Infrastructure`. From `Domain` it may use **enums and the Result types only**: the request and response DTOs carry Domain enums (`Gender`, `BloodType`, …), and controllers turn a `Result` into a response. The Result pattern moved from `Shared` to `Domain/ResultPattern` in P0 PR 7, so entities can return it (ADR 0004). Any other Domain type fails.
+  - Query classes never write (`QueryClassTests`, since P0 PR 7): the test reads the IL of everything in `Persistence.Queries`, async state machines and lambdas included, and fails on any EF Core save, change-tracking or bulk update/delete call.
+- **As built (P0 PR 7):** the first CQRS-lite module is appointments. `AppointmentService` split into `AppointmentBookingService`, `AppointmentCancellationService` and `AppointmentVisitService` (commands, through `IUnitOfWork`) and `IAppointmentQueries`, implemented by `Persistance/Queries/AppointmentQueries.cs` (projections, `AsNoTracking`). `Persistence` now references `Services.Abstraction` for those interfaces; query classes are registered in DI by the host, unlike repositories. A query class does its own not-found and ownership checks and returns `Result`. The status rules moved into `Appointment` (ADR 0004).
 
 ### 2.1 Design principles
 

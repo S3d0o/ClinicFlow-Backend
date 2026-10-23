@@ -694,28 +694,17 @@ public static partial class DataSeeder
             if (slot is null || slot.Status != SlotStatus.Available) return;
 
             var start = clock.ToUtc(date.ToDateTime(time));
-            var appointment = new Appointment
-            {
-                SlotId = slot.Id,
-                BranchId = slot.BranchId,
-                PatientProfileId = patientProfileId,
-                DoctorProfileId = doctorProfileId,
-                Status = status,
-                ReasonForVisit = reason,
-                DoctorNotes = notes,
-                BookedAt = (start < now ? start : now).AddDays(-bookedDaysBefore),
-            };
+            var appointment = Book(slot, patientProfileId, reason, (start < now ? start : now).AddDays(-bookedDaysBefore));
 
             if (cancellation is { } c)
             {
                 var cancelledAt = appointment.BookedAt.AddDays(1);
-                appointment.CancelledAt = cancelledAt < now ? cancelledAt : now;
-                appointment.CancelledBy = c.By;
-                appointment.CancellationReason = c.Reason;
-                // A cancelled appointment frees its slot, as AppointmentService does
+                Apply(appointment, appointment.Cancel(c.By, cancelledAt < now ? cancelledAt : now, c.Reason));
+                // A cancelled appointment frees its slot, as the cancellation service does
             }
             else
             {
+                ApplyHistory(appointment, status, notes, clock);
                 slot.Status = SlotStatus.Booked;
             }
 
@@ -958,6 +947,45 @@ public static partial class DataSeeder
         appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
 
     // UTC slot end, for timestamps
+    // Demo history goes through the same transitions as the app (docs/v2/adr/0004), so it can't hold a state the
+    // rules forbid, and it gets the timestamps they record. A rule it breaks is a seeder bug, so it stops the seed
+    private static Appointment Book(AppointmentSlot slot, int patientProfileId, string? reason, DateTime bookedAt)
+    {
+        var appointment = Appointment.Book(slot, patientProfileId, reason, bookedAt);
+        appointment.Slot = slot; // the transitions' time guards read it
+        return appointment;
+    }
+
+    // What happened to a booked visit that wasn't cancelled: completed (with the doctor's notes) once it ended,
+    // or missed and marked after the grace period. Confirmed stays as booked
+    private static void ApplyHistory(Appointment appointment, AppointmentStatus status, string? notes, SeedClock clock)
+    {
+        var endUtc = SlotEndUtc(appointment, clock);
+        switch (status)
+        {
+            case AppointmentStatus.Completed:
+                Apply(appointment, appointment.Complete(endUtc < clock.UtcNow ? endUtc : clock.UtcNow));
+                if (notes is not null)
+                    Apply(appointment, appointment.AddDoctorNotes(notes));
+                break;
+            case AppointmentStatus.NoShow:
+                var markedAt = endUtc + Appointment.NoShowGracePeriod;
+                Apply(appointment, appointment.MarkNoShow(markedAt < clock.UtcNow ? markedAt : clock.UtcNow));
+                break;
+            case AppointmentStatus.Confirmed:
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(status), status, "The demo seed doesn't create this status");
+        }
+    }
+
+    private static void Apply(Appointment appointment, Result transition)
+    {
+        if (transition.IsFailure)
+            throw new InvalidOperationException(
+                $"Demo appointment for slot {appointment.SlotId} breaks a rule: {transition.Errors[0].Code}");
+    }
+
     private static DateTime SlotEndUtc(Appointment appointment, SeedClock clock) =>
         clock.ToUtc(appointment.Slot.Date.ToDateTime(appointment.Slot.EndTime));
 

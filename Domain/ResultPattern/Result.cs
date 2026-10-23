@@ -1,4 +1,4 @@
-﻿namespace Shared.ResultPattern
+﻿namespace Domain.ResultPattern
 {
     public interface IResult
     {

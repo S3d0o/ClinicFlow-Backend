@@ -121,9 +121,9 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
                 PatientProfileId = patientProfile.Id,
                 DoctorProfileId = doctorProfile.Id,
                 SlotId = slot.Id,
-                Status = status  // ← caller controls this
             };
-            db.Appointments.Add(appointment);
+            // The status is stored data here, written through EF; the entity only changes it through its transitions
+            db.Appointments.Add(appointment).Property(a => a.Status).CurrentValue = status;
             await db.SaveChangesAsync();
 
             return (patientUser.Id, doctorUser.Id, slot.Id, appointment.Id);

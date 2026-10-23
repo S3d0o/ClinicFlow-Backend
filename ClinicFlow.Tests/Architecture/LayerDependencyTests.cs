@@ -7,7 +7,8 @@ using Persistence.AppData;
 using Presentation.Controllers;
 using Services;
 using Services.Abstraction.Contracts;
-using Shared.ResultPattern;
+using Domain.ResultPattern;
+using Shared.Settings;
 
 namespace ClinicFlow.Tests.Architecture
 {
@@ -19,7 +20,7 @@ namespace ClinicFlow.Tests.Architecture
         private static readonly Dictionary<string, Assembly> Layers = new[]
         {
             typeof(IUnitOfWork).Assembly,               // Domain
-            typeof(Result).Assembly,                    // Shared
+            typeof(JwtSettings).Assembly,               // Shared
             typeof(IEmailService).Assembly,             // Services.Abstraction
             typeof(ServiceAssemblyReference).Assembly,  // Services
             typeof(ClinicDbContext).Assembly,           // Persistence
@@ -42,9 +43,10 @@ namespace ClinicFlow.Tests.Architecture
             ["Presentation"] = ["Domain", "Services", "Persistence", "Infrastructure"],
         };
 
-        // Allowed for enums only. Request and response DTOs carry Domain enums (Gender, BloodType, ...), so their
-        // validators see them; any other Domain type in Presentation is a violation
-        private static readonly HashSet<(string Layer, string Reference)> EnumsOnly =
+        // Allowed for enums and the Result pattern only. Request and response DTOs carry Domain enums (Gender, BloodType,
+        // ...), so their validators see them, and controllers turn a service's Result into a response (the Result types
+        // moved into Domain in P0 PR 7, so entities can return them); any other Domain type in Presentation is a violation
+        private static readonly HashSet<(string Layer, string Reference)> EnumsAndResults =
         [
             ("Presentation", "Domain"),
         ];
@@ -61,7 +63,7 @@ namespace ClinicFlow.Tests.Architecture
             var violations = UsedTypes(layer)
                 .Where(t => Forbidden[layer].Contains(t.Assembly))
                 .Where(t => !KnownExceptions.Contains((layer, t.Assembly)))
-                .Where(t => !(EnumsOnly.Contains((layer, t.Assembly)) && IsEnum(t.Assembly, t.Type)))
+                .Where(t => !(EnumsAndResults.Contains((layer, t.Assembly)) && IsEnumOrResult(t.Assembly, t.Type)))
                 .Select(t => $"{t.Assembly}: {t.Type}")
                 .Distinct()
                 .Order()
@@ -95,8 +97,8 @@ namespace ClinicFlow.Tests.Architecture
             Assert.Contains(("Domain", typeof(IUnitOfWork).FullName!), UsedTypes("Services"));
         }
 
-        private static bool IsEnum(string assembly, string type)
-            => Layers[assembly].GetType(type)?.IsEnum == true;
+        private static bool IsEnumOrResult(string assembly, string type)
+            => Layers[assembly].GetType(type) is { } t && (t.IsEnum || t.Namespace == typeof(Result).Namespace);
 
         // Every type the layer's code refers to in another assembly, read from the metadata's TypeRef table.
         // Nested types are reported with their outermost type's assembly and a "+" name, as Type.GetType expects

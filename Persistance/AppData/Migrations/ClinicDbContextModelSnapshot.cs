@@ -45,11 +45,20 @@ namespace Persistence.AppData.Migrations
                     b.Property<string>("CancelledBy")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTime?>("CheckedInAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("DoctorNotes")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("DoctorProfileId")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("NoShowAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<int>("OrganizationId")
                         .HasColumnType("int");
@@ -63,8 +72,14 @@ namespace Persistence.AppData.Migrations
                     b.Property<DateTime?>("ReminderSentAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("RescheduledFromId")
+                        .HasColumnType("int");
+
                     b.Property<int>("SlotId")
                         .HasColumnType("int");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -80,6 +95,10 @@ namespace Persistence.AppData.Migrations
                     b.HasIndex("OrganizationId");
 
                     b.HasIndex("PatientProfileId");
+
+                    b.HasIndex("RescheduledFromId")
+                        .IsUnique()
+                        .HasFilter("[RescheduledFromId] IS NOT NULL");
 
                     b.HasIndex("SlotId");
 
@@ -836,6 +855,11 @@ namespace Persistence.AppData.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
+                    b.HasOne("Domain.Entities.AppModule.Appointment", "RescheduledFrom")
+                        .WithOne("RescheduledTo")
+                        .HasForeignKey("Domain.Entities.AppModule.Appointment", "RescheduledFromId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Domain.Entities.AppModule.AppointmentSlot", "Slot")
                         .WithMany("Appointments")
                         .HasForeignKey("SlotId")
@@ -845,6 +869,8 @@ namespace Persistence.AppData.Migrations
                     b.Navigation("Doctor");
 
                     b.Navigation("Patient");
+
+                    b.Navigation("RescheduledFrom");
 
                     b.Navigation("Slot");
                 });
@@ -1060,6 +1086,8 @@ namespace Persistence.AppData.Migrations
 
             modelBuilder.Entity("Domain.Entities.AppModule.Appointment", b =>
                 {
+                    b.Navigation("RescheduledTo");
+
                     b.Navigation("Review");
                 });
 

@@ -6,12 +6,13 @@ using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Appointment;
 using Shared.DTOs.Notification;
 using Shared.Errors;
-using Shared.ResultPattern;
+using Domain.Errors;
+using Domain.ResultPattern;
 using ClinicFlow.Domain.Enums;
 
-namespace ClinicFlow.Tests.Services.AppointmentServiceTests
+namespace ClinicFlow.Tests.Services.AppointmentBookingServiceTests
 {
-    public class BookAppointmentAsyncTests : AppointmentServiceTestsBase
+    public class BookAppointmentAsyncTests : AppointmentBookingServiceTestsBase
     {
         // Shared constants
         private readonly Guid _patientUserId = Guid.NewGuid();

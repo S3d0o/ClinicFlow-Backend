@@ -7,7 +7,7 @@ using Services;
 using Services.Abstraction.Contracts;
 using Services.Implementations;
 using Shared.DTOs.Review;
-using Shared.ResultPattern;
+using Domain.ResultPattern;
 
 namespace ClinicFlow.Tests.Services.ReviewServiceTests
 {

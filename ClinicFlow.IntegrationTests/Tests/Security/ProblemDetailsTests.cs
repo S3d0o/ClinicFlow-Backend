@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Services.Abstraction.Contracts;
 using Shared.DTOs.Specialty;
-using Shared.ResultPattern;
+using Domain.ResultPattern;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;

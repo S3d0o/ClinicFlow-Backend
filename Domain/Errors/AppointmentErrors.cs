@@ -1,6 +1,6 @@
-﻿using Shared.ResultPattern;
+﻿using Domain.Enums;
 
-namespace Shared.Errors
+namespace Domain.Errors
 {
     public static class AppointmentErrors
     {
@@ -60,6 +60,19 @@ namespace Shared.Errors
         public static readonly Error DoctorNotesNotAllowed =
             Error.Conflict("Appointment.DoctorNotesNotAllowed",
                 "Doctor notes cannot be added to a cancelled appointment");
+
+        // Any move the state machine doesn't allow and no older code covers (docs/v2/adr/0004)
+        public static Error InvalidStatusTransition(AppointmentStatus from, AppointmentStatus to) =>
+            Error.Conflict("Appointment.InvalidStatusTransition",
+                $"An appointment that is {from} cannot become {to}");
+
+        public static readonly Error CheckInNotToday =
+            Error.Validation("Appointment.CheckInNotToday",
+                "Patients can only be checked in on the day of their appointment");
+
+        public static readonly Error NoShowCorrectionExpired =
+            Error.Validation("Appointment.NoShowCorrectionExpired",
+                "A no-show can only be corrected on the day of the appointment");
 
         public static readonly Error ReviewAlreadyExists =
             Error.Conflict("Appointment.ReviewAlreadyExists",

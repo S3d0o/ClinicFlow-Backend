@@ -1,3 +1,3 @@
 ﻿global using Shared.DTOs;
-global using Shared.ResultPattern;
+global using Domain.ResultPattern;
 

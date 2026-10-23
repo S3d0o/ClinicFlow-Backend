@@ -117,9 +117,9 @@ namespace ClinicFlow.IntegrationTests.Tests.Tenancy
             var appointment = new Appointment
             {
                 SlotId = pastSlot.Id, BranchId = branch.Id, DoctorProfileId = doctor.Id, PatientProfileId = patientProfileId,
-                Status = AppointmentStatus.Completed, BookedAt = DateTime.UtcNow.AddDays(-10),
+                BookedAt = DateTime.UtcNow.AddDays(-10),
             };
-            db.Appointments.Add(appointment);
+            db.Appointments.Add(appointment).Property(a => a.Status).CurrentValue = AppointmentStatus.Completed;
             await db.SaveChangesAsync();
 
             var review = new Review

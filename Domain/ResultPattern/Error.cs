@@ -1,4 +1,4 @@
-﻿namespace Shared.ResultPattern
+﻿namespace Domain.ResultPattern
 {
     public sealed record Error(
     string Code,

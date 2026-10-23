@@ -17,7 +17,9 @@ namespace Services.Extensions
             services.AddScoped<ITokenService, TokenService>();
             services.AddScoped<IDoctorService, DoctorService>();
             services.AddScoped<IPatientService, PatientService>();
-            services.AddScoped<IAppointmentService, AppointmentService>();
+            services.AddScoped<IAppointmentBookingService, AppointmentBookingService>();
+            services.AddScoped<IAppointmentCancellationService, AppointmentCancellationService>();
+            services.AddScoped<IAppointmentVisitService, AppointmentVisitService>();
             services.AddScoped<IReviewService, ReviewService>();
             services.AddScoped<INotificationService, NotificationService>();
             services.AddScoped<IAdminService, AdminService>();

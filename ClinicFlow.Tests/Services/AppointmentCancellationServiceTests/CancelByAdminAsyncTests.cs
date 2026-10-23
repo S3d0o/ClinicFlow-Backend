@@ -7,10 +7,11 @@ using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Appointment;
 using Shared.DTOs.Notification;
 using Shared.Errors;
+using Domain.Errors;
 
-namespace ClinicFlow.Tests.Services.AppointmentServiceTests
+namespace ClinicFlow.Tests.Services.AppointmentCancellationServiceTests
 {
-    public class CancelByAdminAsyncTests : AppointmentServiceTestsBase
+    public class CancelByAdminAsyncTests : AppointmentCancellationServiceTestsBase
     {
         private const int _appointmentId = 1;
         private readonly Guid _doctorUserId = Guid.NewGuid();
@@ -28,7 +29,6 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             _appointment = new Appointment
             {
                 Id = _appointmentId,
-                Status = AppointmentStatus.Confirmed,
                 Slot = new AppointmentSlot
                 {
                     Id = 1,
@@ -44,7 +44,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                     UserId = _patientUserId,
                     User = new ApplicationUser { FirstName = "Saad", LastName = "Mohamed" }
                 }
-            };
+            }.WithStatus(AppointmentStatus.Confirmed);
             _uow.Appointments.GetByIdAsync(_appointmentId, _ct).Returns(_appointment);
         }
 
@@ -117,7 +117,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         [Fact]
         public async Task CancelByAdminAsync_WhenAlreadyCancelled_ReturnsAlreadyCancelledError()
         {
-            _appointment.Status = AppointmentStatus.Cancelled;
+            _appointment.WithStatus(AppointmentStatus.Cancelled);
 
             var result = await _sut.CancelByAdminAsync(_appointmentId, _request, _ct);
 
@@ -130,7 +130,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         public async Task CancelByAdminAsync_WhenCompleted_ReturnsAlreadyCompletedErrorAndKeepsStatus()
         {
             // REVIEW.md M14: admins used to get AlreadyCancelled for a completed appointment
-            _appointment.Status = AppointmentStatus.Completed;
+            _appointment.WithStatus(AppointmentStatus.Completed);
 
             var result = await _sut.CancelByAdminAsync(_appointmentId, _request, _ct);
 
@@ -138,6 +138,19 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             Assert.Contains(AppointmentErrors.AlreadyCompleted, result.Errors);
             Assert.DoesNotContain(AppointmentErrors.AlreadyCancelled, result.Errors);
             Assert.Equal(AppointmentStatus.Completed, _appointment.Status);
+            Assert.Equal(SlotStatus.Booked, _appointment.Slot.Status);
+            await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
+        }
+
+        [Fact]
+        public async Task CancelByAdminAsync_WhenInProgress_ReturnsInvalidStatusTransitionAndKeepsTheSlot()
+        {
+            // A visit that has started can't be cancelled (05 §4.1)
+            _appointment.WithStatus(AppointmentStatus.InProgress);
+
+            var result = await _sut.CancelByAdminAsync(_appointmentId, _request, _ct);
+
+            Assert.Contains(AppointmentErrors.InvalidStatusTransition(AppointmentStatus.InProgress, AppointmentStatus.Cancelled), result.Errors);
             Assert.Equal(SlotStatus.Booked, _appointment.Slot.Status);
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
         }
