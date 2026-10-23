@@ -9,7 +9,7 @@
         public Gender Gender { get; set; }
         public DateOnly? DateOfBirth { get; set; }
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; } = true;
 
         // Security and authentication

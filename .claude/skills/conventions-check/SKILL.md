@@ -1,6 +1,6 @@
 ---
 name: conventions-check
-description: Check the current diff (or a given branch/commit range) against ClinicFlow's house rules from CLAUDE.md, such as Result pattern, IDateTimeProvider, structured logging, AsNoTracking, CancellationToken flow, swallowed side effects and contract-doc updates. Use before committing or opening a PR.
+description: Check the current diff (or a given branch/commit range) against ClinicFlow's house rules from CLAUDE.md, such as Result pattern, IClock, structured logging, AsNoTracking, CancellationToken flow, swallowed side effects and contract-doc updates. Use before committing or opening a PR.
 argument-hint: "[git range, default: uncommitted changes + branch vs master]"
 ---
 
@@ -20,7 +20,7 @@ Only report problems in **changed lines**, and their immediate context. Pre-exis
 - A `Result` must not mix `Validation` errors with other types; that throws.
 - `ErrorType` matches the intended status. Flag new `Error.Failure` used for an expected case (M3).
 - New errors are declared in `Shared/Errors/<Feature>Errors.cs` with a `Feature.Reason` code, not inline.
-- No `DateTime.Now` / `DateTime.UtcNow` / `DateTimeOffset.Now` in business rules. Use the injected `IDateTimeProvider`.
+- No `DateTime.Now` / `DateTime.UtcNow` / `DateTime.Today` / `DateTimeOffset.Now` / `TimeProvider.System` in production code (`ClockUsageTests` enforces it). Use the injected `IClock`, and set entity timestamps from it: entities have no `DateTime.UtcNow` defaults.
 - Services inject `IUnitOfWork`, never `ClinicDbContext`.
 - A warning is logged before returning an expected failure.
 - Notifications and emails after the main write go through a try/log/swallow helper (`TryNotifyAsync` style). Emails for an already-committed change don't receive the request `ct`.

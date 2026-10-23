@@ -10,7 +10,8 @@ namespace Services.Implementations
         ILogger<AuthService> logger,
         IUnitOfWork uow,
         ITokenService tokenService,
-        IEmailService emailService) : IAuthService
+        IEmailService emailService,
+        IClock clock) : IAuthService
     {
         public async Task<Result<RegisterResponse>> RegisterDoctorAsync(RegisterDoctorRequest request, CancellationToken ct)
         {
@@ -61,7 +62,7 @@ namespace Services.Implementations
             }, token), ct);
         }
 
-        private static ApplicationUser NewUser(string firstName, string lastName, string email, string phoneNumber, Gender gender, DateOnly? dateOfBirth)
+        private ApplicationUser NewUser(string firstName, string lastName, string email, string phoneNumber, Gender gender, DateOnly? dateOfBirth)
             => new()
             {
                 FirstName = firstName,
@@ -71,7 +72,7 @@ namespace Services.Implementations
                 PhoneNumber = phoneNumber,
                 Gender = gender,
                 DateOfBirth = dateOfBirth,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = clock.UtcNow,
                 IsActive = true,
                 EmailConfirmed = false,
             };
@@ -264,7 +265,7 @@ namespace Services.Implementations
 
             // revoke all existing refresh tokens for the user after password reset
             // user must re-login to get new tokens after password reset on all devices
-            await uow.RefreshTokens.RevokeAllActiveAsync(user.Id, "Password reset", null, ct);
+            await uow.RefreshTokens.RevokeAllActiveAsync(user.Id, "Password reset", null, clock.UtcNow, ct);
 
             // Regenerate security stamp — refresh tokens carry the stamp, so any token issued
             // before this point is rejected on refresh. Access tokens (15 min) stay valid until expiry.

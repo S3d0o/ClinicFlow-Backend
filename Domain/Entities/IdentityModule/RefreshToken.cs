@@ -13,8 +13,9 @@ namespace Domain.Entities.IdentityModule
         public DateTime? Revoked { get; set; }
         public string? RevokedByIp { get; set; }
         public string? ReplacedByTokenHash { get; set; }
-        public bool IsActive => Revoked == null && !IsExpired;
-        public bool IsExpired => DateTime.UtcNow >= Expires;
+        // "now" comes from IClock, so the entity never reads the system clock (REVIEW.md §4.1)
+        public bool IsActiveAt(DateTime utcNow) => Revoked == null && !IsExpiredAt(utcNow);
+        public bool IsExpiredAt(DateTime utcNow) => utcNow >= Expires;
         public DateTime? LastUsed { get; set; }
         public string? LastUsedByIp { get; set; }
         public string? RevocationReason { get; set; }

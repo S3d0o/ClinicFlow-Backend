@@ -24,7 +24,7 @@ Report a table of service → tested methods / untested methods, ranked by risk.
    - the happy path, including what was written: assert the `uow` and repo calls with `Received()`
    - each error the method can return, asserting the exact `Error` (code and type)
    - ownership and role checks
-   - time rules, using the stubbed `IDateTimeProvider`
+   - time rules, using the stubbed `IClock`
    - side effects that must not fail the main operation: make notifications or email throw and assert the result is still success
 4. Test names follow `Method_Scenario_ExpectedResult`.
 5. If the behaviour depends on the database, write an integration test instead of over-mocking. Examples: conditional `ExecuteUpdate`, unique indexes, transactions. Use the `ClinicFlowApiFactory` + `SeedDataHelper` pattern with `[Collection(nameof(IntegrationTestCollection))]` and `IAsyncLifetime`.

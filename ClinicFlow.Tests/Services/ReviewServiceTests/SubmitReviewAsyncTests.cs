@@ -60,6 +60,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
             Assert.Equal(4, added.Rating);
             Assert.Equal("Very thorough", added.Comment);
             Assert.True(added.IsVisible);
+            Assert.Equal(UtcNow, added.CreatedAt); // from IClock
             Assert.Equal(4, result.Value.Rating);
             Assert.Equal("Very thorough", result.Value.Comment);
         }

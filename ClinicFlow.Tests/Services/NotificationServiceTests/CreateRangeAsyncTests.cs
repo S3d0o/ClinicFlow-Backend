@@ -31,6 +31,7 @@ namespace ClinicFlow.Tests.Services.NotificationServiceTests
                 Assert.Equal(NotificationType.AppointmentCancelled, n.Type);
                 Assert.Equal(15, n.RelatedEntityId);
                 Assert.False(n.IsRead);
+                Assert.Equal(UtcNow, n.CreatedAt);
             });
             await _uow.Received(1).SaveChangesAsync(_ct);
         }

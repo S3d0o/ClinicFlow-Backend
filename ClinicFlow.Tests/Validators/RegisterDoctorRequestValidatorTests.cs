@@ -7,7 +7,7 @@ namespace ClinicFlow.Tests.Validators
 {
     public class RegisterDoctorRequestValidatorTests
     {
-        private readonly RegisterDoctorRequestValidator _validator = new();
+        private readonly RegisterDoctorRequestValidator _validator = new(ValidatorClock.Create());
 
         private static readonly RegisterDoctorRequest Valid = new(
             "Omar", "Fathy", "omar@test.com", "Doctor@1234", "+201009876543", Gender.Male,
@@ -30,8 +30,13 @@ namespace ClinicFlow.Tests.Validators
 
         [Fact]
         public void Validate_UnderEighteen_FailsOnDateOfBirth()
-            => _validator.TestValidate(Valid with { DateOfBirth = DateOnly.FromDateTime(DateTime.UtcNow.AddYears(-10)) })
+            => _validator.TestValidate(Valid with { DateOfBirth = ValidatorClock.ClinicToday.AddYears(-10) })
                 .ShouldHaveValidationErrorFor(x => x.DateOfBirth);
+
+        [Fact]
+        public void Validate_EighteenOnTheClinicsDate_IsAllowed()
+            => _validator.TestValidate(Valid with { DateOfBirth = ValidatorClock.ClinicToday.AddYears(-18).AddDays(-1) })
+                .ShouldNotHaveValidationErrorFor(x => x.DateOfBirth);
 
         [Fact]
         public void Validate_BadFeeExperienceAndSpecialty_FailOnThoseFields()

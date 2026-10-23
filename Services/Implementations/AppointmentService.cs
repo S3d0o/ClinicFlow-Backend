@@ -12,7 +12,7 @@ namespace Services.Implementations
         ILogger<AppointmentService> logger,
         INotificationService notificationService,
         IEmailService emailService,
-        IDateTimeProvider dateTimeProvider) : IAppointmentService
+        IClock clock) : IAppointmentService
     {
         public async Task<Result<AppointmentResponse>> BookAppointmentAsync(Guid patientUserId, BookAppointmentRequest request, CancellationToken ct)
         {
@@ -41,7 +41,7 @@ namespace Services.Implementations
                 return AppointmentErrors.SlotNotAvailable;
             }
             // Slot times are clinic-local, so compare them with the clinic's wall clock (REVIEW.md M2)
-            if (slot.Date.ToDateTime(slot.StartTime) < dateTimeProvider.ClinicNow)
+            if (slot.Date.ToDateTime(slot.StartTime) < clock.ClinicNow)
             {
                 logger.LogWarning("Appointment slot is in the past and cannot be booked. Slot ID: {SlotId}, Date: {Date}, StartTime: {StartTime}", request.SlotId, slot.Date, slot.StartTime);
                 return AppointmentErrors.SlotInPast;
@@ -64,7 +64,7 @@ namespace Services.Implementations
                         DoctorProfileId = slot.DoctorProfileId,
                         PatientProfileId = patientProfile.Id,
                         ReasonForVisit = request.ReasonForVisit,
-                        BookedAt = DateTime.UtcNow
+                        BookedAt = clock.UtcNow
                     };
 
                     await uow.Appointments.AddAsync(created, ct);
@@ -147,7 +147,7 @@ namespace Services.Implementations
 
             var slotDateTime = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
 
-            if (dateTimeProvider.ClinicNow > slotDateTime.AddHours(-2))
+            if (clock.ClinicNow > slotDateTime.AddHours(-2))
             {
                 logger.LogWarning("Appointment ID: {AppointmentId} cannot be cancelled within 2 hours of the scheduled time.", appointmentId);
                 return AppointmentErrors.CancellationWindowExpired;
@@ -230,7 +230,7 @@ namespace Services.Implementations
             }
             // A visit can only be completed once it has started (REVIEW.md M14); completing early would unlock a review
             var slotStart = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
-            if (dateTimeProvider.ClinicNow < slotStart)
+            if (clock.ClinicNow < slotStart)
             {
                 logger.LogWarning("Appointment ID: {AppointmentId} cannot be completed before it starts at {SlotStart}.", appointmentId, slotStart);
                 return AppointmentErrors.CannotCompleteBeforeStart;
@@ -308,7 +308,7 @@ namespace Services.Implementations
             }
             // The patient may just be late: wait out the grace period after the start (v2 FR-APT-07)
             var slotStart = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
-            if (dateTimeProvider.ClinicNow < slotStart + NoShowGracePeriod)
+            if (clock.ClinicNow < slotStart + NoShowGracePeriod)
             {
                 logger.LogWarning("Appointment ID: {AppointmentId} cannot be marked as a no-show before {GraceEnd}.", appointmentId, slotStart + NoShowGracePeriod);
                 return AppointmentErrors.NoShowTooEarly;
@@ -408,7 +408,7 @@ namespace Services.Implementations
         private async Task<Result> CancelAsync(Appointment appointment, CancelledBy cancelledBy, string? reason, CancellationToken ct)
         {
             appointment.Status = AppointmentStatus.Cancelled;
-            appointment.CancelledAt = DateTime.UtcNow;
+            appointment.CancelledAt = clock.UtcNow;
             appointment.CancellationReason = reason;
             appointment.CancelledBy = cancelledBy;
             appointment.Slot.Status = FreedSlotStatus(appointment.Slot);

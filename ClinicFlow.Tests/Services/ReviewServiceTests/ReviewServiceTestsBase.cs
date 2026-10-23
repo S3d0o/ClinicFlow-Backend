@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Services;
+using Services.Abstraction.Contracts;
 using Services.Implementations;
 using Shared.DTOs.Review;
 using Shared.ResultPattern;
@@ -17,6 +18,8 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         protected readonly IMapper _mapper;
         protected readonly ILogger<ReviewService> _logger;
         protected readonly ITransaction _transaction;
+        protected readonly IClock _clock;
+        protected static readonly DateTime UtcNow = new(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc);
 
         // System Under Test
         protected readonly ReviewService _sut;
@@ -34,7 +37,10 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
                 .BuildServiceProvider()
                 .GetRequiredService<IMapper>();
 
-            _sut = new ReviewService(_uow, _mapper, _logger);
+            _clock = Substitute.For<IClock>();
+            _clock.UtcNow.Returns(UtcNow);
+
+            _sut = new ReviewService(_uow, _mapper, _logger, _clock);
         }
     }
 }

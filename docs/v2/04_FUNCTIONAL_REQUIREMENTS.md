@@ -14,7 +14,7 @@
 |---|---|
 | R1 | Every endpoint requires a permission, except the explicitly public ones (doctor and service search, slots, specialties, auth) |
 | R2 | Every clinic-owned record belongs to the organization and, where relevant, a branch. Scope checks use that branch |
-| R3 | Every "now" comes from `IClock` (which extends V1's `IDateTimeProvider`); every slot time is branch-local ([ADR 0003](adr/0003-branch-time-zones.md)) |
+| R3 | Every "now" comes from `IClock` (which replaced V1's `IDateTimeProvider` in P0); every slot time is branch-local ([ADR 0003](adr/0003-branch-time-zones.md)) |
 | R4 | Every list endpoint is paged: the body is a JSON array and the total count is in the `X-Total-Count` header, as in V1 ([07 §3](07_API_DESIGN.md#3-conventions)) |
 | R5 | Every error returns ProblemDetails with a stable error code ([07 §3](07_API_DESIGN.md#3-conventions)) |
 | R6 | Every change to a clinical, financial or access-control record writes an audit entry (FR-AUD-01) |

@@ -7,7 +7,7 @@ namespace ClinicFlow.Tests.Validators
 {
     public class RegisterPatientRequestValidatorTests
     {
-        private readonly RegisterPatientRequestValidator _validator = new();
+        private readonly RegisterPatientRequestValidator _validator = new(ValidatorClock.Create());
 
         private static readonly RegisterPatientRequest Valid = new(
             "Mona", "Adel", "mona@test.com", "Patient@1234", "+201001234567", Gender.Female,
@@ -44,9 +44,14 @@ namespace ClinicFlow.Tests.Validators
         [Fact]
         public void Validate_UnderEighteen_FailsOnDateOfBirth()
         {
-            var seventeen = DateOnly.FromDateTime(DateTime.UtcNow.AddYears(-17));
+            var seventeen = ValidatorClock.ClinicToday.AddYears(-17);
             _validator.TestValidate(Valid with { DateOfBirth = seventeen }).ShouldHaveValidationErrorFor(x => x.DateOfBirth);
         }
+
+        [Fact]
+        public void Validate_EighteenOnTheClinicsDate_IsAllowed()
+            => _validator.TestValidate(Valid with { DateOfBirth = ValidatorClock.ClinicToday.AddYears(-18).AddDays(-1) })
+                .ShouldNotHaveValidationErrorFor(x => x.DateOfBirth);
 
         [Fact]
         public void Validate_NoDateOfBirth_IsAllowed()

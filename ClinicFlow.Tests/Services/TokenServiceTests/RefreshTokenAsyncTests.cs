@@ -26,8 +26,8 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
                 Id = 11,
                 TokenHash = Hash(RawToken),
                 UserId = _user.Id,
-                Created = DateTime.UtcNow.AddDays(-1),
-                Expires = DateTime.UtcNow.AddDays(6),
+                Created = UtcNow.AddDays(-1),
+                Expires = UtcNow.AddDays(6),
                 CreatedByIp = Ip,
                 SecurityStamp = "stamp-1",
             };
@@ -58,7 +58,9 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
             Assert.NotNull(replacement);
             Assert.Equal(Hash(result.Value.RefreshToken), replacement!.TokenHash);
             Assert.Equal(replacement.TokenHash, _token.ReplacedByTokenHash);
-            Assert.NotNull(_token.Revoked);
+            Assert.Equal(UtcNow, _token.Revoked);
+            Assert.Equal(UtcNow, _token.LastUsed);
+            Assert.Equal(UtcNow, replacement.Created);
             Assert.Equal("Rotated", _token.RevocationReason);
             Assert.Equal(Ip, _token.LastUsedByIp);
         }
@@ -88,7 +90,7 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
         [Fact]
         public async Task RefreshTokenAsync_WhenTheTokenIsRevoked_ReturnsInvalidRefreshToken()
         {
-            _token.Revoked = DateTime.UtcNow.AddMinutes(-5);
+            _token.Revoked = UtcNow.AddMinutes(-5);
 
             var result = await _sut.RefreshTokenAsync(RawToken, Ip, _ct);
 
@@ -96,10 +98,13 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
             await _uow.DidNotReceive().TrySaveChangesAsync(Arg.Any<CancellationToken>());
         }
 
-        [Fact]
-        public async Task RefreshTokenAsync_WhenTheTokenIsExpired_ReturnsInvalidRefreshToken()
+        // Expiry is checked against IClock, and a token is already expired at its Expires instant
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(0)]
+        public async Task RefreshTokenAsync_WhenTheTokenIsExpired_ReturnsInvalidRefreshToken(int minutesFromNow)
         {
-            _token.Expires = DateTime.UtcNow.AddMinutes(-1);
+            _token.Expires = UtcNow.AddMinutes(minutesFromNow);
 
             var result = await _sut.RefreshTokenAsync(RawToken, Ip, _ct);
 
@@ -133,26 +138,26 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
         {
             // Two tabs refreshing at once: a race, not a theft
             _token.ReplacedByTokenHash = "next";
-            _token.LastUsed = DateTime.UtcNow.AddSeconds(-10);
+            _token.LastUsed = UtcNow.AddSeconds(-10);
             _token.LastUsedByIp = Ip;
 
             var result = await _sut.RefreshTokenAsync(RawToken, Ip, _ct);
 
             Assert.Contains(AuthErrors.InvalidRefreshToken, result.Errors);
-            await _uow.RefreshTokens.DidNotReceiveWithAnyArgs().RevokeAllActiveAsync(default, default!, default, default);
+            await _uow.RefreshTokens.DidNotReceiveWithAnyArgs().RevokeAllActiveAsync(default, default!, default, default, default);
         }
 
         [Fact]
         public async Task RefreshTokenAsync_WhenARotatedTokenIsReusedFromElsewhere_RevokesEverySessionOfTheUser()
         {
             _token.ReplacedByTokenHash = "next";
-            _token.LastUsed = DateTime.UtcNow.AddSeconds(-10);
+            _token.LastUsed = UtcNow.AddSeconds(-10);
             _token.LastUsedByIp = "10.9.9.9";
 
             var result = await _sut.RefreshTokenAsync(RawToken, Ip, _ct);
 
             Assert.Contains(AuthErrors.InvalidRefreshToken, result.Errors);
-            await _uow.RefreshTokens.Received(1).RevokeAllActiveAsync(_user.Id, Arg.Any<string>(), Ip, _ct);
+            await _uow.RefreshTokens.Received(1).RevokeAllActiveAsync(_user.Id, Arg.Any<string>(), Ip, UtcNow, _ct);
         }
     }
 }

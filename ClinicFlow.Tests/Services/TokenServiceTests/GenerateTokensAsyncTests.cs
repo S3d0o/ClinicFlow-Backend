@@ -44,7 +44,8 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
             Assert.Equal(_user.Id, stored.UserId);
             Assert.Equal(Ip, stored.CreatedByIp);
             Assert.Equal("stamp-1", stored.SecurityStamp);
-            Assert.Equal(_jwt.RefreshTokenExpirationDays, (stored.Expires - stored.Created).TotalDays, precision: 3);
+            Assert.Equal(UtcNow, stored.Created); // from IClock
+            Assert.Equal(UtcNow.AddDays(_jwt.RefreshTokenExpirationDays), stored.Expires);
             await _uow.Received(1).SaveChangesAsync(_ct);
         }
 

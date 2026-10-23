@@ -1,10 +1,11 @@
+using Services.Abstraction.Contracts;
 using Shared.DTOs.Auth;
 
 namespace Presentation.Validators
 {
     public class RegisterDoctorRequestValidator : AbstractValidator<RegisterDoctorRequest>
     {
-        public RegisterDoctorRequestValidator()
+        public RegisterDoctorRequestValidator(IClock clock)
         {
             RuleFor(x => x.FirstName)
                 .NotEmpty().WithMessage("First name is required.")
@@ -26,7 +27,7 @@ namespace Presentation.Validators
                 .StrongPassword();
 
             RuleFor(x => x.DateOfBirth)
-                .LessThan(DateOnly.FromDateTime(DateTime.UtcNow.AddYears(-18))).WithMessage("You must be at least 18 years old.")
+                .LessThan(_ => clock.ClinicToday.AddYears(-18)).WithMessage("You must be at least 18 years old.")
                 .When(x => x.DateOfBirth.HasValue);
 
             // REVIEW.md M13: these used to reach the database and fail as a generic 500

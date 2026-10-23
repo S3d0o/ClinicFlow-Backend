@@ -54,6 +54,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             Assert.Equal(new DateOnly(1995, 3, 14), created.DateOfBirth);
             Assert.False(created.EmailConfirmed);
             Assert.True(created.IsActive);
+            Assert.Equal(UtcNow, created.CreatedAt); // from IClock
             await _userManager.Received(1).AddToRoleAsync(created, "Patient");
         }
 

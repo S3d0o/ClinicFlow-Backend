@@ -19,7 +19,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         public MarkNoShowAsyncTests()
         {
             // The visit was due at 10:00 and "now" is 10:15, the end of the grace period
-            _dateTimeProvider.ClinicNow.Returns(new DateTime(2026, 10, 18, 10, 15, 0));
+            _clock.ClinicNow.Returns(new DateTime(2026, 10, 18, 10, 15, 0));
             _appointment = new Appointment
             {
                 Id = _appointmentId,
@@ -79,7 +79,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         [Fact]
         public async Task MarkNoShowAsync_WithinGracePeriod_ReturnsNoShowTooEarlyAndChangesNothing()
         {
-            _dateTimeProvider.ClinicNow.Returns(new DateTime(2026, 10, 18, 10, 14, 0));
+            _clock.ClinicNow.Returns(new DateTime(2026, 10, 18, 10, 14, 0));
 
             var result = await _sut.MarkNoShowAsync(_doctorUserId, "Doctor", _appointmentId, _ct);
 

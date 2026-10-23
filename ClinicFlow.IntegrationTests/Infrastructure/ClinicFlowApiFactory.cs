@@ -107,8 +107,8 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
         // The clinic's wall clock (Clinic:TimeZoneId). Slot dates and times are clinic-local, so seed
         // time-sensitive slots relative to this, not to DateTime.UtcNow (REVIEW.md M2)
-        public DateTime ClinicNow => Services.GetRequiredService<IDateTimeProvider>().ClinicNow;
-        public DateOnly ClinicToday => DateOnly.FromDateTime(ClinicNow);
+        public DateTime ClinicNow => Services.GetRequiredService<IClock>().ClinicNow;
+        public DateOnly ClinicToday => Services.GetRequiredService<IClock>().ClinicToday;
 
         public async Task ResetDataBaseAsync()
         {

@@ -10,7 +10,7 @@ namespace Infrastructure.Auth;
 
 // HMAC-SHA256 JWTs, validated by the host's JwtBearer setup (InfraStructureServiceExtensions). The payload's claim keys
 // are part of the API contract (§2.1): the ClaimTypes URIs for id, name and role, plus email and jti
-public class JwtAccessTokenFactory(IOptions<JwtSettings> jwtOptions, IDateTimeProvider dateTimeProvider) : IAccessTokenFactory
+public class JwtAccessTokenFactory(IOptions<JwtSettings> jwtOptions, IClock clock) : IAccessTokenFactory
 {
     private readonly JwtSettings _jwt = jwtOptions.Value;
 
@@ -25,7 +25,7 @@ public class JwtAccessTokenFactory(IOptions<JwtSettings> jwtOptions, IDateTimePr
         };
         claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
 
-        var expiresAt = dateTimeProvider.UtcNow.AddMinutes(_jwt.AccessTokenExpirationMinutes);
+        var expiresAt = clock.UtcNow.AddMinutes(_jwt.AccessTokenExpirationMinutes);
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.Secret));
 
         var token = new JwtSecurityToken(

@@ -16,6 +16,8 @@ namespace ClinicFlow.Tests.Services.AdminServiceTests
         protected readonly IMapper _mapper;
         protected readonly ILogger<AdminService> _logger;
         protected readonly INotificationService _notificationService;
+        protected readonly IClock _clock;
+        protected static readonly DateTime UtcNow = new(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc);
 
         // System Under Test
         protected readonly AdminService _sut;
@@ -31,7 +33,10 @@ namespace ClinicFlow.Tests.Services.AdminServiceTests
                 .BuildServiceProvider()
                 .GetRequiredService<IMapper>();
 
-            _sut = new AdminService(_uow, _mapper, _logger, _notificationService);
+            _clock = Substitute.For<IClock>();
+            _clock.UtcNow.Returns(UtcNow);
+
+            _sut = new AdminService(_uow, _mapper, _logger, _notificationService, _clock);
         }
     }
 }

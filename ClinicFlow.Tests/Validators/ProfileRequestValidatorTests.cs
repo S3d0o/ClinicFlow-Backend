@@ -90,7 +90,7 @@ namespace ClinicFlow.Tests.Validators
 
     public class UpdateUserProfileRequestValidatorTests
     {
-        private readonly UpdateUserProfileRequestValidator _validator = new();
+        private readonly UpdateUserProfileRequestValidator _validator = new(ValidatorClock.Create());
 
         [Fact]
         public void Validate_EmptyRequest_IsAllowed()
@@ -121,8 +121,13 @@ namespace ClinicFlow.Tests.Validators
 
         [Fact]
         public void Validate_DateOfBirthTodayOrLater_FailsOnDateOfBirth()
-            => _validator.TestValidate(new UpdateUserProfileRequest { DateOfBirth = DateOnly.FromDateTime(DateTime.UtcNow) })
+            => _validator.TestValidate(new UpdateUserProfileRequest { DateOfBirth = ValidatorClock.ClinicToday })
                 .ShouldHaveValidationErrorFor(x => x.DateOfBirth);
+
+        [Fact]
+        public void Validate_DateOfBirthBeforeTheClinicsDate_IsAllowed()
+            => _validator.TestValidate(new UpdateUserProfileRequest { DateOfBirth = ValidatorClock.ClinicToday.AddDays(-1) })
+                .ShouldNotHaveValidationErrorFor(x => x.DateOfBirth);
 
         [Fact]
         public void Validate_InvalidGenderAndLongName_FailOnThoseFields()

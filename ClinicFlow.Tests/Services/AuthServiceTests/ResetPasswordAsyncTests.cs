@@ -39,7 +39,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             var result = await _sut.ResetPasswordAsync(_request, _ct);
 
             Assert.True(result.IsSuccess);
-            await _uow.RefreshTokens.Received(1).RevokeAllActiveAsync(_user.Id, "Password reset", null, _ct);
+            await _uow.RefreshTokens.Received(1).RevokeAllActiveAsync(_user.Id, "Password reset", null, UtcNow, _ct);
             await _userManager.Received(1).UpdateSecurityStampAsync(_user);
         }
 
@@ -67,7 +67,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             Assert.Contains(AuthErrors.UserNotFound, result.Errors);
             await _userManager.DidNotReceive().ResetPasswordAsync(Arg.Any<ApplicationUser>(), Arg.Any<string>(), Arg.Any<string>());
             await _uow.RefreshTokens.DidNotReceive().RevokeAllActiveAsync(
-                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
@@ -81,7 +81,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             Assert.True(result.IsFailure);
             Assert.Contains(AuthErrors.InvalidPasswordResetToken, result.Errors);
             await _uow.RefreshTokens.DidNotReceive().RevokeAllActiveAsync(
-                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
             await _userManager.DidNotReceive().UpdateSecurityStampAsync(Arg.Any<ApplicationUser>());
         }
     }

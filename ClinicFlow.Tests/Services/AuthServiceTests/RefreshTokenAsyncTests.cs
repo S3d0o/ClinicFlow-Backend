@@ -14,7 +14,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
         [Fact]
         public async Task RefreshTokenAsync_WhenTokenValid_ReturnsTokenServiceResponse()
         {
-            var response = new LoginResponse("access", "new-refresh", DateTime.UtcNow, "patient@test.com", "Mona Adel", "Patient");
+            var response = new LoginResponse("access", "new-refresh", UtcNow, "patient@test.com", "Mona Adel", "Patient");
             _tokenService.RefreshTokenAsync("refresh-token", _ip, _ct).Returns(Result<LoginResponse>.Ok(response));
 
             var result = await _sut.RefreshTokenAsync(_request, _ip, _ct);

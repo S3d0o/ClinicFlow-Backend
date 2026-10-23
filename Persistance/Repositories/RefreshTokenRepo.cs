@@ -8,16 +8,12 @@ namespace Persistence.Repositories
         public async Task<RefreshToken?> GetRefreshTokenByHashAsync(string tokenHash, CancellationToken ct)
             => await context.RefreshTokens.FirstOrDefaultAsync(s => s.TokenHash == tokenHash, ct);
 
-        public async Task<int> RevokeAllActiveAsync(Guid userId, string reason, string? revokedByIp, CancellationToken ct)
-        {
-            var now = DateTime.UtcNow;
-
-            return await context.RefreshTokens
-                .Where(r => r.UserId == userId && r.Revoked == null && r.Expires > now)
+        public async Task<int> RevokeAllActiveAsync(Guid userId, string reason, string? revokedByIp, DateTime utcNow, CancellationToken ct)
+            => await context.RefreshTokens
+                .Where(r => r.UserId == userId && r.Revoked == null && r.Expires > utcNow)
                 .ExecuteUpdateAsync(s => s
-                    .SetProperty(r => r.Revoked, now)
+                    .SetProperty(r => r.Revoked, utcNow)
                     .SetProperty(r => r.RevokedByIp, revokedByIp)
                     .SetProperty(r => r.RevocationReason, reason), ct);
-        }
     }
 }
