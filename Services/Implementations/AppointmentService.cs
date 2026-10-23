@@ -46,75 +46,80 @@ namespace Services.Implementations
                 logger.LogWarning("Appointment slot is in the past and cannot be booked. Slot ID: {SlotId}, Date: {Date}, StartTime: {StartTime}", request.SlotId, slot.Date, slot.StartTime);
                 return AppointmentErrors.SlotInPast;
             }
-            await using var transaction = await uow.BeginTransactionAsync(ct);
+            Result<Appointment> booked;
             try
             {
-                var bookedRows = await uow.Slots.SetStatusFromAvailableToBookedAsync(slot.Id, ct);
-                if (bookedRows == 0)
+                booked = await uow.ExecuteInTransactionAsync<Result<Appointment>>(async transaction =>
                 {
-                    logger.LogWarning("Failed to update slot status to booked, concurrent modification detected. Slot ID: {SlotId}", slot.Id);
-                    return AppointmentErrors.SlotAlreadyBooked;
-                }
-                var appointment = new Appointment
-                {
-                    SlotId = slot.Id,
-                    Status = AppointmentStatus.Confirmed,
-                    DoctorProfileId = slot.DoctorProfileId,
-                    PatientProfileId = patientProfile.Id,
-                    ReasonForVisit = request.ReasonForVisit,
-                    BookedAt = DateTime.UtcNow
-                };
+                    var bookedRows = await uow.Slots.SetStatusFromAvailableToBookedAsync(slot.Id, ct);
+                    if (bookedRows == 0)
+                    {
+                        logger.LogWarning("Failed to update slot status to booked, concurrent modification detected. Slot ID: {SlotId}", slot.Id);
+                        return AppointmentErrors.SlotAlreadyBooked;
+                    }
+                    var created = new Appointment
+                    {
+                        SlotId = slot.Id,
+                        Status = AppointmentStatus.Confirmed,
+                        DoctorProfileId = slot.DoctorProfileId,
+                        PatientProfileId = patientProfile.Id,
+                        ReasonForVisit = request.ReasonForVisit,
+                        BookedAt = DateTime.UtcNow
+                    };
 
-                await uow.Appointments.AddAsync(appointment, ct);
-                await uow.SaveChangesAsync(ct);
-                await transaction.CommitAsync(ct);
-
-                logger.LogInformation("Appointment booked successfully for patient ID: {PatientId}, slot ID: {SlotId}, appointment ID: {AppointmentId}", patientProfile.Id, slot.Id, appointment.Id);
-
-                try
-                {
-
-                    await notificationService.CreateRangeAsync(
-                        [
-                       new CreateNotificationRequest(
-                         UserId: patientProfile.UserId, // need to include User nav
-                         Title: "Appointment Confirmed",
-                         Message: $"Your appointment with Dr. {slot.DoctorProfile.User.FirstName} {slot.DoctorProfile.User.LastName} on {slot.Date} at {slot.StartTime:HH:mm} has been booked.",
-                         Type: NotificationType.AppointmentConfirmed,
-                         RelatedEntityId: appointment.Id),
-
-                       new CreateNotificationRequest(
-                         UserId: slot.DoctorProfile.UserId, // need to include User nav
-                         Title: "New Appointment Booked",
-                         Message: $"You have a new appointment with {patientProfile.User.FirstName} {patientProfile.User.LastName} on {slot.Date} at {slot.StartTime:HH:mm}.",
-                         Type: NotificationType.SystemAlert,
-                         RelatedEntityId: appointment.Id)
-                        ], ct);
-                    
-
-                    await emailService.SendAppointmentConfirmationAsync(
-                        email: patientProfile.User.Email!,
-                        patientName: $"{patientProfile.User.FirstName} {patientProfile.User.LastName}",
-                        doctorName: $"{slot.DoctorProfile.User.FirstName} {slot.DoctorProfile.User.LastName}", // the email template adds "Dr."
-                        date: slot.Date,
-                        time: slot.StartTime);
-                }
-                catch (Exception ex)
-                {
-                    // notification failure should not fail the booking
-                    logger.LogError(ex, "Failed to send booking notification for appointment {AppointmentId}", appointment.Id);
-                }
-
-                return mapper.Map<AppointmentResponse>(appointment);
-
+                    await uow.Appointments.AddAsync(created, ct);
+                    await uow.SaveChangesAsync(ct);
+                    await transaction.CommitAsync(ct);
+                    return created;
+                }, ct);
             }
             catch (Exception ex)
             {
+                // The transaction has been rolled back
                 logger.LogError(ex, "Error occurred while booking appointment for patient ID: {PatientId}, slot ID: {SlotId}", patientProfile.Id, request.SlotId);
-                await transaction.RollbackAsync(CancellationToken.None); // must run even if the request was cancelled
                 return Error.Failure("An error occurred while booking the appointment.");
             }
 
+            if (booked.IsFailure)
+                return Result<AppointmentResponse>.Fail(booked.Errors);
+
+            var appointment = booked.Value;
+            logger.LogInformation("Appointment booked successfully for patient ID: {PatientId}, slot ID: {SlotId}, appointment ID: {AppointmentId}", patientProfile.Id, slot.Id, appointment.Id);
+
+            // After the commit and outside the transaction, so a retried transaction can't send them twice
+            try
+            {
+                await notificationService.CreateRangeAsync(
+                    [
+                        new CreateNotificationRequest(
+                            UserId: patientProfile.UserId, // need to include User nav
+                            Title: "Appointment Confirmed",
+                            Message: $"Your appointment with Dr. {slot.DoctorProfile.User.FirstName} {slot.DoctorProfile.User.LastName} on {slot.Date} at {slot.StartTime:HH:mm} has been booked.",
+                            Type: NotificationType.AppointmentConfirmed,
+                            RelatedEntityId: appointment.Id),
+
+                        new CreateNotificationRequest(
+                            UserId: slot.DoctorProfile.UserId, // need to include User nav
+                            Title: "New Appointment Booked",
+                            Message: $"You have a new appointment with {patientProfile.User.FirstName} {patientProfile.User.LastName} on {slot.Date} at {slot.StartTime:HH:mm}.",
+                            Type: NotificationType.SystemAlert,
+                            RelatedEntityId: appointment.Id)
+                    ], ct);
+
+                await emailService.SendAppointmentConfirmationAsync(
+                    email: patientProfile.User.Email!,
+                    patientName: $"{patientProfile.User.FirstName} {patientProfile.User.LastName}",
+                    doctorName: $"{slot.DoctorProfile.User.FirstName} {slot.DoctorProfile.User.LastName}", // the email template adds "Dr."
+                    date: slot.Date,
+                    time: slot.StartTime);
+            }
+            catch (Exception ex)
+            {
+                // notification failure should not fail the booking
+                logger.LogError(ex, "Failed to send booking notification for appointment {AppointmentId}", appointment.Id);
+            }
+
+            return mapper.Map<AppointmentResponse>(appointment);
         }
 
         public async Task<Result> CancelByPatientAsync(Guid patientUserId, int appointmentId, CancelAppointmentRequest request, CancellationToken ct)

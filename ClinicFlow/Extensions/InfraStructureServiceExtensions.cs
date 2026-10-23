@@ -29,9 +29,11 @@ namespace ClinicFlow.Extensions
                     $"but V2 must use '{databaseSettings.ExpectedName}' (Database:ExpectedName). V2 never runs against V1's database. " +
                     "Set the V2 connection string in user secrets or the environment.");
 
+            // Transient SQL errors (deadlocks, dropped connections, failover) are retried instead of reaching the user
+            // (REVIEW.md NL14). Manual transactions therefore run through IUnitOfWork.ExecuteInTransactionAsync
             services.AddDbContext<ClinicDbContext>(options =>
             {
-                options.UseSqlServer(connectionString);
+                options.UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure());
             });
 
             services.AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>

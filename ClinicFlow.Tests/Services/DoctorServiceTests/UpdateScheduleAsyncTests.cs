@@ -1,4 +1,5 @@
 using Domain.Entities.AppModule;
+using Domain.Interfaces;
 using NSubstitute;
 using Shared.DTOs.Doctor;
 using Shared.Errors;
@@ -26,6 +27,36 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
                 DoctorProfile = new DoctorProfile { Id = 7, UserId = _doctorUserId }
             };
             _uow.Doctors.GetScheduleByIdAsync(_scheduleId, _ct).Returns(_schedule);
+        }
+
+        [Fact]
+        public async Task UpdateScheduleAsync_WhenValid_SavesAndRegeneratesSlotsInOneTransaction()
+        {
+            // A failure can't leave the schedule changed but its slots half-replaced (REVIEW.md H4)
+            var result = await _sut.UpdateScheduleAsync(_scheduleId, _doctorUserId,
+                new UpdateScheduleRequest { StartTime = new TimeOnly(10, 0) }, _ct);
+
+            Assert.True(result.IsSuccess);
+            Received.InOrder(() =>
+            {
+                _uow.ExecuteInTransactionAsync(Arg.Any<Func<ITransaction, Task<int>>>(), _ct);
+                _uow.SaveChangesAsync(_ct);
+                _uow.Slots.DeleteFutureAvailableByScheduleAsync(_scheduleId, ClinicToday, _ct);
+                _uow.Slots.SyncKeptSlotsWithScheduleAsync(_schedule, ClinicToday, _ct);
+                _uow.Slots.AddRangeAsync(Arg.Any<IEnumerable<AppointmentSlot>>(), _ct);
+                _uow.SaveChangesAsync(_ct);
+                _transaction.CommitAsync(_ct);
+            });
+        }
+
+        [Fact]
+        public async Task UpdateScheduleAsync_WhenInvalid_OpensNoTransaction()
+        {
+            var result = await _sut.UpdateScheduleAsync(_scheduleId, _doctorUserId,
+                new UpdateScheduleRequest { EndTime = new TimeOnly(8, 0) }, _ct);
+
+            Assert.True(result.IsFailure);
+            await _uow.DidNotReceiveWithAnyArgs().ExecuteInTransactionAsync<int>(default!, default);
         }
 
         [Fact]

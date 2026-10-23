@@ -1,9 +1,9 @@
 using Domain.Entities.IdentityModule;
 using Domain.Interfaces;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using Shared.ResultPattern;
 using Services.Abstraction.Contracts;
 using Services.Implementations;
 
@@ -17,7 +17,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
         protected readonly IUnitOfWork _uow;
         protected readonly ITokenService _tokenService;
         protected readonly IEmailService _emailService;
-        protected readonly IDbContextTransaction _transaction;
+        protected readonly ITransaction _transaction;
 
         // System Under Test
         protected readonly AuthService _sut;
@@ -30,9 +30,9 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             _uow = Substitute.For<IUnitOfWork>();
             _tokenService = Substitute.For<ITokenService>();
             _emailService = Substitute.For<IEmailService>();
-            _transaction = Substitute.For<IDbContextTransaction>();
+            _transaction = Substitute.For<ITransaction>();
 
-            _uow.BeginTransactionAsync(Arg.Any<CancellationToken>()).Returns(_transaction);
+            _uow.RunsTransactionsWith<Result>(_transaction);
 
             _sut = new AuthService(_userManager, _logger, _uow, _tokenService, _emailService);
         }

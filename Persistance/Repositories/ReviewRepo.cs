@@ -33,8 +33,24 @@ namespace Persistence.Repositories
             return (reviews, totalCount);
         }
 
-        public async Task AddAsync(Review review, CancellationToken ct)
-            => await context.Reviews.AddAsync(review, ct);
+        public async Task<bool> TryAddAsync(Review review, CancellationToken ct)
+        {
+            context.Reviews.Add(review);
+            try
+            {
+                await context.SaveChangesAsync(ct);
+                return true;
+            }
+            catch (DbUpdateException)
+            {
+                // The unique index on AppointmentId; anything else is a real failure
+                if (!await context.Reviews.AnyAsync(r => r.AppointmentId == review.AppointmentId, ct))
+                    throw;
+
+                context.Entry(review).State = EntityState.Detached;
+                return false;
+            }
+        }
 
         public void Delete(Review review)
             => context.Reviews.Remove(review);

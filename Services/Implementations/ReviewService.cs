@@ -1,5 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Domain.Enums;
+﻿using Domain.Enums;
 using Domain.Parameters;
 using Shared.DTOs.Review;
 
@@ -48,29 +47,20 @@ namespace Services.Implementations
             };
 
             // The review and the doctor's rating cache are saved together (REVIEW.md L8)
-            await using var transaction = await uow.BeginTransactionAsync(ct);
-
-            await uow.Reviews.AddAsync(review, ct);
-            try
-            {
-                await uow.SaveChangesAsync(ct);
-            }
-            catch (DbUpdateException ex)
+            return await uow.ExecuteInTransactionAsync<Result<ReviewResponse>>(async transaction =>
             {
                 // A concurrent request may have created the review between the check above and this insert
-                // (unique index on AppointmentId); anything else is a real failure
-                if (await uow.Reviews.GetByAppointmentIdAsync(request.AppointmentId, ct) is null)
-                    throw;
+                if (!await uow.Reviews.TryAddAsync(review, ct))
+                {
+                    logger.LogWarning("Concurrent review submission for appointment {AppointmentId}", request.AppointmentId);
+                    return AppointmentErrors.ReviewAlreadyExists;
+                }
+                await uow.Doctors.RefreshRatingCacheAsync(appointment.DoctorProfileId, ct);
+                await transaction.CommitAsync(ct);
 
-                logger.LogWarning(ex, "Concurrent review submission for appointment {AppointmentId}", request.AppointmentId);
-                return AppointmentErrors.ReviewAlreadyExists;
-            }
-            await uow.Doctors.RefreshRatingCacheAsync(appointment.DoctorProfileId, ct);
-            await transaction.CommitAsync(ct);
-
-            logger.LogInformation("Review submitted for appointment {AppointmentId} by user {UserId}", request.AppointmentId, patientUserId);
-            return mapper.Map<ReviewResponse>(review);
-
+                logger.LogInformation("Review submitted for appointment {AppointmentId} by user {UserId}", request.AppointmentId, patientUserId);
+                return mapper.Map<ReviewResponse>(review);
+            }, ct);
         }
 
         public async Task<Result> DeleteReviewAsync(int reviewId, Guid userId, string role, CancellationToken ct)
@@ -89,14 +79,14 @@ namespace Services.Implementations
                 return ReviewErrors.Forbidden;
             }
 
-            await using var transaction = await uow.BeginTransactionAsync(ct);
-
-            uow.Reviews.Delete(review);
-            await uow.SaveChangesAsync(ct);
-
-            await uow.Doctors.RefreshRatingCacheAsync(review.DoctorProfileId, ct);
-            await transaction.CommitAsync(ct);
-            return Result.Ok();
+            return await uow.ExecuteInTransactionAsync(async transaction =>
+            {
+                uow.Reviews.Delete(review);
+                await uow.SaveChangesAsync(ct);
+                await uow.Doctors.RefreshRatingCacheAsync(review.DoctorProfileId, ct);
+                await transaction.CommitAsync(ct);
+                return Result.Ok();
+            }, ct);
         }
 
         public async Task<Result<List<ReviewResponse>>> GetDoctorReviewsAsync(int doctorProfileId, ReviewFilterRequest request, CancellationToken ct)

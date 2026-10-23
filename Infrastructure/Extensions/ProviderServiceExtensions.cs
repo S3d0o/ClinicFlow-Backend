@@ -1,3 +1,4 @@
+using Infrastructure.Auth;
 using Infrastructure.Email;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,6 +12,7 @@ namespace Infrastructure.Extensions
         public static IServiceCollection AddProviderServices(this IServiceCollection services, IConfiguration config)
         {
             services.AddScoped<IEmailService, EmailService>();
+            services.AddSingleton<IAccessTokenFactory, JwtAccessTokenFactory>();
 
             services.Configure<EmailSettings>(config.GetSection("EmailSettings"));
             services.Configure<FrontendSettings>(config.GetSection("Frontend"));

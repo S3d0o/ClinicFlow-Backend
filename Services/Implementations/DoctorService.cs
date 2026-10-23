@@ -125,14 +125,17 @@ namespace Services.Implementations
             // One transaction, so a failure can't leave the schedule changed but its slots half-replaced (REVIEW.md H4).
             // Booked slots, and slots an appointment still points to, are kept; regeneration skips their times.
             // Kept free slots outside the new hours are blocked so patients can't book them.
-            await using var transaction = await uow.BeginTransactionAsync(ct);
-            await uow.SaveChangesAsync(ct);
-            await uow.Slots.DeleteFutureAvailableByScheduleAsync(scheduleId, ClinicToday(), ct);
-            await uow.Slots.SyncKeptSlotsWithScheduleAsync(updatedSchedule, ClinicToday(), ct);
-            await GenerateSlotsAsync(updatedSchedule, ct);
-            await transaction.CommitAsync(ct);
+            var created = await uow.ExecuteInTransactionAsync(async transaction =>
+            {
+                await uow.SaveChangesAsync(ct);
+                await uow.Slots.DeleteFutureAvailableByScheduleAsync(scheduleId, ClinicToday(), ct);
+                await uow.Slots.SyncKeptSlotsWithScheduleAsync(updatedSchedule, ClinicToday(), ct);
+                var slotCount = await GenerateSlotsAsync(updatedSchedule, ct);
+                await transaction.CommitAsync(ct);
+                return slotCount;
+            }, ct);
 
-            logger.LogInformation("Updated schedule {ScheduleId} for doctor {UserId} and regenerated its free slots", scheduleId, userId);
+            logger.LogInformation("Updated schedule {ScheduleId} for doctor {UserId} and regenerated {SlotCount} free slots", scheduleId, userId, created);
             return mapper.Map<ScheduleResponse>(updatedSchedule);
         }
         public async Task<Result> DeleteScheduleAsync(int scheduleId, Guid userId, CancellationToken ct)
@@ -151,25 +154,32 @@ namespace Services.Implementations
                 return DoctorErrors.CannotDeleteScheduleWithBookedSlots;
             }
 
-            await using var transaction = await uow.BeginTransactionAsync(ct);
-            await uow.Slots.DeleteUnusedByScheduleAsync(scheduleId, ct);
+            var deactivated = await uow.ExecuteInTransactionAsync(async transaction =>
+            {
+                await uow.Slots.DeleteUnusedByScheduleAsync(scheduleId, ct);
 
-            // Slots that remain belong to past or cancelled appointments; the appointment→slot FK is NoAction,
-            // so the schedule is deactivated instead of deleted to keep that history
-            if (await uow.Slots.AnyForScheduleAsync(scheduleId, ct))
-            {
-                existing.IsActive = false;
-                // Future free slots of cancelled appointments stay, but are no longer bookable
-                await uow.Slots.SyncKeptSlotsWithScheduleAsync(existing, ClinicToday(), ct);
+                // Slots that remain belong to past or cancelled appointments; the appointment→slot FK is NoAction,
+                // so the schedule is deactivated instead of deleted to keep that history
+                var hasHistory = await uow.Slots.AnyForScheduleAsync(scheduleId, ct);
+                if (hasHistory)
+                {
+                    existing.IsActive = false;
+                    // Future free slots of cancelled appointments stay, but are no longer bookable
+                    await uow.Slots.SyncKeptSlotsWithScheduleAsync(existing, ClinicToday(), ct);
+                }
+                else
+                {
+                    uow.Doctors.DeleteSchedule(existing);
+                }
+                await uow.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+                return hasHistory;
+            }, ct);
+
+            if (deactivated)
                 logger.LogInformation("Deactivated schedule {ScheduleId} for doctor {UserId}: it has appointment history", scheduleId, userId);
-            }
             else
-            {
-                uow.Doctors.DeleteSchedule(existing);
                 logger.LogInformation("Deleted schedule {ScheduleId} for doctor {UserId}", scheduleId, userId);
-            }
-            await uow.SaveChangesAsync(ct);
-            await transaction.CommitAsync(ct);
             return Result.Ok();
 
         }

@@ -34,6 +34,20 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         }
 
         [Fact]
+        public async Task DeleteScheduleAsync_WhenCallerOwnsSchedule_CommitsAfterSaving()
+        {
+            var result = await _sut.DeleteScheduleAsync(_scheduleId, _ownerUserId, _ct);
+
+            Assert.True(result.IsSuccess);
+            Received.InOrder(() =>
+            {
+                _uow.Slots.DeleteUnusedByScheduleAsync(_scheduleId, _ct);
+                _uow.SaveChangesAsync(_ct);
+                _transaction.CommitAsync(_ct);
+            });
+        }
+
+        [Fact]
         public async Task DeleteScheduleAsync_WhenUpcomingAppointmentsAreBooked_ReturnsConflictAndChangesNothing()
         {
             // REVIEW.md H4: the doctor must cancel upcoming appointments before removing the schedule

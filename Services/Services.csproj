@@ -8,13 +8,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Domain\Domain.csproj" />
-    <ProjectReference Include="..\Persistance\Persistence.csproj" />
     <ProjectReference Include="..\Services.Abstraction\Services.Abstraction.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="AutoMapper" Version="16.1.1" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
   </ItemGroup>
 
 </Project>

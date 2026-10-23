@@ -1,15 +1,10 @@
 using Domain.Entities.IdentityModule;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Tokens;
 using Shared.DTOs.Auth;
 using Shared.Settings;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
-using JwtRegisteredClaimNames = Microsoft.IdentityModel.JsonWebTokens.JwtRegisteredClaimNames;
 
 namespace Services.Implementations
 {
@@ -17,6 +12,7 @@ namespace Services.Implementations
         IOptions<JwtSettings> jwtOptions,
         UserManager<ApplicationUser> userManager,
         IUnitOfWork uow,
+        IAccessTokenFactory accessTokenFactory,
         ILogger<TokenService> logger) : ITokenService
     {
         private const string RotatedReason = "Rotated";
@@ -29,7 +25,7 @@ namespace Services.Implementations
             ArgumentNullException.ThrowIfNull(user);
             roles ??= new List<string>();
 
-            var accessToken = GenerateAccessToken(user, roles);
+            var accessToken = CreateAccessToken(user, roles);
 
             var securityStamp = await userManager.GetSecurityStampAsync(user);
 
@@ -40,9 +36,7 @@ namespace Services.Implementations
             await uow.RefreshTokens.AddAsync(refreshTokenEntity, ct);
             await uow.SaveChangesAsync(ct);
 
-            var accessTokenExpiresAt = DateTime.UtcNow.AddMinutes(_jwt.AccessTokenExpirationMinutes);
-
-            return new TokenDto(accessToken, refreshToken, accessTokenExpiresAt);
+            return new TokenDto(accessToken.Value, refreshToken, accessToken.ExpiresAtUtc);
         }
 
         // Expected failures return AuthErrors.InvalidRefreshToken (401). Anything else (DB outage,
@@ -97,22 +91,19 @@ namespace Services.Implementations
             await uow.RefreshTokens.AddAsync(
                 CreateRefreshEntity(newRefreshTokenHash, user.Id, ipAddress, _jwt.RefreshTokenExpirationDays, currentStamp), ct);
 
-            try
-            {
-                // RowVersion on RefreshToken: a concurrent refresh with the same token fails here
-                await uow.SaveChangesAsync(ct);
-            }
-            catch (DbUpdateConcurrencyException)
+            // RowVersion on RefreshToken: a concurrent refresh with the same token fails here
+            if (!await uow.TrySaveChangesAsync(ct))
             {
                 logger.LogWarning("Refresh failed: token {TokenId} was used concurrently", existingToken.Id);
                 return AuthErrors.InvalidRefreshToken;
             }
 
             var roles = await userManager.GetRolesAsync(user);
+            var accessToken = CreateAccessToken(user, roles);
             return new LoginResponse(
-                AccessToken: GenerateAccessToken(user, roles),
+                AccessToken: accessToken.Value,
                 RefreshToken: newRefreshToken,
-                ExpiresAt: now.AddMinutes(_jwt.AccessTokenExpirationMinutes),
+                ExpiresAt: accessToken.ExpiresAtUtc,
                 Email: user.Email ?? "",
                 FullName: string.Join(" ", user.FirstName, user.LastName),
                 Role: roles.FirstOrDefault() ?? ""
@@ -168,34 +159,9 @@ namespace Services.Implementations
             return AuthErrors.InvalidRefreshToken;
         }
 
-        private string GenerateAccessToken(ApplicationUser user, IList<string> roles)
-        {
-            var claims = new List<Claim>
-            {
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(JwtRegisteredClaimNames.Email, user.Email ?? ""),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new Claim(ClaimTypes.Name, $"{user.FirstName} {user.LastName}")
-            };
-            foreach (var role in roles)
-                claims.Add(new Claim(ClaimTypes.Role,role));
+        private AccessToken CreateAccessToken(ApplicationUser user, IEnumerable<string> roles)
+            => accessTokenFactory.Create(user.Id, user.Email ?? "", $"{user.FirstName} {user.LastName}", roles);
 
-            var expiration = DateTime.UtcNow.AddMinutes(_jwt.AccessTokenExpirationMinutes);
-
-            var key  = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.Secret));
-
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-            var token = new JwtSecurityToken(
-                issuer: _jwt.Issuer,
-                audience: _jwt.Audience,
-                claims: claims,
-                signingCredentials: creds,
-                expires: expiration
-                );
-
-            return new JwtSecurityTokenHandler().WriteToken(token);
-        }
         private string GenerateRefreshToken() =>
           Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
 

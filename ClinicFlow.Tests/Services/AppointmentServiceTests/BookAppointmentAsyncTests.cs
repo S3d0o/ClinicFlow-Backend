@@ -1,11 +1,12 @@
 ﻿using Domain.Entities.AppModule;
 using Domain.Entities.IdentityModule;
-using Microsoft.EntityFrameworkCore.Storage;
+using Domain.Interfaces;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Appointment;
 using Shared.DTOs.Notification;
 using Shared.Errors;
+using Shared.ResultPattern;
 using ClinicFlow.Domain.Enums;
 
 namespace ClinicFlow.Tests.Services.AppointmentServiceTests
@@ -20,13 +21,17 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         private readonly BookAppointmentRequest _request = new(SlotId, "no reason");
 
         // Happy path helper — call this then add your one difference on top
-        private (IDbContextTransaction transaction, AppointmentResponse response) SetupHappyPath()
+        private (ITransaction transaction, AppointmentResponse response) SetupHappyPath()
         {
             var dateTime = _now.AddDays(1).AddHours(1);
 
             _uow.Patients
                 .GetPatientByUserIdAsync(_patientUserId, _ct)
-                .Returns(new PatientProfile());
+                .Returns(new PatientProfile
+                {
+                    UserId = _patientUserId,
+                    User = new ApplicationUser { FirstName = "Mona", LastName = "Hassan", Email = "mona@test.com" }
+                });
 
             _dateTimeProvider.ClinicNow.Returns(_now);
 
@@ -39,8 +44,8 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 StartTime = TimeOnly.FromDateTime(dateTime),
             });
 
-            var transaction = Substitute.For<IDbContextTransaction>();
-            _uow.BeginTransactionAsync().Returns(transaction);
+            var transaction = Substitute.For<ITransaction>();
+            _uow.RunsTransactionsWith<Result<Appointment>>(transaction);
             _uow.Slots.SetStatusFromAvailableToBookedAsync(SlotId, _ct).Returns(1);
 
             var appointmentResponse = new AppointmentResponse
@@ -196,8 +201,8 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 StartTime = TimeOnly.FromDateTime(dateTime),
             });
 
-            var transaction = Substitute.For<IDbContextTransaction>();
-            _uow.BeginTransactionAsync().Returns(transaction);
+            var transaction = Substitute.For<ITransaction>();
+            _uow.RunsTransactionsWith<Result<Appointment>>(transaction);
             _uow.Slots.SetStatusFromAvailableToBookedAsync(SlotId, _ct).Returns(0);
 
             // Act
@@ -206,7 +211,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             // Assert
             Assert.True(result.IsFailure);
             Assert.Contains(AppointmentErrors.SlotAlreadyBooked, result.Errors);
-            await _uow.Received(1).BeginTransactionAsync();
+            await transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
             await _uow.Appointments.DidNotReceive()
                       .AddAsync(Arg.Any<Appointment>(), Arg.Any<CancellationToken>());
         }
@@ -224,14 +229,58 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             Assert.True(result.IsSuccess);
             Assert.NotNull(result.Value);
             Assert.Equal(appointmentResponse, result.Value);
-            await _uow.Received(1).BeginTransactionAsync();
+            await _uow.Received(1).ExecuteInTransactionAsync(Arg.Any<Func<ITransaction, Task<Result<Appointment>>>>(), _ct);
             await _uow.Slots.Received(1)
                       .SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
             await _uow.Appointments.Received(1)
                       .AddAsync(Arg.Any<Appointment>(), Arg.Any<CancellationToken>());
             await _uow.Received(1).SaveChangesAsync();
             await transaction.Received(1).CommitAsync(Arg.Any<CancellationToken>());
-            await transaction.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
+        }
+
+        [Fact]
+        public async Task BookAppointmentAsync_WhenBooked_NotifiesAndEmailsOnlyAfterTheCommit()
+        {
+            // A retried transaction re-runs its operation, so side effects must stay outside it (REVIEW.md NL14)
+            var (transaction, _) = SetupHappyPath();
+
+            await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
+
+            Received.InOrder(() =>
+            {
+                transaction.CommitAsync(Arg.Any<CancellationToken>());
+                _notificationService.CreateRangeAsync(Arg.Any<IEnumerable<CreateNotificationRequest>>(), Arg.Any<CancellationToken>());
+                _emailService.SendAppointmentConfirmationAsync(
+                    Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateOnly>(), Arg.Any<TimeOnly>(), Arg.Any<CancellationToken>());
+            });
+        }
+
+        [Fact]
+        public async Task BookAppointmentAsync_WhenSlotAlreadyBooked_SendsNoNotificationOrEmail()
+        {
+            SetupHappyPath();
+            _uow.Slots.SetStatusFromAvailableToBookedAsync(SlotId, _ct).Returns(0);
+
+            await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
+
+            await _notificationService.DidNotReceiveWithAnyArgs().CreateRangeAsync(default!, default);
+            await _emailService.DidNotReceiveWithAnyArgs().SendAppointmentConfirmationAsync(default!, default!, default!, default, default, default);
+        }
+
+        [Fact]
+        public async Task BookAppointmentAsync_WhenTheTransactionFails_ReturnsFailureAndSendsNothing()
+        {
+            // E.g. a transient SQL error that outlasted every retry
+            SetupHappyPath();
+            _uow.ExecuteInTransactionAsync(Arg.Any<Func<ITransaction, Task<Result<Appointment>>>>(), Arg.Any<CancellationToken>())
+                .ThrowsAsync(new TimeoutException("simulated"));
+
+            var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
+
+            Assert.True(result.IsFailure);
+            Assert.Equal(ErrorType.Failure, result.Errors[0].Type);
+            await _notificationService.DidNotReceiveWithAnyArgs().CreateRangeAsync(default!, default);
+            await _emailService.DidNotReceiveWithAnyArgs().SendAppointmentConfirmationAsync(default!, default!, default!, default, default, default);
         }
 
         [Fact]
@@ -252,7 +301,6 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             // Assert
             Assert.True(result.IsSuccess);
             await transaction.Received(1).CommitAsync(Arg.Any<CancellationToken>());
-            await transaction.DidNotReceive().RollbackAsync(Arg.Any<CancellationToken>());
         }
 
         [Theory]

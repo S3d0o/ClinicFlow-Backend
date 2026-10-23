@@ -6,6 +6,8 @@ using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Review;
 using Shared.Errors;
+using Shared.ResultPattern;
+using Domain.Interfaces;
 
 namespace ClinicFlow.Tests.Services.ReviewServiceTests
 {
@@ -39,13 +41,14 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
             _uow.Patients.GetPatientByUserIdAsync(_patientUserId, _ct).Returns(_patient);
             _uow.Reviews.GetByAppointmentIdAsync(_appointmentId, _ct).Returns((Review?)null);
             _uow.Appointments.GetByIdAsync(_appointmentId, _ct).Returns(_appointment);
+            _uow.Reviews.TryAddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>()).Returns(true);
         }
 
         [Fact]
         public async Task SubmitReviewAsync_WhenValid_AddsReviewFromAppointment()
         {
             Review? added = null;
-            await _uow.Reviews.AddAsync(Arg.Do<Review>(r => added = r), Arg.Any<CancellationToken>());
+            _uow.Reviews.TryAddAsync(Arg.Do<Review>(r => added = r), Arg.Any<CancellationToken>()).Returns(true);
 
             var result = await _sut.SubmitReviewAsync(_patientUserId, _request, _ct);
 
@@ -70,8 +73,8 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
             Assert.True(result.IsSuccess);
             Received.InOrder(() =>
             {
-                _uow.BeginTransactionAsync(_ct);
-                _uow.SaveChangesAsync(_ct);
+                _uow.ExecuteInTransactionAsync(Arg.Any<Func<ITransaction, Task<Result<ReviewResponse>>>>(), _ct);
+                _uow.Reviews.TryAddAsync(Arg.Any<Review>(), _ct);
                 _uow.Doctors.RefreshRatingCacheAsync(_doctorId, _ct);
                 _transaction.CommitAsync(_ct);
             });
@@ -87,7 +90,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
 
             Assert.True(result.IsFailure);
             Assert.Contains(PatientErrors.ProfileNotFound(unknownUserId), result.Errors);
-            await _uow.Reviews.DidNotReceive().AddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>());
+            await _uow.Reviews.DidNotReceive().TryAddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
@@ -99,7 +102,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
 
             Assert.True(result.IsFailure);
             Assert.Contains(AppointmentErrors.ReviewAlreadyExists, result.Errors);
-            await _uow.Reviews.DidNotReceive().AddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>());
+            await _uow.Reviews.DidNotReceive().TryAddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>());
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
         }
 
@@ -112,7 +115,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
 
             Assert.True(result.IsFailure);
             Assert.Contains(AppointmentErrors.NotFound(_appointmentId), result.Errors);
-            await _uow.Reviews.DidNotReceive().AddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>());
+            await _uow.Reviews.DidNotReceive().TryAddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
@@ -124,7 +127,7 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
 
             Assert.True(result.IsFailure);
             Assert.Contains(AppointmentErrors.Forbidden, result.Errors);
-            await _uow.Reviews.DidNotReceive().AddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>());
+            await _uow.Reviews.DidNotReceive().TryAddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>());
             await _uow.Doctors.DidNotReceive().RefreshRatingCacheAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
 
@@ -157,16 +160,14 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
 
             Assert.True(result.IsFailure);
             Assert.Contains(AppointmentErrors.ReviewNotAllowed, result.Errors);
-            await _uow.Reviews.DidNotReceive().AddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>());
+            await _uow.Reviews.DidNotReceive().TryAddAsync(Arg.Any<Review>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
         public async Task SubmitReviewAsync_WhenConcurrentRequestInsertedReviewFirst_ReturnsReviewAlreadyExistsError()
         {
             // The pre-check sees no review; the insert then hits the unique index because another request won the race
-            _uow.Reviews.GetByAppointmentIdAsync(_appointmentId, _ct)
-                .Returns((Review?)null, new Review { AppointmentId = _appointmentId });
-            _uow.SaveChangesAsync(_ct).ThrowsAsync(new DbUpdateException("unique index IX_Reviews_AppointmentId"));
+            _uow.Reviews.TryAddAsync(Arg.Any<Review>(), _ct).Returns(false);
 
             var result = await _sut.SubmitReviewAsync(_patientUserId, _request, _ct);
 
@@ -177,10 +178,10 @@ namespace ClinicFlow.Tests.Services.ReviewServiceTests
         }
 
         [Fact]
-        public async Task SubmitReviewAsync_WhenSaveFailsForAnotherReason_Throws()
+        public async Task SubmitReviewAsync_WhenAddFailsForAnotherReason_Throws()
         {
-            // No review exists after the failure, so it was not a duplicate: the exception must propagate
-            _uow.SaveChangesAsync(_ct).ThrowsAsync(new DbUpdateException("check constraint CK_Review_Rating"));
+            // Not a duplicate (the repository rethrows those it can't explain), so the exception must propagate
+            _uow.Reviews.TryAddAsync(Arg.Any<Review>(), _ct).ThrowsAsync(new DbUpdateException("check constraint CK_Review_Rating"));
 
             await Assert.ThrowsAsync<DbUpdateException>(() => _sut.SubmitReviewAsync(_patientUserId, _request, _ct));
             await _uow.Doctors.DidNotReceive().RefreshRatingCacheAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
