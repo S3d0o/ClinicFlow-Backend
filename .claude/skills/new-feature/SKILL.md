@@ -51,7 +51,7 @@ Watch the namespace gotchas in CLAUDE.md, and check each project's `Global.cs` b
 
 ## 2. Tests
 
-- **Unit:** `ClinicFlow.Tests/Services/<Service>Tests/` with a `<Service>TestsBase` (copy the pattern of `AppointmentServiceTestsBase`) and one class per public method. Cover the happy path, not found, the ownership check (403) and each conflict.
+- **Unit:** `ClinicFlow.Tests/Services/<Service>Tests/` with a `<Service>TestsBase` (copy the pattern of `AppointmentBookingServiceTestsBase`) and one class per public method. Cover the happy path, not found, the ownership check (403) and each conflict.
 - **Integration:** `ClinicFlow.IntegrationTests/Tests/<Feature>/`, following `CancelAppointmentByPatientTests`. Cover each endpoint's success status, anonymous → 401, wrong role → 403 and a validation 400.
 
 ## 3. Finish

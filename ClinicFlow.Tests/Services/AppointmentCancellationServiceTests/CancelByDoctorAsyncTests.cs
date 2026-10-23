@@ -7,10 +7,11 @@ using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Appointment;
 using Shared.DTOs.Notification;
 using Shared.Errors;
+using Domain.Errors;
 
-namespace ClinicFlow.Tests.Services.AppointmentServiceTests
+namespace ClinicFlow.Tests.Services.AppointmentCancellationServiceTests
 {
-    public class CancelByDoctorAsyncTests : AppointmentServiceTestsBase
+    public class CancelByDoctorAsyncTests : AppointmentCancellationServiceTestsBase
     {
         private const int _appointmentId = 1;
         private const int _doctorId = 5;
@@ -31,7 +32,6 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             {
                 Id = _appointmentId,
                 DoctorProfileId = _doctorId,
-                Status = AppointmentStatus.Confirmed,
                 Slot = new AppointmentSlot
                 {
                     Id = 1,
@@ -47,7 +47,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                     UserId = _patientUserId,
                     User = new ApplicationUser { FirstName = "Saad", LastName = "Mohamed" }
                 }
-            };
+            }.WithStatus(AppointmentStatus.Confirmed);
             _uow.Appointments.GetByIdAsync(_appointmentId, _ct).Returns(_appointment);
         }
 
@@ -178,7 +178,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         [Fact]
         public async Task CancelByDoctorAsync_WhenAlreadyCancelled_ReturnsAlreadyCancelledError()
         {
-            _appointment.Status = AppointmentStatus.Cancelled;
+            _appointment.WithStatus(AppointmentStatus.Cancelled);
 
             var result = await _sut.CancelByDoctorAsync(_doctorUserId, _appointmentId, _request, _ct);
 
@@ -190,7 +190,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         [Fact]
         public async Task CancelByDoctorAsync_WhenCompleted_ReturnsAlreadyCompletedError()
         {
-            _appointment.Status = AppointmentStatus.Completed;
+            _appointment.WithStatus(AppointmentStatus.Completed);
 
             var result = await _sut.CancelByDoctorAsync(_doctorUserId, _appointmentId, _request, _ct);
 

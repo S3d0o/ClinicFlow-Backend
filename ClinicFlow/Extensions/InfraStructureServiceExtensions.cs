@@ -6,8 +6,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Services.Abstraction.Contracts;
 using Persistence;
 using Persistence.AppData;
+using Persistence.Queries;
 using Persistence.Tenancy;
 using Shared.Settings;
 using System.Text;
@@ -98,6 +100,9 @@ namespace ClinicFlow.Extensions
             });
 
             services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+            // Query classes (CQRS-lite) read through the context directly, so unlike repositories they are registered here
+            services.AddScoped<IAppointmentQueries, AppointmentQueries>();
 
 
             return services;

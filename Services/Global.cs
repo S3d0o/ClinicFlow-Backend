@@ -5,4 +5,5 @@ global using Microsoft.Extensions.Logging;
 global using Services.Abstraction.Contracts;
 global using Shared.DTOs;
 global using Shared.Errors;
-global using Shared.ResultPattern;
+global using Domain.Errors;
+global using Domain.ResultPattern;

@@ -7,3 +7,4 @@ global using Domain.Interfaces.IRepositories;
 global using Persistence.AppData;
 global using Domain.Parameters;
 
+global using Domain.ResultPattern;

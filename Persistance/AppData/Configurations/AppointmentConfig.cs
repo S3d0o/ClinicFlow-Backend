@@ -19,6 +19,12 @@
                  .HasForeignKey(a => a.SlotId)
                  .OnDelete(DeleteBehavior.NoAction);
 
+            // A reschedule links the new appointment to the one it replaces; each is replaced at most once
+            builder.HasOne(a => a.RescheduledFrom)
+                .WithOne(a => a.RescheduledTo)
+                .HasForeignKey<Appointment>(a => a.RescheduledFromId)
+                .OnDelete(DeleteBehavior.NoAction);
+
             builder.Property(x=> x.Status)
                 .HasConversion<string>()
                 .HasMaxLength(20);

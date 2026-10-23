@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Domain\Domain.csproj" />
+    <!-- Query classes (CQRS-lite) implement the read interfaces declared there -->
+    <ProjectReference Include="..\Services.Abstraction\Services.Abstraction.csproj" />
   </ItemGroup>
 
 </Project>

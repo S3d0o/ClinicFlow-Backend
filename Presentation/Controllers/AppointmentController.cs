@@ -7,7 +7,11 @@ using System.Security.Claims;
 namespace Presentation.Controllers;
 
 [Route("api/appointments")]
-public class AppointmentController(IAppointmentService service) : ApiController
+public class AppointmentController(
+    IAppointmentBookingService booking,
+    IAppointmentCancellationService cancellation,
+    IAppointmentVisitService visits,
+    IAppointmentQueries queries) : ApiController
 {
     /// <summary>Book an appointment</summary>
     /// <remarks>
@@ -24,7 +28,7 @@ public class AppointmentController(IAppointmentService service) : ApiController
         [FromBody] BookAppointmentRequest request, CancellationToken ct)
     {
         var userId = User.GetUserId();
-        var result = await service.BookAppointmentAsync(userId, request, ct);
+        var result = await booking.BookAppointmentAsync(userId, request, ct);
         return HandleResult(result, StatusCodes.Status201Created);
     }
 
@@ -41,7 +45,7 @@ public class AppointmentController(IAppointmentService service) : ApiController
         [FromQuery] AppointmentFilterRequest request, CancellationToken ct)
     {
         var userId = User.GetUserId();
-        var result = await service.GetPatientAppointmentsAsync(userId, request, ct);
+        var result = await queries.GetPatientAppointmentsAsync(userId, request, ct);
         return HandleResult(result);
     }
 
@@ -58,7 +62,7 @@ public class AppointmentController(IAppointmentService service) : ApiController
         [FromQuery] AppointmentFilterRequest request, CancellationToken ct)
     {
         var userId = User.GetUserId();
-        var result = await service.GetDoctorAppointmentsAsync(userId, request, ct);
+        var result = await queries.GetDoctorAppointmentsAsync(userId, request, ct);
         return HandleResult(result);
     }
 
@@ -71,7 +75,7 @@ public class AppointmentController(IAppointmentService service) : ApiController
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AppointmentResponse>> GetById(int id, CancellationToken ct)
     {
-        var result = await service.GetAppointmentAsync(id, User.GetUserId(), User.GetRole(), ct);
+        var result = await queries.GetAppointmentAsync(id, User.GetUserId(), User.GetRole(), ct);
         return HandleResult(result);
     }
 
@@ -97,9 +101,9 @@ public class AppointmentController(IAppointmentService service) : ApiController
 
         return role switch
         {
-            "Patient" => HandleResult(await service.CancelByPatientAsync(userId, id, request, ct)),
-            "Doctor" => HandleResult(await service.CancelByDoctorAsync(userId, id, request, ct)),
-            "Admin" => HandleResult(await service.CancelByAdminAsync(id, request, ct)),
+            "Patient" => HandleResult(await cancellation.CancelByPatientAsync(userId, id, request, ct)),
+            "Doctor" => HandleResult(await cancellation.CancelByDoctorAsync(userId, id, request, ct)),
+            "Admin" => HandleResult(await cancellation.CancelByAdminAsync(id, request, ct)),
             _ => Forbid()
         };
     }
@@ -120,7 +124,7 @@ public class AppointmentController(IAppointmentService service) : ApiController
     public async Task<IActionResult> Complete(int id, CancellationToken ct)
     {
         var userId = User.GetUserId();
-        var result = await service.CompleteAppointmentAsync(userId, id, ct);
+        var result = await visits.CompleteAppointmentAsync(userId, id, ct);
         return HandleResult(result);
     }
 
@@ -137,7 +141,7 @@ public class AppointmentController(IAppointmentService service) : ApiController
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> MarkNoShow(int id, CancellationToken ct)
-        => HandleResult(await service.MarkNoShowAsync(User.GetUserId(), User.GetRole(), id, ct));
+        => HandleResult(await visits.MarkNoShowAsync(User.GetUserId(), User.GetRole(), id, ct));
 
     /// <summary>Add doctor notes</summary>
     /// <remarks>
@@ -156,7 +160,7 @@ public class AppointmentController(IAppointmentService service) : ApiController
         int id, [FromBody] DoctorNotesRequest request, CancellationToken ct)
     {
         var userId = User.GetUserId();
-        var result = await service.AddDoctorNotesAsync(userId, id, request, ct);
+        var result = await visits.AddDoctorNotesAsync(userId, id, request, ct);
         return HandleResult(result);
     }
 }

@@ -1,4 +1,4 @@
-﻿using Shared.ResultPattern;
+﻿using Domain.ResultPattern;
 
 namespace Shared.Errors
 {

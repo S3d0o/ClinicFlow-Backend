@@ -1,7 +1,7 @@
 using NSubstitute;
 using Shared.DTOs.Auth;
 using Shared.Errors;
-using Shared.ResultPattern;
+using Domain.ResultPattern;
 
 namespace ClinicFlow.Tests.Services.AuthServiceTests
 {

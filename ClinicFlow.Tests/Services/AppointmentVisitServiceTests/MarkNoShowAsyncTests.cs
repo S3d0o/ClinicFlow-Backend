@@ -4,11 +4,12 @@ using Domain.Enums;
 using NSubstitute;
 using Shared.DTOs.Notification;
 using Shared.Errors;
+using Domain.Errors;
 
-namespace ClinicFlow.Tests.Services.AppointmentServiceTests
+namespace ClinicFlow.Tests.Services.AppointmentVisitServiceTests
 {
     // REVIEW.md M14: NoShow was never set; the owning doctor or an admin now marks it after a 15-minute grace period
-    public class MarkNoShowAsyncTests : AppointmentServiceTestsBase
+    public class MarkNoShowAsyncTests : AppointmentVisitServiceTestsBase
     {
         private const int _appointmentId = 1;
         private readonly Guid _doctorUserId = Guid.NewGuid();
@@ -23,7 +24,6 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             _appointment = new Appointment
             {
                 Id = _appointmentId,
-                Status = AppointmentStatus.Confirmed,
                 Doctor = new DoctorProfile { UserId = _doctorUserId },
                 Patient = new PatientProfile { UserId = _patientUserId, User = new ApplicationUser() },
                 Slot = new AppointmentSlot
@@ -31,7 +31,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                     Date = new DateOnly(2026, 10, 18), StartTime = new TimeOnly(10, 0), EndTime = new TimeOnly(10, 30),
                     StartsAtUtc = new DateTime(2026, 10, 18, 7, 0, 0, DateTimeKind.Utc)
                 }
-            };
+            }.WithStatus(AppointmentStatus.Confirmed);
             _uow.Appointments.GetByIdAsync(_appointmentId, _ct).Returns(_appointment);
         }
 
@@ -103,7 +103,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         [MemberData(nameof(ClosedStatuses))]
         public async Task MarkNoShowAsync_WhenAppointmentIsClosed_ReturnsConflict(AppointmentStatus status, string expectedCode)
         {
-            _appointment.Status = status;
+            _appointment.WithStatus(status);
 
             var result = await _sut.MarkNoShowAsync(_doctorUserId, "Doctor", _appointmentId, _ct);
 

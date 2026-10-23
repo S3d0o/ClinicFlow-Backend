@@ -418,8 +418,8 @@ namespace ClinicFlow.IntegrationTests.Tests.Doctors
         {
             var patientUserId = await SeedDataHelper.SeedPatientOnlyAsync(db, patientSuffix);
             var patientId = db.PatientProfiles.Single(p => p.UserId == patientUserId).Id;
-            var appointment = new Appointment { BranchId = Branch.MainId, PatientProfileId = patientId, DoctorProfileId = doctorId, SlotId = slotId, Status = status };
-            db.Appointments.Add(appointment);
+            var appointment = new Appointment { BranchId = Branch.MainId, PatientProfileId = patientId, DoctorProfileId = doctorId, SlotId = slotId };
+            db.Appointments.Add(appointment).Property(a => a.Status).CurrentValue = status;
             await db.SaveChangesAsync();
             return appointment.Id;
         }

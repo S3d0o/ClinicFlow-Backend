@@ -3,7 +3,7 @@ using Domain.Interfaces;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
-using Shared.ResultPattern;
+using Domain.ResultPattern;
 using Services.Abstraction.Contracts;
 using Services.Implementations;
 

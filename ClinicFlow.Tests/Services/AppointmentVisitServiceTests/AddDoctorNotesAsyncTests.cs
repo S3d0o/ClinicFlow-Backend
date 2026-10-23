@@ -3,10 +3,11 @@ using Domain.Enums;
 using NSubstitute;
 using Shared.DTOs.Appointment;
 using Shared.Errors;
+using Domain.Errors;
 
-namespace ClinicFlow.Tests.Services.AppointmentServiceTests
+namespace ClinicFlow.Tests.Services.AppointmentVisitServiceTests
 {
-    public class AddDoctorNotesAsyncTests : AppointmentServiceTestsBase
+    public class AddDoctorNotesAsyncTests : AppointmentVisitServiceTestsBase
     {
         private const int _appointmentId = 1;
         private const int _doctorId = 5;
@@ -24,8 +25,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             {
                 Id = _appointmentId,
                 DoctorProfileId = _doctorId,
-                Status = AppointmentStatus.Completed
-            };
+            }.WithStatus(AppointmentStatus.Completed);
             _uow.Appointments.GetByIdAsync(_appointmentId, _ct).Returns(_appointment);
         }
 
@@ -34,7 +34,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         [InlineData(AppointmentStatus.Completed)]
         public async Task AddDoctorNotesAsync_WhenStatusAllowsNotes_SavesNotes(AppointmentStatus status)
         {
-            _appointment.Status = status;
+            _appointment.WithStatus(status);
 
             var result = await _sut.AddDoctorNotesAsync(_doctorUserId, _appointmentId, _request, _ct);
 
@@ -86,7 +86,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         [InlineData(AppointmentStatus.Pending)]
         public async Task AddDoctorNotesAsync_WhenCancelledOrPending_ReturnsDoctorNotesNotAllowedError(AppointmentStatus status)
         {
-            _appointment.Status = status;
+            _appointment.WithStatus(status);
 
             var result = await _sut.AddDoctorNotesAsync(_doctorUserId, _appointmentId, _request, _ct);
 

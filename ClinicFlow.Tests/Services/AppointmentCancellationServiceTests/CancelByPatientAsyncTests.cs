@@ -6,10 +6,11 @@ using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Appointment;
 using Shared.DTOs.Notification;
 using Shared.Errors;
+using Domain.Errors;
 
-namespace ClinicFlow.Tests.Services.AppointmentServiceTests
+namespace ClinicFlow.Tests.Services.AppointmentCancellationServiceTests
 {
-    public class CancelByPatientAsyncTests : AppointmentServiceTestsBase
+    public class CancelByPatientAsyncTests : AppointmentCancellationServiceTestsBase
     {
         // Shared constants
         private readonly Guid _patientUserId = Guid.NewGuid();
@@ -100,8 +101,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 .Returns(new Appointment
                 {
                     PatientProfileId = _patientId,
-                    Status = AppointmentStatus.Cancelled
-                });
+                }.WithStatus(AppointmentStatus.Cancelled));
 
             var error = AppointmentErrors.AlreadyCancelled;
 
@@ -127,8 +127,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 .Returns(new Appointment
                 {
                     PatientProfileId = _patientId,
-                    Status = AppointmentStatus.Completed
-                });
+                }.WithStatus(AppointmentStatus.Completed));
 
             var error = AppointmentErrors.AlreadyCompleted;
 
@@ -239,7 +238,6 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                     SlotId = slot.Id,
                     Slot = slot,
                     PatientProfileId = _patientId,
-                    Status = AppointmentStatus.Confirmed,
                     Doctor = new DoctorProfile
                     {
                         UserId = Guid.NewGuid()
@@ -253,7 +251,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                             LastName = "Mohamed"
                         }
                     }
-                });
+                }.WithStatus(AppointmentStatus.Confirmed));
 
         }
     }

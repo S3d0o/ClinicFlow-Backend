@@ -17,7 +17,7 @@ Report a table of service → tested methods / untested methods, ranked by risk.
 ## With a service name: write the tests
 
 1. Read the service, its interface, its `<Feature>Errors`, and its mapping profile.
-2. Create `ClinicFlow.Tests/Services/$ARGUMENTSTests/$ARGUMENTSTestsBase.cs`. Copy the pattern of `AppointmentServiceTestsBase`: an `NSubstitute` substitute for every constructor dependency, plus `_sut`.
+2. Create `ClinicFlow.Tests/Services/$ARGUMENTSTests/$ARGUMENTSTestsBase.cs`. Copy the pattern of `AppointmentBookingServiceTestsBase`: an `NSubstitute` substitute for every constructor dependency, plus `_sut`.
    - `UserManager<ApplicationUser>` can't be substituted from its interface. Substitute it with `Substitute.For<UserManager<ApplicationUser>>(Substitute.For<IUserStore<ApplicationUser>>(), null, null, null, null, null, null, null, null)`.
    - If a mapping matters to the behaviour under test, use the real AutoMapper configuration, as `UpdateScheduleAsyncTests` does, rather than a substitute.
 3. Write one class per public method (`<Method>AsyncTests`). Cover:

@@ -1,5 +1,4 @@
-﻿using Domain.Parameters;
-using Shared.DTOs.Appointment;
+﻿using Shared.DTOs.Appointment;
 
 namespace Services.MappingProfiles
 {
@@ -14,7 +13,6 @@ namespace Services.MappingProfiles
                  .ForMember(dest => dest.StartTime, opt => opt.MapFrom(src => src.Slot.StartTime))
                  .ForMember(dest => dest.EndTime, opt => opt.MapFrom(src => src.Slot.EndTime))
                  .ForMember(dest => dest.HasReview,opt => opt.MapFrom(src => src.Review != null)); 
-            CreateMap<AppointmentFilterRequest, AppointmentFilterParams>();
         }
     }
 }

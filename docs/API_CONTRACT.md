@@ -209,7 +209,8 @@ Only codes the API can actually return are listed.
 | `Appointment.CannotCompleteBeforeStart` | 400 (shape C) | Completing an appointment before its start time |
 | `Appointment.AlreadyNoShow` | 409 | Cancelling, completing or marking again an appointment already marked as a no-show |
 | `Appointment.NoShowTooEarly` | 400 (shape C) | Marking a no-show less than 15 minutes after the start time |
-| `Appointment.DoctorNotesNotAllowed` | 409 | Notes on a cancelled appointment |
+| `Appointment.DoctorNotesNotAllowed` | 409 | Notes on a cancelled (or rescheduled) appointment |
+| `Appointment.InvalidStatusTransition` | 409 | A status change the appointment rules don't allow when none of the codes above applies, e.g. cancelling a visit that is in progress (since 4.0.0-p0). The message names both statuses |
 | `Appointment.Unauthorized` | 403 | Not the owner of the appointment |
 | `Appointment.ReviewAlreadyExists` | 409 | Appointment already reviewed |
 | `Appointment.ReviewNotAllowed` | 400 (shape C) | Appointment not completed |
@@ -494,20 +495,20 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **204.** The slot becomes available again, and both parties are notified.
 - **Patient rules:**
   - own appointment only
-  - not already cancelled, completed or marked as a no-show
+  - not already cancelled, completed, marked as a no-show, in progress or rescheduled
   - at least 2 hours before the start (on the clinic's clock)
 - **Doctor rules:**
   - own appointment only
-  - not cancelled, completed or a no-show
+  - not cancelled, completed, a no-show, in progress or rescheduled
   - any time
 - **Admin rules:**
-  - any appointment that is not cancelled, completed or a no-show
+  - any appointment that is not cancelled, completed, a no-show, in progress or rescheduled
 - **Errors:**
   - 400 (B)
   - 400 (C) `Appointment.CancellationWindowExpired` (patient)
   - 403 `Appointment.Unauthorized`
   - 404 `Appointment.NotFound`, `Patient.ProfileNotFound`, `Doctor.ProfileNotFound`
-  - 409 `Appointment.AlreadyCancelled`, `Appointment.AlreadyCompleted`, `Appointment.AlreadyNoShow`
+  - 409 `Appointment.AlreadyCancelled`, `Appointment.AlreadyCompleted`, `Appointment.AlreadyNoShow`, `Appointment.InvalidStatusTransition` (in progress or rescheduled)
 
 **23. `POST /api/appointments/{id}/complete`** (Doctor, own appointment)
 - **204.** The patient can now review the appointment.
@@ -517,6 +518,7 @@ Each entry lists the request, the success response, and the errors that endpoint
   - 409 `Appointment.AlreadyCompleted`, `Appointment.AlreadyNoShow`
   - 400 (C) `Appointment.CannotCompleteBeforeStart` (the appointment hasn't started yet)
   - 409 `Appointment.CannotCompleteCancelled`
+  - 409 `Appointment.InvalidStatusTransition` (checked in but not started, rescheduled)
 
 **24. `PUT /api/appointments/{id}/notes`** (Doctor, own appointment)
 - **Body:** `{ "notes": string | null (≤ 4000) }`. This replaces the notes; `null` clears them.
@@ -525,7 +527,7 @@ Each entry lists the request, the success response, and the errors that endpoint
   - 400 (B)
   - 403 `Appointment.Unauthorized`
   - 404 `Appointment.NotFound`, `Doctor.ProfileNotFound`
-  - 409 `Appointment.DoctorNotesNotAllowed` (cancelled)
+  - 409 `Appointment.DoctorNotesNotAllowed` (cancelled or rescheduled)
 
 **24b. `POST /api/appointments/{id}/no-show`** (the owning doctor, or an admin)
 - No body.
@@ -535,7 +537,7 @@ Each entry lists the request, the success response, and the errors that endpoint
   - 400 (C) `Appointment.NoShowTooEarly`
   - 403 `Appointment.Unauthorized` (another doctor's appointment)
   - 404 `Appointment.NotFound`
-  - 409 `Appointment.AlreadyCancelled`, `Appointment.AlreadyCompleted`, `Appointment.AlreadyNoShow`
+  - 409 `Appointment.AlreadyCancelled`, `Appointment.AlreadyCompleted`, `Appointment.AlreadyNoShow`, `Appointment.InvalidStatusTransition` (any other status but `Confirmed`)
 - A no-show appointment can't be cancelled, completed or reviewed; doctor notes can still be added.
 
 ### 5.5 Reviews
@@ -744,7 +746,7 @@ Types use TypeScript-style notation. `?` means the field may be omitted in a req
 | Enum | Values |
 |---|---|
 | `Role` | `Admin`, `Doctor`, `Patient` |
-| `AppointmentStatus` | `Pending`, `Confirmed`, `Cancelled`, `Completed`, `NoShow`. `Pending` never occurs; `NoShow` is set by #24b |
+| `AppointmentStatus` | `Pending`, `Confirmed`, `Cancelled`, `Completed`, `NoShow`, `CheckedIn`, `InProgress`, `Rescheduled`. `Pending` never occurs; `NoShow` is set by #24b. `CheckedIn`, `InProgress` and `Rescheduled` (since 4.0.0-p0, [docs/v2/adr/0004](v2/adr/0004-appointment-state-machine.md)) are not produced by any route yet; they arrive with V2's check-in, queue and reschedule routes. Display unknown values rather than failing |
 | `SlotStatus` | `Available`, `Booked`, `Blocked` |
 | `CancelledBy` | `Patient`, `Doctor`, `Admin` |
 | `NotificationType` | `AppointmentReminder`, `AppointmentConfirmed`, `AppointmentCancelled`, `AppointmentCompleted`, `SystemAlert` |
@@ -785,7 +787,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) whose fix **will change the cont
 | 3.1.0 | 2026-10-18 | No breaking changes: every request that worked before still gets the same response. **New: rate limiting (M6).** Register (#1, #2), login (#3), confirm email (#6), forgot password (#7) and reset password (#8) share a per-client-IP limit, 10 requests per 60 s by default ([§2.7](#27-rate-limiting)). Over it: 429 with the new code `RateLimit.Exceeded` and a `Retry-After` header. Refresh and logout are not limited. **Relaxed auth rule: logout (L7).** `POST /api/auth/logout` (#5) no longer requires an access token, so it works after the access token has expired; with an access token, the refresh token must still be the caller's. **Behaviour (H4):** a free slot kept because a cancelled appointment points to it is now `Blocked` while the doctor's schedule no longer covers it (hours moved away, or the schedule deactivated), so it no longer appears in `GET /api/doctors/{id}/slots` and booking it returns 409 `Appointment.SlotNotAvailable`. It is reopened if the hours cover it again. Cancelling an appointment outside the doctor's current hours blocks its slot instead of freeing it. **Behaviour (L8):** a doctor's `averageRating` and `totalReviews` are updated in the same transaction as the review insert or delete, so concurrent reviews can't leave them stale. **Frontend:** show a "try again in N seconds" message for 429 `RateLimit.Exceeded` on the auth forms; logout can be called without refreshing first |
 | 3.1.1 | 2026-10-18 | Bug fix: a 400 from `PUT /api/appointments/{id}/notes` (#24) keys the validation error as `Notes`, like every other validation error (§3.1 B: PascalCase property names). It was `notes`. The request body is unchanged (`{ "notes": … }`). Internal cleanup with no other observable change (REVIEW.md group B). §9 now also lists the removal of #12, which duplicates #26 |
 | 3.1.2 | 2026-10-18 | Bug fix: CORS now exposes the `Retry-After` header, so a frontend on another origin can read the wait time of a 429 `RateLimit.Exceeded` (§2.7). Before, the browser hid it, and only same-origin deployments (e.g. behind the compose nginx proxy) could read it. No other change |
-| 4.0.0-p0 | 2026-10-23 | **Pre-release on the `v2` branch (V2 line)**; the V2 frontend is its only client. Bug fix: `profilePictureUrl` (#31) and `iconUrl` (#41, #42) must be absolute `http` or `https` URLs. Before, the rule accepted any absolute URI, including `javascript:` and `file:`, and on Linux (the Docker image) a path such as `/images/me.png`, which .NET reads as a `file://` URI. Those values now return 400 with a validation error on the field; the message is "... must be an absolute http or https URL." **Breaking (format): every timestamp ends in `Z`** (P0 PR 4, REVIEW.md §4.1). Timestamps read from the database (`bookedAt`, `cancelledAt`, `createdAt`, …) used to be sent without it; only `LoginResponse.expiresAt` had it. The values are unchanged and still UTC. A client that appends a missing `Z` before parsing, like §12's `parseTimestamp`, needs no change; one that parsed the bare value as local time now gets the correct instant. The date-of-birth rules (#1, #2, #31) now compare with the clinic's date (`Clinic:TimeZoneId`) instead of the UTC date, which differs only for a few hours around midnight |
+| 4.0.0-p0 | 2026-10-23 | **Pre-release on the `v2` branch (V2 line)**; the V2 frontend is its only client. Bug fix: `profilePictureUrl` (#31) and `iconUrl` (#41, #42) must be absolute `http` or `https` URLs. Before, the rule accepted any absolute URI, including `javascript:` and `file:`, and on Linux (the Docker image) a path such as `/images/me.png`, which .NET reads as a `file://` URI. Those values now return 400 with a validation error on the field; the message is "... must be an absolute http or https URL." **Breaking (format): every timestamp ends in `Z`** (P0 PR 4, REVIEW.md §4.1). Timestamps read from the database (`bookedAt`, `cancelledAt`, `createdAt`, …) used to be sent without it; only `LoginResponse.expiresAt` had it. The values are unchanged and still UTC. A client that appends a missing `Z` before parsing, like §12's `parseTimestamp`, needs no change; one that parsed the bare value as local time now gets the correct instant. The date-of-birth rules (#1, #2, #31) now compare with the clinic's date (`Clinic:TimeZoneId`) instead of the UTC date, which differs only for a few hours around midnight **Breaking (enum): `AppointmentStatus` gains `CheckedIn`, `InProgress` and `Rescheduled`** (P0 PR 7, [docs/v2/adr/0004](v2/adr/0004-appointment-state-machine.md)). No route produces them yet; the status filter of #19 and #20 accepts them. A client with an exhaustive switch over the statuses needs a default case. New code `Appointment.InvalidStatusTransition` (409) for a status change the rules don't allow when no older code applies; the only appointments the API creates are `Confirmed`, so in P0 it can only come from a `Pending` row (completing or marking one as a no-show used to succeed). Every other route, status code and error code is unchanged. **Bug fix:** `hasReview` is correct in `GET /api/appointments/{id}` (#21) and the doctor's list (#20); both always sent `false` before, because the review wasn't loaded |
 
 ## 11. How to change this contract
 
@@ -808,7 +810,9 @@ export type Timestamp = string;  // UTC, ends in "Z" (contract 3.x could omit it
 
 // ---- enums ----
 export type Role = "Admin" | "Doctor" | "Patient";
-export type AppointmentStatus = "Pending" | "Confirmed" | "Cancelled" | "Completed" | "NoShow";
+export type AppointmentStatus =
+  | "Pending" | "Confirmed" | "Cancelled" | "Completed" | "NoShow"
+  | "CheckedIn" | "InProgress" | "Rescheduled"; // the last three since 4.0.0-p0, not produced yet
 export type SlotStatus = "Available" | "Booked" | "Blocked";
 export type CancelledBy = "Patient" | "Doctor" | "Admin";
 export type NotificationType =

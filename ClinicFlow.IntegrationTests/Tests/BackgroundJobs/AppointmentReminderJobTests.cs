@@ -157,10 +157,9 @@ namespace ClinicFlow.IntegrationTests.Tests.BackgroundJobs
                 PatientProfileId = patientId,
                 DoctorProfileId = _doctorId,
                 SlotId = slot.Id,
-                Status = status,
                 ReminderSentAt = alreadyReminded ? DateTime.UtcNow.AddHours(-1) : null
             };
-            db.Appointments.Add(appointment);
+            db.Appointments.Add(appointment).Property(a => a.Status).CurrentValue = status;
             await db.SaveChangesAsync();
             return appointment.Id;
         }
