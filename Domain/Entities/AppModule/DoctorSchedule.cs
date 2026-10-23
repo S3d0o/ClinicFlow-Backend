@@ -1,7 +1,10 @@
 ﻿namespace Domain.Entities.AppModule
 {
-    public class DoctorSchedule : BaseEntity<int>
+    public class DoctorSchedule : BaseEntity<int>, IOrganizationOwned, IBranchOwned
     {
+        public int OrganizationId { get; set; }
+        public int BranchId { get; set; }
+
         public int DoctorProfileId { get; set; }
 
         public DayOfWeek DayOfWeek { get; set; }     // 0 = Sunday … 6 = Saturday

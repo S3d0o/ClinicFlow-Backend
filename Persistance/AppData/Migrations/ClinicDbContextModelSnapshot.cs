@@ -17,7 +17,7 @@ namespace Persistence.AppData.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.7")
+                .HasAnnotation("ProductVersion", "10.0.13")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -33,6 +33,9 @@ namespace Persistence.AppData.Migrations
                     b.Property<DateTime>("BookedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int>("BranchId")
+                        .HasColumnType("int");
+
                     b.Property<string>("CancellationReason")
                         .HasColumnType("nvarchar(max)");
 
@@ -46,6 +49,9 @@ namespace Persistence.AppData.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("DoctorProfileId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OrganizationId")
                         .HasColumnType("int");
 
                     b.Property<int>("PatientProfileId")
@@ -67,7 +73,11 @@ namespace Persistence.AppData.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BranchId");
+
                     b.HasIndex("DoctorProfileId");
+
+                    b.HasIndex("OrganizationId");
 
                     b.HasIndex("PatientProfileId");
 
@@ -84,6 +94,9 @@ namespace Persistence.AppData.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int>("BranchId")
+                        .HasColumnType("int");
+
                     b.Property<DateOnly>("Date")
                         .HasColumnType("date");
 
@@ -95,6 +108,9 @@ namespace Persistence.AppData.Migrations
 
                     b.Property<TimeOnly>("EndTime")
                         .HasColumnType("time");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -111,7 +127,11 @@ namespace Persistence.AppData.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BranchId");
+
                     b.HasIndex("DoctorScheduleId");
+
+                    b.HasIndex("OrganizationId");
 
                     b.HasIndex("DoctorProfileId", "Date", "StartTime")
                         .IsUnique();
@@ -149,6 +169,9 @@ namespace Persistence.AppData.Migrations
                     b.Property<bool>("IsApprovedByAdmin")
                         .HasColumnType("bit");
 
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
                     b.Property<int>("SpecialtyId")
                         .HasColumnType("int");
 
@@ -162,6 +185,8 @@ namespace Persistence.AppData.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
 
                     b.HasIndex("SpecialtyId");
 
@@ -179,6 +204,9 @@ namespace Persistence.AppData.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int>("BranchId")
+                        .HasColumnType("int");
+
                     b.Property<int>("DayOfWeek")
                         .HasColumnType("int");
 
@@ -191,6 +219,9 @@ namespace Persistence.AppData.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
                     b.Property<int>("SlotDurationMinutes")
                         .HasColumnType("int");
 
@@ -199,7 +230,11 @@ namespace Persistence.AppData.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BranchId");
+
                     b.HasIndex("DoctorProfileId");
+
+                    b.HasIndex("OrganizationId");
 
                     b.ToTable("DoctorSchedules", (string)null);
                 });
@@ -262,6 +297,9 @@ namespace Persistence.AppData.Migrations
                     b.Property<bool>("IsVisible")
                         .HasColumnType("bit");
 
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
                     b.Property<int>("PatientProfileId")
                         .HasColumnType("int");
 
@@ -274,6 +312,8 @@ namespace Persistence.AppData.Migrations
                         .IsUnique();
 
                     b.HasIndex("DoctorProfileId");
+
+                    b.HasIndex("OrganizationId");
 
                     b.HasIndex("PatientProfileId");
 
@@ -422,6 +462,9 @@ namespace Persistence.AppData.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
                     b.Property<int?>("RelatedEntityId")
                         .HasColumnType("int");
 
@@ -436,6 +479,8 @@ namespace Persistence.AppData.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
 
                     b.HasIndex("UserId");
 
@@ -499,6 +544,131 @@ namespace Persistence.AppData.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("RefreshTokens", (string)null);
+                });
+
+            modelBuilder.Entity("Domain.Entities.Tenancy.Branch", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("float");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "Code")
+                        .IsUnique();
+
+                    b.ToTable("Branches", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Code = "MAIN",
+                            IsActive = true,
+                            NameAr = "الفرع الرئيسي",
+                            NameEn = "Main branch",
+                            OrganizationId = 1,
+                            TimeZoneId = "Africa/Cairo"
+                        });
+                });
+
+            modelBuilder.Entity("Domain.Entities.Tenancy.Organization", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("BrandName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("CommercialRegistrationNo")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("DefaultTimeZoneId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegalName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("LogoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("TaxRegistrationNo")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Organizations", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            BrandName = "ClinicFlow",
+                            DefaultTimeZoneId = "Africa/Cairo",
+                            IsActive = true,
+                            LegalName = "ClinicFlow"
+                        });
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", b =>
@@ -634,10 +804,22 @@ namespace Persistence.AppData.Migrations
 
             modelBuilder.Entity("Domain.Entities.AppModule.Appointment", b =>
                 {
+                    b.HasOne("Domain.Entities.Tenancy.Branch", null)
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Domain.Entities.AppModule.DoctorProfile", "Doctor")
                         .WithMany("Appointments")
                         .HasForeignKey("DoctorProfileId")
                         .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("Domain.Entities.AppModule.PatientProfile", "Patient")
@@ -661,6 +843,12 @@ namespace Persistence.AppData.Migrations
 
             modelBuilder.Entity("Domain.Entities.AppModule.AppointmentSlot", b =>
                 {
+                    b.HasOne("Domain.Entities.Tenancy.Branch", null)
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Domain.Entities.AppModule.DoctorProfile", "DoctorProfile")
                         .WithMany("Slots")
                         .HasForeignKey("DoctorProfileId")
@@ -673,6 +861,12 @@ namespace Persistence.AppData.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.Navigation("DoctorProfile");
 
                     b.Navigation("DoctorSchedule");
@@ -680,6 +874,12 @@ namespace Persistence.AppData.Migrations
 
             modelBuilder.Entity("Domain.Entities.AppModule.DoctorProfile", b =>
                 {
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Domain.Entities.AppModule.Specialty", "Specialty")
                         .WithMany("DoctorProfiles")
                         .HasForeignKey("SpecialtyId")
@@ -699,10 +899,22 @@ namespace Persistence.AppData.Migrations
 
             modelBuilder.Entity("Domain.Entities.AppModule.DoctorSchedule", b =>
                 {
+                    b.HasOne("Domain.Entities.Tenancy.Branch", null)
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Domain.Entities.AppModule.DoctorProfile", "DoctorProfile")
                         .WithMany("Schedules")
                         .HasForeignKey("DoctorProfileId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("DoctorProfile");
@@ -733,6 +945,12 @@ namespace Persistence.AppData.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Domain.Entities.AppModule.PatientProfile", "Patient")
                         .WithMany("Reviews")
                         .HasForeignKey("PatientProfileId")
@@ -748,6 +966,12 @@ namespace Persistence.AppData.Migrations
 
             modelBuilder.Entity("Domain.Entities.IdentityModule.Notification", b =>
                 {
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Domain.Entities.IdentityModule.ApplicationUser", "User")
                         .WithMany("Notifications")
                         .HasForeignKey("UserId")
@@ -763,6 +987,15 @@ namespace Persistence.AppData.Migrations
                         .WithMany("RefreshTokens")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Domain.Entities.Tenancy.Branch", b =>
+                {
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

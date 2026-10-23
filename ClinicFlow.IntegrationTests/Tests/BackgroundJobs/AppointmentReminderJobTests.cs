@@ -1,3 +1,4 @@
+using Domain.Entities.Tenancy;
 using ClinicFlow.BackgroundJobs;
 using ClinicFlow.Domain.Enums;
 using ClinicFlow.IntegrationTests.Infrastructure;
@@ -137,6 +138,7 @@ namespace ClinicFlow.IntegrationTests.Tests.BackgroundJobs
             var start = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, DateTimeKind.Unspecified).AddHours(hoursFromNow);
             var slot = new AppointmentSlot
             {
+                BranchId = Branch.MainId,
                 DoctorProfileId = _doctorId,
                 DoctorScheduleId = _scheduleId,
                 Date = DateOnly.FromDateTime(start),
@@ -149,6 +151,7 @@ namespace ClinicFlow.IntegrationTests.Tests.BackgroundJobs
 
             var appointment = new Appointment
             {
+                BranchId = Branch.MainId,
                 PatientProfileId = patientId,
                 DoctorProfileId = _doctorId,
                 SlotId = slot.Id,

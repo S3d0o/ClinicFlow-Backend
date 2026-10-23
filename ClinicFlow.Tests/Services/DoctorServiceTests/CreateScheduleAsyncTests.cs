@@ -65,6 +65,20 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         }
 
         [Fact]
+        public async Task CreateScheduleAsync_WhenValid_PutsTheScheduleAndItsSlotsInTheDefaultBranch()
+        {
+            // One branch until P1 lets staff choose; slots inherit their schedule's branch (docs/v2/adr/0001)
+            DoctorSchedule? added = null;
+            _uow.Doctors.AddSchedule(Arg.Do<DoctorSchedule>(s => added = s));
+
+            await _sut.CreateScheduleAsync(_doctorUserId, Request("09:00", "10:00", 30), _ct);
+
+            Assert.Equal(DefaultBranchId, added!.BranchId);
+            Assert.NotEmpty(_generatedSlots!);
+            Assert.All(_generatedSlots!, s => Assert.Equal(DefaultBranchId, s.BranchId));
+        }
+
+        [Fact]
         public async Task CreateScheduleAsync_WhenActiveScheduleExistsForTheDay_ReturnsScheduleDayAlreadyExists()
         {
             _uow.Doctors.GetScheduleByUserIdAndDayAsync(_doctorUserId, DayOfWeek.Monday, _ct)

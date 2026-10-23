@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Persistence;
 using Persistence.AppData;
+using Persistence.Tenancy;
 using Shared.Settings;
 using System.Text;
 
@@ -28,6 +29,9 @@ namespace ClinicFlow.Extensions
                     $"ConnectionStrings:DefaultConnection points at database '{DatabaseSettings.DatabaseName(connectionString) ?? "(none)"}', " +
                     $"but V2 must use '{databaseSettings.ExpectedName}' (Database:ExpectedName). V2 never runs against V1's database. " +
                     "Set the V2 connection string in user secrets or the environment.");
+
+            // One organization in V2; ClinicDbContext filters and stamps every organization-owned row with it (docs/v2/adr/0001)
+            services.AddSingleton<ITenantContext, SingleOrganizationTenantContext>();
 
             // Transient SQL errors (deadlocks, dropped connections, failover) are retried instead of reaching the user
             // (REVIEW.md NL14). Manual transactions therefore run through IUnitOfWork.ExecuteInTransactionAsync

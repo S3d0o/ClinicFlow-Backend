@@ -3,8 +3,11 @@ using ClinicFlow.Domain.Enums;
 
 namespace Domain.Entities.AppModule
 {
-    public class Appointment : BaseEntity<int>
+    public class Appointment : BaseEntity<int>, IOrganizationOwned, IBranchOwned
     {
+        public int OrganizationId { get; set; }
+        public int BranchId { get; set; }
+
         public int SlotId { get; set; } 
         public int PatientProfileId { get; set; } 
         public int DoctorProfileId { get; set; } // denormalized — avoids joining through Slot every query

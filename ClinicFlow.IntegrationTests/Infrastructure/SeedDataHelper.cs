@@ -1,4 +1,5 @@
 ﻿using Domain.Entities.AppModule;
+using Domain.Entities.Tenancy;
 using Domain.Entities.IdentityModule;
 using Domain.Enums;
 using Microsoft.AspNetCore.Identity;
@@ -60,6 +61,7 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
             var schedule = new DoctorSchedule
             {
+                BranchId = Branch.MainId,
                 DoctorProfileId = doctorProfile.Id,
                 DayOfWeek = DayOfWeek.Monday,
                 StartTime = new TimeOnly(9, 0),
@@ -94,6 +96,7 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
             var slot = new AppointmentSlot
             {
+                BranchId = Branch.MainId,
                 DoctorProfileId = doctorProfile.Id,
                 DoctorScheduleId = schedule.Id,
                 Date = ClinicToday.AddDays(3),
@@ -106,6 +109,7 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
             var appointment = new Appointment
             {
+                BranchId = Branch.MainId,
                 PatientProfileId = patientProfile.Id,
                 DoctorProfileId = doctorProfile.Id,
                 SlotId = slot.Id,
@@ -194,6 +198,7 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
         {
             var schedule = new DoctorSchedule
             {
+                BranchId = Branch.MainId,
                 DoctorProfileId = doctorProfileId,
                 DayOfWeek = day,
                 StartTime = new TimeOnly(9, 0),
@@ -206,6 +211,7 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
             var entities = slots.Select(s => new AppointmentSlot
             {
+                BranchId = Branch.MainId,
                 DoctorProfileId = doctorProfileId,
                 DoctorScheduleId = schedule.Id,
                 Date = ClinicToday.AddDays(s.daysFromToday),

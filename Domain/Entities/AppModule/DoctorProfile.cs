@@ -2,8 +2,10 @@
 
 namespace Domain.Entities.AppModule
 {
-    public class DoctorProfile : BaseEntity<int>
+    public class DoctorProfile : BaseEntity<int>, IOrganizationOwned
     {
+        public int OrganizationId { get; set; }
+
         public Guid UserId { get; set; } = Guid.Empty;
         public int SpecialtyId { get; set; }
 

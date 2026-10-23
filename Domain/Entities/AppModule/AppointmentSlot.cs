@@ -2,8 +2,11 @@
 
 namespace Domain.Entities.AppModule
 {
-    public class AppointmentSlot : BaseEntity<int>
+    public class AppointmentSlot : BaseEntity<int>, IOrganizationOwned, IBranchOwned
     {
+        public int OrganizationId { get; set; }
+        public int BranchId { get; set; }
+
         public int DoctorProfileId { get; set; }
         public int DoctorScheduleId { get; set; }  // which schedule template generated this slot
 

@@ -17,6 +17,8 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         protected readonly IMapper _mapper;
         protected readonly ILogger<DoctorService> _logger;
         protected readonly IClock _clock;
+        protected readonly ITenantContext _tenant = Substitute.For<ITenantContext>();
+        protected const int DefaultBranchId = 4; // distinct from every other id, so a test can tell where a BranchId came from
         protected readonly ITransaction _transaction = Substitute.For<ITransaction>();
 
         // Clinic-local "now" for every test: Sunday 18 Oct 2026, 08:00
@@ -53,7 +55,8 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
             _uow.Slots.GetSlotTimesAsync(Arg.Any<int>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
                 .Returns(new List<(DateOnly, TimeOnly, TimeOnly)>());
 
-            _sut = new DoctorService(_uow, _mapper, _logger, _clock);
+            _tenant.DefaultBranchId.Returns(DefaultBranchId);
+            _sut = new DoctorService(_uow, _mapper, _logger, _clock, _tenant);
         }
     }
 }

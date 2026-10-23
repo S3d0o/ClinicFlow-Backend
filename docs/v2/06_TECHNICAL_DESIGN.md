@@ -122,6 +122,7 @@ See [ADR 0001](adr/0001-single-organization-tenant-ready.md).
 - **SaveChanges interceptor** sets `OrganizationId` on new entities and rejects any write whose `OrganizationId` differs from the context (defence in depth).
 - Background jobs run per organization: they iterate organizations and set the tenant context explicitly (one iteration in V2).
 - Unique indexes include `OrganizationId` (e.g. `(OrganizationId, Mrn)`, `(OrganizationId, Code)`).
+- **As built (P0 PR 5):** `IOrganizationOwned` / `IBranchOwned` live in `Domain/Entities/Tenancy`, `ITenantContext` in `Domain/Interfaces`. In V2 it is `SingleOrganizationTenantContext` (organization 1, branch `MAIN` = 1), both rows inserted by the `AddOrganizationAndBranches` migration (`HasData`), which also backfills existing rows. `ClinicDbContext` takes the tenant in its constructor and adds the filter and the foreign keys to every type that implements the interfaces; the interceptor reads the organization from the context it saves, so a second context for another organization works in tests. Organization-owned so far: `Branch`, `DoctorProfile`, `DoctorSchedule`, `AppointmentSlot`, `Appointment`, `Review`, `Notification`; branch-owned: schedules, slots, appointments. `DoctorProfile.UserId` stays one-to-one with the user (a doctor in several organizations is a V3 question for `StaffMember`).
 
 ## 5. Domain events and the outbox
 
