@@ -5,7 +5,7 @@ using MimeKit;
 using Shared.Settings;
 using System.Text.Encodings.Web;
 
-namespace Services.Implementations;
+namespace Infrastructure.Email;
 
 public class EmailService(
     IOptions<EmailSettings> emailOptions,

@@ -5,6 +5,7 @@ WORKDIR /src
 
 # Copy all csproj files preserving folder structure (layer cache)
 COPY Domain/Domain.csproj Domain/
+COPY Infrastructure/Infrastructure.csproj Infrastructure/
 COPY Services/Services.csproj Services/
 COPY Services.Abstraction/Services.Abstraction.csproj Services.Abstraction/
 COPY Persistance/Persistence.csproj Persistance/

@@ -1,9 +1,9 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Services.Implementations;
+using Infrastructure.Email;
 using Shared.Settings;
 
-namespace ClinicFlow.Tests.Services.EmailServiceTests
+namespace ClinicFlow.Tests.Infrastructure.EmailServiceTests
 {
     // The frontend's hash routes for these links are part of the API contract (§8); the SMTP send itself isn't tested
     public class EmailLinkTests

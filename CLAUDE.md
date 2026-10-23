@@ -77,14 +77,17 @@ Clean Architecture, one project per layer. Folders are listed per project, and e
 | `Persistance` (project `Persistence.csproj`, namespaces `Persistence.*`) | `AppData/ClinicDbContext.cs`, `AppData/DataSeeder.cs`, `AppData/Configurations/<Entity>Config.cs`, `AppData/Migrations/`, `Repositories/<Name>Repo.cs`, `UnitOfWork.cs` | EF Core, `Persistence.AppData`, `Domain.Interfaces.IRepositories`, entities |
 | `Services.Abstraction` | `Contracts/I<Name>Service.cs`, plus `IEmailService`, `ITokenService`, `IDateTimeProvider` | `Shared.DTOs`, `Shared.ResultPattern` |
 | `Services` | `Implementations/<Name>Service.cs`, `MappingProfiles/<Feature>Profile.cs` (AutoMapper), `Extensions/CoreServiceExtensions.cs` (DI), `ServiceAssemblyReference.cs` (assembly marker) | AutoMapper, logging, `Services.Abstraction.Contracts`, `Shared.Errors`, `Shared.ResultPattern`, `Domain.Interfaces` |
+| `Infrastructure` | Adapters for outside services behind `Services.Abstraction` interfaces: `Email/EmailService.cs` (MailKit), `Extensions/ProviderServiceExtensions.cs` (`AddProviderServices`: DI and their settings) | logging, `Services.Abstraction.Contracts` |
 | `Presentation` | `Controllers/<Name>Controller.cs` + `ApiController.cs` (abstract base), `Validators/<Request>Validator.cs`, `Filters/ValidationFilter.cs`, `Extensions/HttpContextExtensions.cs` | MVC, `FluentValidation`, `Shared.ResultPattern`, `Shared.DTOs.Doctor`/`Patient` |
 | `ClinicFlow` (host) | `Program.cs`, `Extensions/WebApiExtensions.cs` (MVC, filters, validators), `Extensions/InfraStructureServiceExtensions.cs` (DbContext, Identity, JWT, `IUnitOfWork`), `BackgroundJobs/AppointmentReminderJob.cs` (hourly) and `BackgroundJobs/SlotGenerationJob.cs` (daily, keeps slots 14 days ahead), both `BackgroundService` | Serilog, `ClinicFlow.Extensions`, `Services.Extensions` |
-| `ClinicFlow.Tests` | `Services/<Service>Tests/` with a `*TestsBase` and one class per method | |
+| `ClinicFlow.Tests` | `Services/<Service>Tests/` with a `*TestsBase` and one class per method; `Infrastructure/` for the adapters; `Architecture/LayerDependencyTests.cs` | |
 | `ClinicFlow.IntegrationTests` | `Infrastructure/` (`ClinicFlowApiFactory`, `TestAuthHandler`, `SeedDataHelper`, `IntegrationTestCollection`), `Tests/<Feature>/` | |
 
-Project references: `Shared → Domain`, `Persistence → Domain`, `Services.Abstraction → Shared`, `Services → Domain, Persistence, Services.Abstraction`, `Presentation → Services.Abstraction`, `ClinicFlow → Persistence, Presentation, Services`.
+Project references: `Shared → Domain`, `Persistence → Domain`, `Services.Abstraction → Shared`, `Services → Domain, Persistence, Services.Abstraction`, `Infrastructure → Services.Abstraction`, `Presentation → Services.Abstraction`, `ClinicFlow → Infrastructure, Persistence, Presentation, Services`.
 
-`Program.cs` calls `AddWebApiServices` / `AddInfraStructureServices` / `AddCoreServices`, registers the background jobs and Serilog, and maps ProblemDetails for every error (`UseExceptionHandler`, `UseStatusCodePages`), and ends with `public partial class Program` so tests can use `WebApplicationFactory<Program>`.
+**The layer rules are tested** (`ClinicFlow.Tests/Architecture/LayerDependencyTests.cs`, docs/v2/06 §2). A layer that uses a type it mustn't fails the unit tests, even when the compiler allows it through a transitive reference. Presentation may use Domain enums but no other Domain type. Services' remaining leaks (EF Core, JWT) are listed in `KnownExceptions` until P0 PR 3; delete an entry when its PR removes the leak, and never add one to get a build through.
+
+`Program.cs` calls `AddWebApiServices` / `AddInfraStructureServices` / `AddCoreServices` / `AddProviderServices`, registers the background jobs and Serilog, and maps ProblemDetails for every error (`UseExceptionHandler`, `UseStatusCodePages`), and ends with `public partial class Program` so tests can use `WebApplicationFactory<Program>`.
 
 ### Namespace gotchas
 Enum namespaces don't match their folder:
@@ -167,7 +170,8 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
 6. **Controller:**
    - Add it to `Presentation/Controllers`. Controllers are discovered via `AddApplicationPart` in `WebApiExtensions.cs`.
 7. **Infrastructure and background work:**
-   - Infrastructure registrations (DbContext, Identity, auth, options) go in `ClinicFlow/Extensions/InfraStructureServiceExtensions.cs`. Options use `services.Configure<T>(config.GetSection(...))` / `AddOptions<T>().Bind(...)` with POCOs in `Shared/Settings`.
+   - **Outside services** (email, and later SMS, payments, file storage): put a small interface in `Services.Abstraction/Contracts`, the adapter in `Infrastructure/<Area>/`, and register it and its settings in `Infrastructure/Extensions/ProviderServiceExtensions.cs`. Services depend on the interface only.
+   - Host registrations (DbContext, Identity, auth, options) go in `ClinicFlow/Extensions/InfraStructureServiceExtensions.cs`. Options use `services.Configure<T>(config.GetSection(...))` / `AddOptions<T>().Bind(...)` with POCOs in `Shared/Settings`.
    - Background jobs are `BackgroundService` classes in `ClinicFlow/BackgroundJobs`, registered in `Program.cs` with `AddHostedService`. Each one creates a scope per run via `IServiceScopeFactory`.
    - Remove new jobs in `ClinicFlowApiFactory` so they don't run during integration tests.
 

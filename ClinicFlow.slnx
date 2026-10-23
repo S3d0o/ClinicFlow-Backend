@@ -5,6 +5,7 @@
     <Project Path="Services/Services.csproj" />
   </Folder>
   <Folder Name="/InfrastructureLayer/">
+    <Project Path="Infrastructure/Infrastructure.csproj" />
     <Project Path="Persistance/Persistence.csproj" />
   </Folder>
   <Folder Name="/PresentationLayer/">
