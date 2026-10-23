@@ -26,6 +26,7 @@ namespace Services.Extensions
             services.AddScoped<IProfileService, ProfileService>();
             services.AddSingleton(TimeProvider.System);
             services.AddSingleton<IClock, Clock>();
+            services.AddScoped<IAccessGuard, AccessGuard>(); // needs ICurrentUser, registered by the host (Presentation implements it)
 
             // An unknown zone would make every slot-time rule wrong, so fail at startup (REVIEW.md M2)
             services.AddOptions<ClinicSettings>()

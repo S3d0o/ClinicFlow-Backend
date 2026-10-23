@@ -11,6 +11,7 @@ using Persistence;
 using Persistence.AppData;
 using Persistence.Queries;
 using Persistence.Tenancy;
+using Presentation.Authorization;
 using Shared.Settings;
 using System.Text;
 
@@ -98,6 +99,11 @@ namespace ClinicFlow.Extensions
             {
                 options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
             });
+            // [HasPermission] policies are built on demand and checked against the role matrix (docs/v2/adr/0002)
+            services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+            services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
+            services.AddHttpContextAccessor();
+            services.AddScoped<ICurrentUser, HttpCurrentUser>();
 
             services.AddScoped<IUnitOfWork, UnitOfWork>();
 

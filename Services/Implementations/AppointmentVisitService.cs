@@ -88,7 +88,7 @@ namespace Services.Implementations
                 logger.LogWarning("Appointment not found for ID: {AppointmentId}", appointmentId);
                 return AppointmentErrors.NotFound(appointmentId);
             }
-            if (role != "Admin" && appointment.Doctor.UserId != userId)
+            if (role != Roles.Admin && appointment.Doctor.UserId != userId)
             {
                 logger.LogWarning("User {UserId} ({Role}) attempted to mark appointment {AppointmentId} they do not own as a no-show", userId, role, appointmentId);
                 return AppointmentErrors.Forbidden;

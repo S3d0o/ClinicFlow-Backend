@@ -7,7 +7,7 @@ using Shared.DTOs.Specialty;
 namespace Presentation.Controllers;
 
 [Route("api/admin")]
-[Authorize(Roles = "Admin")]
+[Authorize(Roles = Roles.Admin)]
 public class AdminController(
     IAdminService adminService,
     ISpecialtyService specialtyService) : ApiController

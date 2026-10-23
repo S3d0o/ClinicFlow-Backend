@@ -6,3 +6,4 @@ global using FluentValidation;
 global using Shared.DTOs.Doctor;
 global using Shared.DTOs.Patient;
 
+global using Shared.Authorization;

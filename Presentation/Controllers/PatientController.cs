@@ -10,7 +10,7 @@ public class PatientController(IPatientService service) : ApiController
 {
     /// <summary>Get patient profile</summary>
     /// <remarks>Returns the authenticated patient's own profile, including medical info.</remarks>
-    [Authorize(Roles = "Patient")]
+    [Authorize(Roles = Roles.Patient)]
     [HttpGet("profile")]
     [ProducesResponseType(typeof(PatientProfileResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -26,7 +26,7 @@ public class PatientController(IPatientService service) : ApiController
     /// Partially updates the authenticated patient's profile.
     /// Only provided fields are changed — omitted fields remain unchanged.
     /// </remarks>
-    [Authorize(Roles = "Patient")]
+    [Authorize(Roles = Roles.Patient)]
     [HttpPatch("profile")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

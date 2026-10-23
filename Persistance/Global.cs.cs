@@ -8,3 +8,4 @@ global using Persistence.AppData;
 global using Domain.Parameters;
 
 global using Domain.ResultPattern;
+global using Shared.Authorization;
