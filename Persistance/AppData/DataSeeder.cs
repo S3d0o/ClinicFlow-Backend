@@ -78,9 +78,9 @@ public static partial class DataSeeder
     // Roles and specialties are always seeded. The demo dataset (accounts with the published
     // passwords above) is only seeded when seedDemoData is true — never enable it in production.
     // A real admin can be bootstrapped from configuration (Seeding:AdminEmail / Seeding:AdminPassword).
-    // clinicNow and utcNow come from IClock (Persistence can't reference it).
+    // clinicNow and utcNow come from IClock, clinicTimeZoneId from Clinic:TimeZoneId (Persistence can't reference either).
     public static async Task SeedAsync(
-        IServiceProvider service, bool seedDemoData, DateTime clinicNow, DateTime utcNow,
+        IServiceProvider service, bool seedDemoData, DateTime clinicNow, DateTime utcNow, string clinicTimeZoneId,
         string? adminEmail = null, string? adminPassword = null)
     {
         using var scope = service.CreateScope();
@@ -93,6 +93,7 @@ public static partial class DataSeeder
         // Applies any pending migrations automatically — safe to call on every startup.
         await MigrateWithRetryAsync(context, logger);
 
+        await SyncMainBranchTimeZoneAsync(context, clinicTimeZoneId);
         await SeedRolesAsync(roleManager);
         await SeedSpecialtiesAsync(context);
 
@@ -139,6 +140,21 @@ public static partial class DataSeeder
                 await Task.Delay(delay);
             }
         }
+    }
+
+    // ── 0. Organization and main branch ──────────────────────────────────────
+    // The migration creates both with Africa/Cairo; the configured clinic zone wins, so a deployment
+    // elsewhere gets the right zone once branch time zones drive slot times (P0 PR 6, docs/v2/adr/0003)
+    private static async Task SyncMainBranchTimeZoneAsync(ClinicDbContext context, string clinicTimeZoneId)
+    {
+        var organization = await context.Organizations.SingleAsync(o => o.Id == Organization.DefaultId);
+        var branch = await context.Branches.SingleAsync(b => b.Id == Branch.MainId);
+        if (organization.DefaultTimeZoneId == clinicTimeZoneId && branch.TimeZoneId == clinicTimeZoneId)
+            return;
+
+        organization.DefaultTimeZoneId = clinicTimeZoneId;
+        branch.TimeZoneId = clinicTimeZoneId;
+        await context.SaveChangesAsync();
     }
 
     // ── 1. Roles ──────────────────────────────────────────────────────────────
@@ -546,6 +562,7 @@ public static partial class DataSeeder
                 schedules.Add(new DoctorSchedule
                 {
                     DoctorProfileId = doctor.Id,
+                    BranchId = Branch.MainId,
                     DayOfWeek = day,
                     StartTime = new TimeOnly(9, 0),
                     EndTime = new TimeOnly(13, 0),
@@ -556,6 +573,7 @@ public static partial class DataSeeder
                 schedules.Add(new DoctorSchedule
                 {
                     DoctorProfileId = doctor.Id,
+                    BranchId = Branch.MainId,
                     DayOfWeek = day,
                     StartTime = new TimeOnly(16, 0),
                     EndTime = new TimeOnly(19, 0),
@@ -610,6 +628,7 @@ public static partial class DataSeeder
                     {
                         DoctorProfileId = schedule.DoctorProfileId,
                         DoctorScheduleId = schedule.Id,
+                        BranchId = schedule.BranchId,
                         Date = date,
                         StartTime = start,
                         EndTime = start.AddMinutes(duration),
@@ -667,6 +686,7 @@ public static partial class DataSeeder
             var appointment = new Appointment
             {
                 SlotId = slot.Id,
+                BranchId = slot.BranchId,
                 PatientProfileId = patientProfileId,
                 DoctorProfileId = doctorProfileId,
                 Status = status,

@@ -1,7 +1,9 @@
 ﻿namespace Domain.Entities.AppModule
 {
-    public class Review : BaseEntity<int>
+    public class Review : BaseEntity<int>, IOrganizationOwned
     {
+        public int OrganizationId { get; set; }
+
         public int AppointmentId { get; set; }   // unique constraint in EF config
         public int PatientProfileId { get; set; }
         public int DoctorProfileId { get; set; }

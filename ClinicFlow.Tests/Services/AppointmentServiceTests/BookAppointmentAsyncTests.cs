@@ -19,6 +19,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         private const int SlotId = 1;
         private readonly DateTime _now = new DateTime(2026, 6, 15, 10, 0, 0);
         private readonly BookAppointmentRequest _request = new(SlotId, "no reason");
+        private const int SlotBranchId = 3;
 
         // Happy path helper — call this then add your one difference on top
         private (ITransaction transaction, AppointmentResponse response) SetupHappyPath()
@@ -40,6 +41,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 Id = SlotId,
                 DoctorProfile = ApprovedDoctor(),
                 Status = SlotStatus.Available,
+                BranchId = SlotBranchId,
                 Date = DateOnly.FromDateTime(dateTime),
                 StartTime = TimeOnly.FromDateTime(dateTime),
             });
@@ -233,7 +235,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             await _uow.Slots.Received(1)
                       .SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
             await _uow.Appointments.Received(1)
-                      .AddAsync(Arg.Is<Appointment>(a => a!.BookedAt == UtcNow), Arg.Any<CancellationToken>()); // from IClock
+                      .AddAsync(Arg.Is<Appointment>(a => a!.BookedAt == UtcNow && a.BranchId == SlotBranchId), Arg.Any<CancellationToken>()); // time from IClock, branch from the slot
             await _uow.Received(1).SaveChangesAsync();
             await transaction.Received(1).CommitAsync(Arg.Any<CancellationToken>());
         }

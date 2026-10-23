@@ -60,6 +60,7 @@ namespace Services.Implementations
                     var created = new Appointment
                     {
                         SlotId = slot.Id,
+                        BranchId = slot.BranchId,
                         Status = AppointmentStatus.Confirmed,
                         DoctorProfileId = slot.DoctorProfileId,
                         PatientProfileId = patientProfile.Id,

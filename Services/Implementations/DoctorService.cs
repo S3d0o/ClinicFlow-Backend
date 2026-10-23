@@ -9,7 +9,8 @@ namespace Services.Implementations
     public class DoctorService(IUnitOfWork uow
         , IMapper mapper
         , ILogger<DoctorService> logger
-        , IClock clock) : IDoctorService
+        , IClock clock
+        , ITenantContext tenant) : IDoctorService
     {
         public async Task<Result<IReadOnlyList<DoctorSummaryResponse>>> GetAllAsync(DoctorFilterRequest filter, CancellationToken ct)
         {
@@ -94,6 +95,7 @@ namespace Services.Implementations
             var schedule = mapper.Map<DoctorSchedule>(request);
             schedule.DoctorProfileId = doctor.Id; // from the doctor we fetched
             schedule.DayOfWeek = request.DayOfWeek;
+            schedule.BranchId = tenant.DefaultBranchId; // the only branch until P1 lets staff choose
 
             uow.Doctors.AddSchedule(schedule);
             await uow.SaveChangesAsync(ct);
@@ -266,6 +268,7 @@ namespace Services.Implementations
                         StartTime = slotStart,
                         EndTime = slotEnd,
                         DoctorScheduleId = schedule.Id,
+                        BranchId = schedule.BranchId,
                         DoctorProfileId = schedule.DoctorProfileId,
                         Status = SlotStatus.Available,
                         Date = date

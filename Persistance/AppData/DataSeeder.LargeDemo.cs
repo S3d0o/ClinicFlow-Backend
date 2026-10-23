@@ -144,6 +144,7 @@ public static partial class DataSeeder
                     schedules.Add(new DoctorSchedule
                     {
                         DoctorProfileId = profile.Id,
+                        BranchId = Branch.MainId,
                         DayOfWeek = shift.Day,
                         StartTime = shift.Start,
                         EndTime = shift.End,
@@ -235,6 +236,7 @@ public static partial class DataSeeder
             var appointment = new Appointment
             {
                 Slot = slot,
+                BranchId = slot.BranchId,
                 PatientProfileId = patientId.Value,
                 DoctorProfileId = slot.DoctorProfileId,
                 Status = status,

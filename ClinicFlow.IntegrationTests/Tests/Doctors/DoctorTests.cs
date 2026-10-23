@@ -1,3 +1,4 @@
+using Domain.Entities.Tenancy;
 using ClinicFlow.Domain.Enums;
 using ClinicFlow.IntegrationTests.Infrastructure;
 using Domain.Entities.AppModule;
@@ -417,7 +418,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Doctors
         {
             var patientUserId = await SeedDataHelper.SeedPatientOnlyAsync(db, patientSuffix);
             var patientId = db.PatientProfiles.Single(p => p.UserId == patientUserId).Id;
-            var appointment = new Appointment { PatientProfileId = patientId, DoctorProfileId = doctorId, SlotId = slotId, Status = status };
+            var appointment = new Appointment { BranchId = Branch.MainId, PatientProfileId = patientId, DoctorProfileId = doctorId, SlotId = slotId, Status = status };
             db.Appointments.Add(appointment);
             await db.SaveChangesAsync();
             return appointment.Id;

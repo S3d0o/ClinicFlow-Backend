@@ -1,7 +1,9 @@
 ﻿namespace Domain.Entities.IdentityModule
 {
-    public class Notification : BaseEntity<int>
+    public class Notification : BaseEntity<int>, IOrganizationOwned
     {
+        public int OrganizationId { get; set; }
+
         public Guid UserId { get; set; } = Guid.Empty;
 
         public string Title { get; set; } = string.Empty;

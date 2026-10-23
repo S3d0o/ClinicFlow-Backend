@@ -81,6 +81,7 @@ try
         seedDemoData,
         clock.ClinicNow,
         clock.UtcNow,
+        app.Services.GetRequiredService<IOptions<ClinicSettings>>().Value.TimeZoneId,
         app.Configuration["Seeding:AdminEmail"],
         app.Configuration["Seeding:AdminPassword"]);
 

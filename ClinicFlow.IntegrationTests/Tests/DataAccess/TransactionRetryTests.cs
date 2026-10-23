@@ -6,6 +6,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Persistence.AppData;
+using Persistence.Tenancy;
 using Persistence.Transactions;
 
 namespace ClinicFlow.IntegrationTests.Tests.DataAccess
@@ -222,7 +223,7 @@ namespace ClinicFlow.IntegrationTests.Tests.DataAccess
             .UseSqlServer(_factory.TestConnectionString, sql => sql.EnableRetryOnFailure(
                 maxRetryCount: 3, maxRetryDelay: TimeSpan.FromMilliseconds(10), errorNumbersToAdd: [SimulatedTransientError]))
             .AddInterceptors(_interceptor)
-            .Options);
+            .Options, new SingleOrganizationTenantContext());
 
         private Notification NewNotification(string title) => new()
         {
