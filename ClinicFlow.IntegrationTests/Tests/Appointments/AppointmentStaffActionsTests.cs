@@ -60,6 +60,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
             AuthenticateAs(_doctorUserId, "Doctor");
 
             var response = await _client.PostAsJsonAsync($"{BaseUrl}/{_appointmentId}/cancel", new CancelAppointmentRequest("Doctor is ill"));
+            await _factory.DrainOutboxAsync(); // the notifications go out through the outbox
 
             response.StatusCode.Should().Be(HttpStatusCode.NoContent);
             await _factory.SeedAsync(async db =>
@@ -154,6 +155,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
             AuthenticateAs(_doctorUserId, "Doctor");
 
             var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/complete", null);
+            await _factory.DrainOutboxAsync(); // the notifications go out through the outbox
 
             response.StatusCode.Should().Be(HttpStatusCode.NoContent);
             await AssertStatusAsync(AppointmentStatus.Completed);
@@ -250,6 +252,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
             AuthenticateAs(role == "Doctor" ? _doctorUserId : _adminUserId, role);
 
             var response = await _client.PostAsync($"{BaseUrl}/{_appointmentId}/no-show", null);
+            await _factory.DrainOutboxAsync(); // the notifications go out through the outbox
 
             response.StatusCode.Should().Be(HttpStatusCode.NoContent);
             await AssertStatusAsync(AppointmentStatus.NoShow);

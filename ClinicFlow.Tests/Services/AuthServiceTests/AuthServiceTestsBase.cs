@@ -16,7 +16,6 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
         protected readonly ILogger<AuthService> _logger;
         protected readonly IUnitOfWork _uow;
         protected readonly ITokenService _tokenService;
-        protected readonly IEmailService _emailService;
         protected readonly IClock _clock;
         protected static readonly DateTime UtcNow = new(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc);
         protected readonly ITransaction _transaction;
@@ -31,7 +30,6 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             _logger = Substitute.For<ILogger<AuthService>>();
             _uow = Substitute.For<IUnitOfWork>();
             _tokenService = Substitute.For<ITokenService>();
-            _emailService = Substitute.For<IEmailService>();
             _transaction = Substitute.For<ITransaction>();
 
             _uow.RunsTransactionsWith<Result>(_transaction);
@@ -39,7 +37,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             _clock = Substitute.For<IClock>();
             _clock.UtcNow.Returns(UtcNow);
 
-            _sut = new AuthService(_userManager, _logger, _uow, _tokenService, _emailService, _clock);
+            _sut = new AuthService(_userManager, _logger, _uow, _tokenService, _clock);
         }
 
         protected static IdentityResult Failed(params string[] descriptions) =>

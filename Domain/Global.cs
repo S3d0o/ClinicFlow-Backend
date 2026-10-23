@@ -7,3 +7,4 @@ global using Domain.Parameters;
 
 global using Domain.ResultPattern;
 global using Domain.Errors;
+global using Domain.Events;

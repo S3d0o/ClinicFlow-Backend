@@ -10,7 +10,6 @@ namespace Services.Implementations
         ILogger<AuthService> logger,
         IUnitOfWork uow,
         ITokenService tokenService,
-        IEmailService emailService,
         IClock clock) : IAuthService
     {
         public async Task<Result<RegisterResponse>> RegisterDoctorAsync(RegisterDoctorRequest request, CancellationToken ct)
@@ -79,8 +78,8 @@ namespace Services.Implementations
 
         // Shared by both registrations. The user, the role and the profile are created in one transaction,
         // so a failure at any step leaves no account without a role or profile. addProfileAsync adds the
-        // role's profile (user.Id is set once CreateAsync succeeds); the confirmation email is sent after the commit,
-        // outside the transaction, so a retried transaction can't send it twice.
+        // role's profile (user.Id is set once CreateAsync succeeds); the confirmation email goes through the outbox,
+        // saved in the same transaction, so a retried transaction can't send it twice and a rolled-back one sends nothing.
         private async Task<Result<RegisterResponse>> RegisterAsync(
             ApplicationUser user, string password, string role, Func<CancellationToken, Task> addProfileAsync, CancellationToken ct)
         {
@@ -107,6 +106,8 @@ namespace Services.Implementations
                     }
 
                     await addProfileAsync(ct);
+                    // Saved with the account: the confirmation email goes out if, and only if, the registration commits
+                    uow.Outbox.Add(new EmailConfirmationRequested(user.Id));
                     await uow.SaveChangesAsync(ct);
                     await transaction.CommitAsync(ct);
                     return Result.Ok();
@@ -121,8 +122,6 @@ namespace Services.Implementations
 
             if (registered.IsFailure)
                 return Result<RegisterResponse>.Fail(registered.Errors);
-
-            await TrySendConfirmationEmailAsync(user);
 
             logger.LogInformation("{Role} registered successfully: {Email}", role, user.Email);
             return new RegisterResponse(
@@ -231,18 +230,11 @@ namespace Services.Implementations
                 return Result.Ok();
             }
 
-            // A send failure is logged, not returned: a 500 here would only happen for registered,
-            // active emails and reveal which emails exist (REVIEW.md NL24)
-            try
-            {
-                var token = await userManager.GeneratePasswordResetTokenAsync(user);
-                await emailService.SendPasswordResetAsync(request.Email, user.Id, Uri.EscapeDataString(token), ct);
-                logger.LogInformation("Password reset email sent for user {UserId}", user.Id);
-            }
-            catch (Exception ex) when (!ct.IsCancellationRequested)
-            {
-                logger.LogError(ex, "Failed to send password reset email to user {UserId}", user.Id);
-            }
+            // Only an outbox row is written; the handler creates the token and sends the email, so the response takes
+            // about as long for a registered email as for an unknown one (REVIEW.md NL24)
+            uow.Outbox.Add(new PasswordResetRequested(user.Id));
+            await uow.SaveChangesAsync(ct);
+            logger.LogInformation("Password reset email queued for user {UserId}", user.Id);
 
             return Result.Ok();
         }
@@ -274,21 +266,6 @@ namespace Services.Implementations
             logger.LogInformation("Password reset completed for {Email} — all sessions terminated", user.Email);
             return Result.Ok();
 
-        }
-
-        // Registration is already committed when this runs: an SMTP failure is logged and must not turn
-        // a successful registration into an error (or trigger a rollback of a committed transaction)
-        private async Task TrySendConfirmationEmailAsync(ApplicationUser user)
-        {
-            try
-            {
-                var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
-                await emailService.SendEmailConfirmationAsync(user.Email!, user.Id, Uri.EscapeDataString(token));
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to send confirmation email to user {UserId}", user.Id);
-            }
         }
     }
 }

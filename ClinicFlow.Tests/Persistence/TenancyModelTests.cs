@@ -1,5 +1,6 @@
 using Domain.Entities.AppModule;
 using Domain.Entities.IdentityModule;
+using Domain.Entities.Messaging;
 using Domain.Entities.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -17,7 +18,8 @@ namespace ClinicFlow.Tests.Persistence
             new SingleOrganizationTenantContext()).Model;
 
         private static readonly Type[] ExpectedOrganizationOwned =
-            [typeof(Branch), typeof(DoctorProfile), typeof(DoctorSchedule), typeof(AppointmentSlot), typeof(Appointment), typeof(Review), typeof(Notification)];
+            [typeof(Branch), typeof(DoctorProfile), typeof(DoctorSchedule), typeof(AppointmentSlot), typeof(Appointment), typeof(Review), typeof(Notification),
+             typeof(OutboxMessage), typeof(MessageDelivery)]; // an event belongs to the organization whose change raised it
 
         private static readonly Type[] ExpectedBranchOwned =
             [typeof(DoctorSchedule), typeof(AppointmentSlot), typeof(Appointment)];

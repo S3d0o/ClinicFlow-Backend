@@ -2,6 +2,7 @@
 using ClinicFlow.BackgroundJobs;
 using Microsoft.Extensions.Options;
 using Persistence.AppData;
+using Persistence.Outbox;
 using Services.Abstraction.Contracts;
 using Scalar.AspNetCore;
 using Shared.Settings;
@@ -39,6 +40,8 @@ try
 
     builder.Services.AddHostedService<AppointmentReminderJob>();
     builder.Services.AddHostedService<SlotGenerationJob>();
+    builder.Services.AddSingleton<OutboxProcessor>();
+    builder.Services.AddHostedService<OutboxDispatcher>();
 
     // Liveness probe for the Docker HEALTHCHECK (GET /health)
     builder.Services.AddHealthChecks();

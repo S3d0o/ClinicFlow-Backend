@@ -15,11 +15,5 @@ namespace Services.Abstraction.Contracts
 
         // Mark all notifications as read
         Task<Result> MarkAllAsReadAsync(Guid userId, CancellationToken ct);
-
-        // Called internally by AppointmentService — not exposed via HTTP
-        Task CreateAsync(CreateNotificationRequest request, CancellationToken ct = default);
-
-        // Called internally when multiple notifications needed (cancel → notify patient + doctor)
-        Task CreateRangeAsync(IEnumerable<CreateNotificationRequest> notifications, CancellationToken ct);
     }
 }

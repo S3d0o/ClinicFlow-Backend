@@ -4,7 +4,7 @@ namespace Domain.Entities.AppModule
 {
     // Owns the appointment status rules (docs/v2/adr/0004, 05 §4.1). The status and what each transition records
     // only change through the methods below; services load the appointment, call one and save
-    public class Appointment : BaseEntity<int>, IOrganizationOwned, IBranchOwned
+    public class Appointment : BaseEntity<int>, IOrganizationOwned, IBranchOwned, IHasDomainEvents
     {
         // The patient may be late: a no-show can only be marked this long after the start (v2 FR-APT-07)
         public static readonly TimeSpan NoShowGracePeriod = TimeSpan.FromMinutes(15);
@@ -40,7 +40,7 @@ namespace Domain.Entities.AppModule
         // Set on the new appointment of a reschedule; the old one is Rescheduled
         public int? RescheduledFromId { get; private set; }
 
-        // Background job sets this after sending the reminder notification
+        // Set by QueueReminder when the reminder job hands the reminder to the outbox (the demo seeder sets it directly)
         public DateTime? ReminderSentAt { get; set; }
 
         // Navigation
@@ -76,6 +76,7 @@ namespace Domain.Entities.AppModule
 
             Status = AppointmentStatus.CheckedIn;
             CheckedInAt = utcNow;
+            Raise(new PatientCheckedIn(Id));
             return Result.Ok();
         }
 
@@ -88,6 +89,7 @@ namespace Domain.Entities.AppModule
 
             Status = AppointmentStatus.InProgress;
             StartedAt = utcNow;
+            Raise(new AppointmentStarted(Id));
             return Result.Ok();
         }
 
@@ -105,6 +107,7 @@ namespace Domain.Entities.AppModule
 
             Status = AppointmentStatus.Completed;
             CompletedAt = utcNow;
+            Raise(new AppointmentCompleted(Id));
             return Result.Ok();
         }
 
@@ -121,6 +124,7 @@ namespace Domain.Entities.AppModule
             CancelledAt = utcNow;
             CancelledBy = by;
             CancellationReason = reason;
+            Raise(new AppointmentCancelled(Id, by));
             return Result.Ok();
         }
 
@@ -134,6 +138,7 @@ namespace Domain.Entities.AppModule
 
             Status = AppointmentStatus.NoShow;
             NoShowAt = utcNow;
+            Raise(new AppointmentMarkedNoShow(Id));
             return Result.Ok();
         }
 
@@ -148,6 +153,7 @@ namespace Domain.Entities.AppModule
 
             Status = AppointmentStatus.Confirmed;
             NoShowAt = null;
+            Raise(new AppointmentNoShowReverted(Id));
             return Result.Ok();
         }
 
@@ -168,6 +174,7 @@ namespace Domain.Entities.AppModule
             Status = AppointmentStatus.Rescheduled;
             RescheduledTo = replacement;
             replacement.RescheduledFrom = this;
+            Raise(new AppointmentRescheduled(Id));
             return Result.Ok();
         }
 
@@ -179,6 +186,26 @@ namespace Domain.Entities.AppModule
 
             DoctorNotes = notes;
             return Result.Ok();
+        }
+
+        // The reminder job marks the visit as reminded; the email and the notification go out through the outbox
+        public void QueueReminder(DateTime utcNow)
+        {
+            ReminderSentAt = utcNow;
+            Raise(new AppointmentReminderDue(Id));
+        }
+
+        // ── Domain events (06 §5): a field, not a property, so EF doesn't map it ──
+
+        private readonly List<IDomainEvent> _domainEvents = [];
+
+        private void Raise(IDomainEvent domainEvent) => _domainEvents.Add(domainEvent);
+
+        public IReadOnlyList<IDomainEvent> TakeDomainEvents()
+        {
+            var taken = _domainEvents.ToList();
+            _domainEvents.Clear();
+            return taken;
         }
 
         private bool IsBeforePatientChangeWindow(DateTime utcNow) => utcNow <= Slot.StartsAtUtc - PatientChangeWindow;

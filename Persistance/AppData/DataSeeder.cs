@@ -93,6 +93,8 @@ public static partial class DataSeeder
         using var scope = service.CreateScope();
 
         var context = scope.ServiceProvider.GetRequiredService<ClinicDbContext>();
+        // Seeded history is not news: its transitions must not notify or email anyone (docs/v2/06 §5)
+        context.RecordDomainEvents = false;
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
         var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(DataSeeder));

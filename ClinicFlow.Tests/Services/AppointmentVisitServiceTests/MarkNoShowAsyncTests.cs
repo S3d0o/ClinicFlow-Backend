@@ -2,7 +2,7 @@ using Domain.Entities.AppModule;
 using Domain.Entities.IdentityModule;
 using Domain.Enums;
 using NSubstitute;
-using Shared.DTOs.Notification;
+using Domain.Events;
 using Shared.Errors;
 using Domain.Errors;
 
@@ -36,21 +36,15 @@ namespace ClinicFlow.Tests.Services.AppointmentVisitServiceTests
         }
 
         [Fact]
-        public async Task MarkNoShowAsync_WhenOwningDoctorAfterGracePeriod_MarksNoShowSavesAndNotifiesPatient()
+        public async Task MarkNoShowAsync_WhenOwningDoctorAfterGracePeriod_MarksNoShowSavesAndRaisesTheEvent()
         {
-            List<CreateNotificationRequest>? sent = null;
-            await _notificationService.CreateRangeAsync(
-                Arg.Do<IEnumerable<CreateNotificationRequest>>(n => sent = n.ToList()),
-                Arg.Any<CancellationToken>());
-
             var result = await _sut.MarkNoShowAsync(_doctorUserId, "Doctor", _appointmentId, _ct);
 
             Assert.True(result.IsSuccess);
             Assert.Equal(AppointmentStatus.NoShow, _appointment.Status);
             await _uow.Received(1).SaveChangesAsync(_ct);
-            var notification = Assert.Single(sent!);
-            Assert.Equal(_patientUserId, notification.UserId);
-            Assert.Equal(_appointmentId, notification.RelatedEntityId);
+            // Saved to the outbox with the change; AppointmentMarkedNoShowHandler notifies the patient
+            Assert.Equal([new AppointmentMarkedNoShow(_appointmentId)], _appointment.TakeDomainEvents());
         }
 
         [Fact]

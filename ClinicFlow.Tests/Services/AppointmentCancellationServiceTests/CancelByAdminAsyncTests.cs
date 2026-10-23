@@ -3,9 +3,8 @@ using Domain.Entities.AppModule;
 using Domain.Entities.IdentityModule;
 using Domain.Enums;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Appointment;
-using Shared.DTOs.Notification;
+using Domain.Events;
 using Shared.Errors;
 using Domain.Errors;
 
@@ -75,31 +74,12 @@ namespace ClinicFlow.Tests.Services.AppointmentCancellationServiceTests
         }
 
         [Fact]
-        public async Task CancelByAdminAsync_WhenValid_NotifiesPatientAndDoctor()
+        public async Task CancelByAdminAsync_WhenValid_RaisesTheEventThatNotifiesBoth()
         {
-            List<CreateNotificationRequest>? sent = null;
-            await _notificationService.CreateRangeAsync(
-                Arg.Do<IEnumerable<CreateNotificationRequest>>(n => sent = n.ToList()),
-                Arg.Any<CancellationToken>());
-
+            // Saved to the outbox with the change; AppointmentCancelledHandler notifies the patient and the doctor
             await _sut.CancelByAdminAsync(_appointmentId, _request, _ct);
 
-            Assert.NotNull(sent);
-            Assert.Equal([_patientUserId, _doctorUserId], sent!.Select(n => n.UserId));
-            Assert.All(sent, n => Assert.Equal(NotificationType.AppointmentCancelled, n.Type));
-        }
-
-        [Fact]
-        public async Task CancelByAdminAsync_WhenNotificationFails_StillReturnsSuccess()
-        {
-            _notificationService
-                .CreateRangeAsync(Arg.Any<IEnumerable<CreateNotificationRequest>>(), Arg.Any<CancellationToken>())
-                .Throws(new InvalidOperationException("notification store down"));
-
-            var result = await _sut.CancelByAdminAsync(_appointmentId, _request, _ct);
-
-            Assert.True(result.IsSuccess);
-            await _uow.Received(1).SaveChangesAsync(_ct);
+            Assert.Equal([new AppointmentCancelled(_appointmentId, CancelledBy.Admin)], _appointment.TakeDomainEvents());
         }
 
         [Fact]

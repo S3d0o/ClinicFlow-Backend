@@ -7,30 +7,8 @@ namespace Services.Implementations;
 public class NotificationService(
     IUnitOfWork uow,
     ILogger<NotificationService> logger,
-    IMapper mapper,
-    IClock clock) : INotificationService
+    IMapper mapper) : INotificationService
 {
-    public async Task CreateAsync(CreateNotificationRequest request, CancellationToken ct = default)
-    {
-        var notification = mapper.Map<Notification>(request);
-        notification.CreatedAt = clock.UtcNow;
-        await uow.Notifications.AddAsync(notification, ct);
-        await uow.SaveChangesAsync(ct);
-        logger.LogInformation(
-            "Notification created for user {UserId} with type {Type}", request.UserId, request.Type);
-    }
-
-    public async Task CreateRangeAsync(
-        IEnumerable<CreateNotificationRequest> requests, CancellationToken ct)
-    {
-        var notifications = mapper.Map<List<Notification>>(requests);
-        var now = clock.UtcNow;
-        notifications.ForEach(n => n.CreatedAt = now);
-        await uow.Notifications.AddRangeAsync(notifications, ct);
-        await uow.SaveChangesAsync(ct);
-        logger.LogInformation("{Count} notifications created", notifications.Count);
-    }
-
     public async Task<Result<PagedList<NotificationResponse>>> GetMyNotificationsAsync(
         Guid userId, NotificationFilterRequest filter, CancellationToken ct)
     {

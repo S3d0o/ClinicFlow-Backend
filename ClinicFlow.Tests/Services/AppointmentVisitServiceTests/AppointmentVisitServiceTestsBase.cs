@@ -11,7 +11,6 @@ namespace ClinicFlow.Tests.Services.AppointmentVisitServiceTests
         // Dependencies
         protected readonly IUnitOfWork _uow;
         protected readonly ILogger<AppointmentVisitService> _logger;
-        protected readonly INotificationService _notificationService;
         protected readonly IClock _clock;
         protected static readonly DateTime UtcNow = new(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc);
 
@@ -22,11 +21,10 @@ namespace ClinicFlow.Tests.Services.AppointmentVisitServiceTests
         {
             _uow = Substitute.For<IUnitOfWork>();
             _logger = Substitute.For<ILogger<AppointmentVisitService>>();
-            _notificationService = Substitute.For<INotificationService>();
             _clock = Substitute.For<IClock>();
             _clock.UtcNow.Returns(UtcNow);
 
-            _sut = new AppointmentVisitService(_uow, _logger, _notificationService, _clock);
+            _sut = new AppointmentVisitService(_uow, _logger, _clock);
         }
     }
 }

@@ -3,6 +3,7 @@ using Domain.Interfaces;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Persistence.AppData.Converters;
+using Persistence.Outbox;
 using Persistence.Tenancy;
 using System.Linq.Expressions;
 
@@ -21,8 +22,13 @@ namespace Persistence.AppData
         // The organization this context reads and writes. The query filters read it per context instance
         public int OrganizationId => _tenant.OrganizationId;
 
+        // Whether entity events are written to the outbox on save. The demo seeder turns it off: seeded history
+        // must not send notifications or emails
+        public bool RecordDomainEvents { get; set; } = true;
+
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-            => optionsBuilder.AddInterceptors(TenantSaveChangesInterceptor.Instance);
+            // Order matters: the outbox adds its rows first, so the tenant interceptor stamps them too
+            => optionsBuilder.AddInterceptors(OutboxSaveChangesInterceptor.Instance, TenantSaveChangesInterceptor.Instance);
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -92,6 +98,8 @@ namespace Persistence.AppData
         public DbSet<PatientProfile> PatientProfiles => Set<PatientProfile>();
         public DbSet<Notification> Notifications => Set<Notification>();
         public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+        public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+        public DbSet<MessageDelivery> MessageDeliveries => Set<MessageDelivery>();
 
     }
 }

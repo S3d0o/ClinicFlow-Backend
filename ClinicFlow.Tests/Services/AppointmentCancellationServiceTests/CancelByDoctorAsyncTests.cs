@@ -3,9 +3,8 @@ using Domain.Entities.AppModule;
 using Domain.Entities.IdentityModule;
 using Domain.Enums;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Appointment;
-using Shared.DTOs.Notification;
+using Domain.Events;
 using Shared.Errors;
 using Domain.Errors;
 
@@ -88,22 +87,12 @@ namespace ClinicFlow.Tests.Services.AppointmentCancellationServiceTests
         }
 
         [Fact]
-        public async Task CancelByDoctorAsync_WhenValid_NotifiesPatientAndDoctor()
+        public async Task CancelByDoctorAsync_WhenValid_RaisesTheEventThatNotifiesBoth()
         {
-            List<CreateNotificationRequest>? sent = null;
-            await _notificationService.CreateRangeAsync(
-                Arg.Do<IEnumerable<CreateNotificationRequest>>(n => sent = n.ToList()),
-                Arg.Any<CancellationToken>());
-
+            // Saved to the outbox with the change; AppointmentCancelledHandler notifies the patient and the doctor
             await _sut.CancelByDoctorAsync(_doctorUserId, _appointmentId, _request, _ct);
 
-            Assert.NotNull(sent);
-            Assert.Equal([_patientUserId, _doctorUserId], sent!.Select(n => n.UserId));
-            Assert.All(sent, n =>
-            {
-                Assert.Equal(NotificationType.AppointmentCancelled, n.Type);
-                Assert.Equal(_appointmentId, n.RelatedEntityId);
-            });
+            Assert.Equal([new AppointmentCancelled(_appointmentId, CancelledBy.Doctor)], _appointment.TakeDomainEvents());
         }
 
         [Fact]
@@ -119,19 +108,6 @@ namespace ClinicFlow.Tests.Services.AppointmentCancellationServiceTests
 
             Assert.True(result.IsSuccess);
             Assert.Equal(AppointmentStatus.Cancelled, _appointment.Status);
-        }
-
-        [Fact]
-        public async Task CancelByDoctorAsync_WhenNotificationFails_StillReturnsSuccess()
-        {
-            _notificationService
-                .CreateRangeAsync(Arg.Any<IEnumerable<CreateNotificationRequest>>(), Arg.Any<CancellationToken>())
-                .Throws(new InvalidOperationException("notification store down"));
-
-            var result = await _sut.CancelByDoctorAsync(_doctorUserId, _appointmentId, _request, _ct);
-
-            Assert.True(result.IsSuccess);
-            await _uow.Received(1).SaveChangesAsync(_ct);
         }
 
         [Fact]
@@ -171,8 +147,7 @@ namespace ClinicFlow.Tests.Services.AppointmentCancellationServiceTests
             Assert.Equal(AppointmentStatus.Confirmed, _appointment.Status);
             Assert.Equal(SlotStatus.Booked, _appointment.Slot.Status);
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
-            await _notificationService.DidNotReceive()
-                .CreateRangeAsync(Arg.Any<IEnumerable<CreateNotificationRequest>>(), Arg.Any<CancellationToken>());
+            Assert.Empty(_appointment.TakeDomainEvents());
         }
 
         [Fact]

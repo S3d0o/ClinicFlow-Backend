@@ -2,9 +2,9 @@
 using Domain.Entities.IdentityModule;
 using Domain.Enums;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Appointment;
-using Shared.DTOs.Notification;
+using Domain.Events;
+using ClinicFlow.Domain.Enums;
 using Shared.Errors;
 using Domain.Errors;
 
@@ -198,22 +198,27 @@ namespace ClinicFlow.Tests.Services.AppointmentCancellationServiceTests
         }
 
         [Fact]
-        public async Task CancelByPatientAsync_WhenNotificationFails_StillReturnsSuccess()
+        public async Task CancelByPatientAsync_WhenValid_RaisesTheEventThatNotifiesBoth()
         {
-            //Arrange
+            // Saved to the outbox with the change; AppointmentCancelledHandler notifies the patient and the doctor
             await SetupHappyPath();
-            _notificationService
-                            .CreateRangeAsync(
-                                Arg.Any<IEnumerable<CreateNotificationRequest>>(),
-                                Arg.Any<CancellationToken>())
-                            .Throws<Exception>();
-            
-            //Act
-            var result = await _sut.CancelByPatientAsync(_patientUserId, _appointmentId, _request, _ct);
+            var appointment = (await _uow.Appointments.GetByIdAsync(_appointmentId, _ct))!;
 
-            //Assert
-            Assert.True(result.IsSuccess);
-            await _uow.Received(1).SaveChangesAsync(_ct);
+            await _sut.CancelByPatientAsync(_patientUserId, _appointmentId, _request, _ct);
+
+            var raised = Assert.IsType<AppointmentCancelled>(Assert.Single(appointment.TakeDomainEvents()));
+            Assert.Equal(CancelledBy.Patient, raised.By);
+        }
+
+        [Fact]
+        public async Task CancelByPatientAsync_InsideTheWindow_RaisesNothing()
+        {
+            await SetupHappyPath(minutesUntilStart: 60);
+            var appointment = (await _uow.Appointments.GetByIdAsync(_appointmentId, _ct))!;
+
+            await _sut.CancelByPatientAsync(_patientUserId, _appointmentId, _request, _ct);
+
+            Assert.Empty(appointment.TakeDomainEvents());
         }
 
         private async Task SetupHappyPath(int minutesUntilStart = 600)
