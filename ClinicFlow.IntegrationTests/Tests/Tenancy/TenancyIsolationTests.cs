@@ -142,6 +142,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Tenancy
             {
                 DoctorProfileId = doctor.Id, DoctorScheduleId = schedule.Id, BranchId = branch.Id,
                 Date = date, StartTime = start, EndTime = start.AddMinutes(30), Status = status,
+                StartsAtUtc = SeedDataHelper.SlotUtc(date, start), EndsAtUtc = SeedDataHelper.SlotUtc(date, start.AddMinutes(30)),
             };
         }
 

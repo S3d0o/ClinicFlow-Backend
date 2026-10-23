@@ -84,8 +84,9 @@ namespace Services.Implementations
                 mapper.Map(request, existingSchedule);
                 existingSchedule.IsActive = true;
                 await uow.SaveChangesAsync(ct);
-                await uow.Slots.SyncKeptSlotsWithScheduleAsync(existingSchedule, clock.ClinicToday, ct);
-                await GenerateSlotsAsync(existingSchedule, ct);
+                var zone = await uow.Branches.GetTimeZoneIdAsync(existingSchedule.BranchId, ct);
+                await uow.Slots.SyncKeptSlotsWithScheduleAsync(existingSchedule, clock.Today(zone), ct);
+                await GenerateSlotsAsync(existingSchedule, zone, ct);
 
                 logger.LogInformation("Reactivated schedule {ScheduleId} for doctor {DoctorId} on {DayOfWeek}",
                     existingSchedule.Id, doctor.Id, request.DayOfWeek);
@@ -100,7 +101,7 @@ namespace Services.Implementations
             uow.Doctors.AddSchedule(schedule);
             await uow.SaveChangesAsync(ct);
 
-            await GenerateSlotsAsync(schedule, ct);
+            await GenerateSlotsAsync(schedule, await uow.Branches.GetTimeZoneIdAsync(schedule.BranchId, ct), ct);
 
             logger.LogInformation("Created schedule for doctor {DoctorId} on {DayOfWeek}", doctor.Id, request.DayOfWeek);
             return mapper.Map<ScheduleResponse>(schedule);
@@ -127,12 +128,14 @@ namespace Services.Implementations
             // One transaction, so a failure can't leave the schedule changed but its slots half-replaced (REVIEW.md H4).
             // Booked slots, and slots an appointment still points to, are kept; regeneration skips their times.
             // Kept free slots outside the new hours are blocked so patients can't book them.
+            var zone = await uow.Branches.GetTimeZoneIdAsync(updatedSchedule.BranchId, ct);
             var created = await uow.ExecuteInTransactionAsync(async transaction =>
             {
+                var today = clock.Today(zone);
                 await uow.SaveChangesAsync(ct);
-                await uow.Slots.DeleteFutureAvailableByScheduleAsync(scheduleId, clock.ClinicToday, ct);
-                await uow.Slots.SyncKeptSlotsWithScheduleAsync(updatedSchedule, clock.ClinicToday, ct);
-                var slotCount = await GenerateSlotsAsync(updatedSchedule, ct);
+                await uow.Slots.DeleteFutureAvailableByScheduleAsync(scheduleId, today, ct);
+                await uow.Slots.SyncKeptSlotsWithScheduleAsync(updatedSchedule, today, ct);
+                var slotCount = await GenerateSlotsAsync(updatedSchedule, zone, ct);
                 await transaction.CommitAsync(ct);
                 return slotCount;
             }, ct);
@@ -149,8 +152,11 @@ namespace Services.Implementations
                 return DoctorErrors.ScheduleNotFound(scheduleId);
             }
 
+            // Slot dates are in the schedule's branch zone, so "today" is that branch's date (docs/v2/adr/0003)
+            var today = clock.Today(await uow.Branches.GetTimeZoneIdAsync(existing.BranchId, ct));
+
             // Upcoming appointments would be orphaned: the doctor cancels them first (REVIEW.md H4)
-            if (await uow.Slots.HasUpcomingBookingsAsync(scheduleId, clock.ClinicToday, ct))
+            if (await uow.Slots.HasUpcomingBookingsAsync(scheduleId, today, ct))
             {
                 logger.LogWarning("Schedule {ScheduleId} has upcoming booked appointments and can't be deleted", scheduleId);
                 return DoctorErrors.CannotDeleteScheduleWithBookedSlots;
@@ -167,7 +173,7 @@ namespace Services.Implementations
                 {
                     existing.IsActive = false;
                     // Future free slots of cancelled appointments stay, but are no longer bookable
-                    await uow.Slots.SyncKeptSlotsWithScheduleAsync(existing, clock.ClinicToday, ct);
+                    await uow.Slots.SyncKeptSlotsWithScheduleAsync(existing, today, ct);
                 }
                 else
                 {
@@ -204,13 +210,14 @@ namespace Services.Implementations
         public async Task<int> GenerateUpcomingSlotsAsync(CancellationToken ct)
         {
             var schedules = await uow.Doctors.GetActiveSchedulesAsync(ct);
+            var zones = await uow.Branches.GetTimeZoneIdsAsync(ct);
             var created = 0;
 
             foreach (var schedule in schedules)
             {
                 try
                 {
-                    created += await GenerateSlotsAsync(schedule, ct);
+                    created += await GenerateSlotsAsync(schedule, zones[schedule.BranchId], ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -231,14 +238,15 @@ namespace Services.Implementations
         // Slots are published this many days ahead, counting today; SlotGenerationJob rolls the window forward daily (REVIEW.md H8)
         private const int SlotWindowDays = 14;
 
-        private async Task<int> GenerateSlotsAsync(DoctorSchedule schedule, CancellationToken ct)
+        // timeZoneId is the schedule's branch zone: slot dates and times are that branch's wall clock (docs/v2/adr/0003)
+        private async Task<int> GenerateSlotsAsync(DoctorSchedule schedule, string timeZoneId, CancellationToken ct)
         {
             // Inactive schedules publish no bookable slots
             if (!schedule.IsActive || schedule.SlotDurationMinutes <= 0)
                 return 0;
 
             var slots = new List<AppointmentSlot>();
-            var today = clock.ClinicToday;
+            var today = clock.Today(timeZoneId);
 
             // Idempotent: a time that overlaps an existing slot (e.g. a booked one kept through an update) is skipped,
             // instead of violating the unique index on (doctor, date, start) or double-booking the doctor (REVIEW.md H4)
@@ -263,10 +271,18 @@ namespace Services.Implementations
                     var slotEnd = slotStart.AddMinutes(duration);
                     if (existing.Any(e => e.Date == date && e.StartTime < slotEnd && slotStart < e.EndTime)) continue;
 
+                    // A time daylight saving skips doesn't exist, so neither does a slot touching it; a repeated time
+                    // is its first occurrence (Domain.Time.WallClock)
+                    if (clock.ToUtc(timeZoneId, date, slotStart) is not { } startsAtUtc
+                        || clock.ToUtc(timeZoneId, date, slotEnd) is not { } endsAtUtc)
+                        continue;
+
                     slots.Add(new AppointmentSlot
                     {
                         StartTime = slotStart,
                         EndTime = slotEnd,
+                        StartsAtUtc = startsAtUtc,
+                        EndsAtUtc = endsAtUtc,
                         DoctorScheduleId = schedule.Id,
                         BranchId = schedule.BranchId,
                         DoctorProfileId = schedule.DoctorProfileId,

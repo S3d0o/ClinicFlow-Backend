@@ -144,6 +144,8 @@ namespace ClinicFlow.IntegrationTests.Tests.BackgroundJobs
                 Date = DateOnly.FromDateTime(start),
                 StartTime = TimeOnly.FromDateTime(start),
                 EndTime = TimeOnly.FromDateTime(start.AddMinutes(30)),
+                StartsAtUtc = SeedDataHelper.SlotUtc(DateOnly.FromDateTime(start), TimeOnly.FromDateTime(start)),
+                EndsAtUtc = SeedDataHelper.SlotUtc(DateOnly.FromDateTime(start), TimeOnly.FromDateTime(start.AddMinutes(30))),
                 Status = SlotStatus.Booked
             };
             db.AppointmentSlots.Add(slot);

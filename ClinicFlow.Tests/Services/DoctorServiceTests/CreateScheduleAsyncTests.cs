@@ -79,6 +79,54 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         }
 
         [Fact]
+        public async Task CreateScheduleAsync_WhenValid_StoresEachSlotsUtcInstants()
+        {
+            // Cairo is still on daylight saving (UTC+3) on Monday 19 Oct 2026
+            await _sut.CreateScheduleAsync(_doctorUserId, Request("09:00", "09:30", 30), _ct);
+
+            var slot = _generatedSlots!.Single(s => s.Date == new DateOnly(2026, 10, 19));
+            Assert.Equal(new DateTime(2026, 10, 19, 6, 0, 0, DateTimeKind.Utc), slot.StartsAtUtc);
+            Assert.Equal(new DateTime(2026, 10, 19, 6, 30, 0, DateTimeKind.Utc), slot.EndsAtUtc);
+            Assert.Equal(DateTimeKind.Utc, slot.StartsAtUtc.Kind);
+        }
+
+        [Fact]
+        public async Task CreateScheduleAsync_OnTheNightTheClocksGoBack_UsesTheFirstOccurrenceOfTheRepeatedHour()
+        {
+            // Thursday 29 Oct 2026: Cairo goes from UTC+3 back to UTC+2 at midnight, so 23:00–24:00 happens twice
+            var thursday = new CreateScheduleRequest
+            {
+                DayOfWeek = DayOfWeek.Thursday, StartTime = new TimeOnly(22, 0), EndTime = new TimeOnly(23, 59), SlotDurationMinutes = 30
+            };
+
+            await _sut.CreateScheduleAsync(_doctorUserId, thursday, _ct);
+
+            var night = _generatedSlots!.Where(s => s.Date == new DateOnly(2026, 10, 29)).OrderBy(s => s.StartTime).ToList();
+            Assert.Equal([new TimeOnly(22, 0), new TimeOnly(22, 30), new TimeOnly(23, 0)], night.Select(s => s.StartTime));
+            Assert.Equal(new DateTime(2026, 10, 29, 20, 0, 0, DateTimeKind.Utc), night[2].StartsAtUtc); // 23:00 at UTC+3
+            // Back to back, in order, with no overlap
+            Assert.All(night.Zip(night.Skip(1)), pair => Assert.Equal(pair.First.EndsAtUtc, pair.Second.StartsAtUtc));
+        }
+
+        [Fact]
+        public async Task CreateScheduleAsync_OnTheNightTheClocksGoForward_SkipsSlotsInTheMissingHour()
+        {
+            // Friday 24 Apr 2026: Cairo jumps from 00:00 to 01:00, so 00:00–01:00 never happens that night
+            _clock.Today(BranchZone).Returns(new DateOnly(2026, 4, 20));
+            var friday = new CreateScheduleRequest
+            {
+                DayOfWeek = DayOfWeek.Friday, StartTime = new TimeOnly(0, 0), EndTime = new TimeOnly(2, 0), SlotDurationMinutes = 30
+            };
+
+            await _sut.CreateScheduleAsync(_doctorUserId, friday, _ct);
+
+            var night = _generatedSlots!.Where(s => s.Date == new DateOnly(2026, 4, 24)).OrderBy(s => s.StartTime).ToList();
+            Assert.Equal([new TimeOnly(1, 0), new TimeOnly(1, 30)], night.Select(s => s.StartTime));
+            Assert.Equal(new DateTime(2026, 4, 23, 22, 0, 0, DateTimeKind.Utc), night[0].StartsAtUtc); // 01:00 at UTC+3
+            Assert.Equal(4, _generatedSlots!.Count(s => s.Date == new DateOnly(2026, 5, 1))); // an ordinary Friday
+        }
+
+        [Fact]
         public async Task CreateScheduleAsync_WhenActiveScheduleExistsForTheDay_ReturnsScheduleDayAlreadyExists()
         {
             _uow.Doctors.GetScheduleByUserIdAndDayAsync(_doctorUserId, DayOfWeek.Monday, _ct)

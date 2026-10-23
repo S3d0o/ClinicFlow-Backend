@@ -15,6 +15,12 @@ namespace Domain.Entities.AppModule
         public TimeOnly EndTime { get; set; }
         public SlotStatus Status { get; set; } = SlotStatus.Available;
 
+        // Date + StartTime/EndTime are the branch's wall clock (what people see); these are the same instants in UTC,
+        // computed once when the slot is generated (Domain.Time.WallClock). Every rule that compares a slot with
+        // "now" uses them (docs/v2/adr/0003, REVIEW.md M2)
+        public DateTime StartsAtUtc { get; set; }
+        public DateTime EndsAtUtc { get; set; }
+
         // Navigation
         public DoctorProfile DoctorProfile { get; set; } = null!;
         public DoctorSchedule DoctorSchedule { get; set; } = null!;

@@ -109,6 +109,9 @@ namespace Persistence.AppData.Migrations
                     b.Property<TimeOnly>("EndTime")
                         .HasColumnType("time");
 
+                    b.Property<DateTime>("EndsAtUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<int>("OrganizationId")
                         .HasColumnType("int");
 
@@ -121,6 +124,9 @@ namespace Persistence.AppData.Migrations
                     b.Property<TimeOnly>("StartTime")
                         .HasColumnType("time");
 
+                    b.Property<DateTime>("StartsAtUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("nvarchar(450)");
@@ -132,6 +138,8 @@ namespace Persistence.AppData.Migrations
                     b.HasIndex("DoctorScheduleId");
 
                     b.HasIndex("OrganizationId");
+
+                    b.HasIndex("StartsAtUtc");
 
                     b.HasIndex("DoctorProfileId", "Date", "StartTime")
                         .IsUnique();

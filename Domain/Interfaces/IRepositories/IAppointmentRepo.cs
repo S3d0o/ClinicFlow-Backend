@@ -10,7 +10,7 @@ namespace Domain.Interfaces.IRepositories
         Task<Appointment?> GetDetailedByIdAsync(int id, CancellationToken ct);
         Task<(IReadOnlyList<Appointment> Appointments, int TotalCount)> GetByPatientUserIdAsync(Guid patientUserId, AppointmentStatus? status, AppointmentFilterParams filters, CancellationToken ct);
         Task<(IReadOnlyList<Appointment> Appointments, int TotalCount)> GetByDoctorUserIdAsync(Guid doctorUserId, AppointmentStatus? status, AppointmentFilterParams filters, CancellationToken ct);
-        Task<IReadOnlyList<Appointment>> GetAppointmentsNeedingReminderAsync(DateTime clinicNow, CancellationToken ct);
+        Task<IReadOnlyList<Appointment>> GetAppointmentsNeedingReminderAsync(DateTime utcNow, CancellationToken ct);
         Task<(int Pending, int Confirmed, int Completed, int Cancelled, int NoShow)> GetStatsAsync(CancellationToken ct);
 
         // Write

@@ -317,11 +317,15 @@ namespace ClinicFlow.IntegrationTests.Tests.Appointments
         // The visit started an hour ago, so it can be completed
         private Task MoveSlotToThePastAsync() => _factory.SeedAsync(async db =>
         {
+            // The rules read the UTC start; the wall-clock columns move with it so the slot stays consistent
             var started = _factory.ClinicNow.AddHours(-1);
+            var (date, start, end) = (DateOnly.FromDateTime(started), TimeOnly.FromDateTime(started), TimeOnly.FromDateTime(started.AddMinutes(30)));
             await db.AppointmentSlots.Where(s => s.Id == _slotId).ExecuteUpdateAsync(s => s
-                .SetProperty(x => x.Date, DateOnly.FromDateTime(started))
-                .SetProperty(x => x.StartTime, TimeOnly.FromDateTime(started))
-                .SetProperty(x => x.EndTime, TimeOnly.FromDateTime(started.AddMinutes(30))));
+                .SetProperty(x => x.Date, date)
+                .SetProperty(x => x.StartTime, start)
+                .SetProperty(x => x.EndTime, end)
+                .SetProperty(x => x.StartsAtUtc, SeedDataHelper.SlotUtc(date, start))
+                .SetProperty(x => x.EndsAtUtc, SeedDataHelper.SlotUtc(date, end)));
         });
 
         private Task SetStatusAsync(AppointmentStatus status) => _factory.SeedAsync(async db =>
