@@ -23,7 +23,6 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 
         public CancelByDoctorAsyncTests()
         {
-            _clock.ClinicNow.Returns(_now);
             _uow.Doctors.GetByUserIdAsync(_doctorUserId, _ct)
                 .Returns(new DoctorProfile { Id = _doctorId, UserId = _doctorUserId });
 
@@ -38,6 +37,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                     Id = 1,
                     Date = DateOnly.FromDateTime(slotStart),
                     StartTime = TimeOnly.FromDateTime(slotStart),
+                    StartsAtUtc = UtcNow.AddDays(1),
                     Status = SlotStatus.Booked,
                     DoctorSchedule = new DoctorSchedule { StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MaxValue }
                 },
@@ -113,6 +113,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             var slotStart = _now.AddMinutes(30);
             _appointment.Slot.Date = DateOnly.FromDateTime(slotStart);
             _appointment.Slot.StartTime = TimeOnly.FromDateTime(slotStart);
+            _appointment.Slot.StartsAtUtc = UtcNow.AddMinutes(30);
 
             var result = await _sut.CancelByDoctorAsync(_doctorUserId, _appointmentId, _request, _ct);
 

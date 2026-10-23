@@ -82,32 +82,20 @@ namespace Persistence.Repositories
         public async Task AddAsync(Appointment appointment, CancellationToken ct)
             => await context.Appointments.AddAsync(appointment, ct);
 
-        public async Task<IReadOnlyList<Appointment>> GetAppointmentsNeedingReminderAsync(DateTime clinicNow, CancellationToken ct)
+        public async Task<IReadOnlyList<Appointment>> GetAppointmentsNeedingReminderAsync(DateTime utcNow, CancellationToken ct)
         {
-            // Slot times are clinic-local, so the 24-hour window is measured on the clinic's clock (REVIEW.md M2)
-            var now = clinicNow;
-            var upperBound = now.AddHours(24);
-            var today = DateOnly.FromDateTime(now);
-            var lastDay = DateOnly.FromDateTime(upperBound);
+            // The slot's UTC start makes the 24-hour window exact in any branch zone, across daylight saving (docs/v2/adr/0003)
+            var upperBound = utcNow.AddHours(24);
 
-            // Narrow by date in SQL (at most two calendar days), then apply the exact 24-hour window in memory
-            var candidates = await context.Appointments
+            return await context.Appointments
                 .Include(a => a.Slot)
                     .ThenInclude(s=>s.DoctorProfile).ThenInclude(d=>d.User)
                 .Include(a => a.Patient).ThenInclude(p => p.User)
                 .Where(a => a.Status == AppointmentStatus.Confirmed
                          && a.ReminderSentAt == null
-                         && a.Slot.Date >= today
-                         && a.Slot.Date <= lastDay)
+                         && a.Slot.StartsAtUtc > utcNow
+                         && a.Slot.StartsAtUtc <= upperBound)
                 .ToListAsync(ct);
-
-            return candidates
-                .Where(a =>
-                {
-                    var appointmentDateTime = a.Slot.Date.ToDateTime(a.Slot.StartTime);
-                    return appointmentDateTime > now && appointmentDateTime <= upperBound;
-                })
-                .ToList();
         }
         public async Task<(int Pending, int Confirmed, int Completed, int Cancelled, int NoShow)> GetStatsAsync(CancellationToken ct)
         { 

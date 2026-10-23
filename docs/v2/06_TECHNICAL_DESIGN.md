@@ -153,6 +153,7 @@ See [ADR 0003](adr/0003-branch-time-zones.md).
 - Slots keep `Date` + `StartTime` (local, what the patient sees) and store `StartsAtUtc` / `EndsAtUtc`, computed at generation. All comparisons ("in the past?", "2 hours before?", reminders, no-show grace) use the UTC columns. Fixes M2.
 - **Daylight saving** (Egypt has observed it again since 2023): invalid local times (the skipped hour) are not generated; ambiguous times (the repeated hour) use the first occurrence. If the zone's rules change after slots exist, a job recomputes `StartsAtUtc` for future slots.
 - API timestamps are serialized with `Z` (V1 quirk fixed; see [07 §3](07_API_DESIGN.md#3-conventions)).
+- **As built (P0 PR 6):** `Domain.Time.WallClock` holds the conversion rule (skipped time → no instant, repeated time → first occurrence); `Clock`, the demo seeder and the tests share it. `IClock` gained `LocalNow`, `Today` and `ToUtc`, taking the branch's zone id from `uow.Branches` (ADR 0003 amendment). Slot generation and schedule maintenance use the schedule's branch zone; the four appointment rules and the reminder query compare `StartsAtUtc` with `UtcNow`. The `AddSlotUtcTimes` migration fills existing slots with `AT TIME ZONE`, mapping each branch's IANA zone to SQL Server's Windows name from .NET's zone data, and refuses to finish if a zone has no mapping; `AddSlotUtcTimesTests` checks it against .NET around both 2026 Cairo changes.
 
 ## 7. Background jobs
 

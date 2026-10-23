@@ -45,7 +45,7 @@ public sealed class AppointmentReminderJob(
             var clock = scope.ServiceProvider.GetRequiredService<IClock>();
 
             var appointments =
-                await uow.Appointments.GetAppointmentsNeedingReminderAsync(clock.ClinicNow, cancellationToken);
+                await uow.Appointments.GetAppointmentsNeedingReminderAsync(clock.UtcNow, cancellationToken);
 
             if (appointments.Count == 0)
             {

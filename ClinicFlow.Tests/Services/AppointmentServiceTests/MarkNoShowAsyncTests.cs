@@ -18,15 +18,19 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 
         public MarkNoShowAsyncTests()
         {
-            // The visit was due at 10:00 and "now" is 10:15, the end of the grace period
-            _clock.ClinicNow.Returns(new DateTime(2026, 10, 18, 10, 15, 0));
+            // The visit was due at 10:00 in Cairo (07:00 UTC) and "now" is 07:15 UTC, the end of the grace period
+            _clock.UtcNow.Returns(new DateTime(2026, 10, 18, 7, 15, 0, DateTimeKind.Utc));
             _appointment = new Appointment
             {
                 Id = _appointmentId,
                 Status = AppointmentStatus.Confirmed,
                 Doctor = new DoctorProfile { UserId = _doctorUserId },
                 Patient = new PatientProfile { UserId = _patientUserId, User = new ApplicationUser() },
-                Slot = new AppointmentSlot { Date = new DateOnly(2026, 10, 18), StartTime = new TimeOnly(10, 0), EndTime = new TimeOnly(10, 30) }
+                Slot = new AppointmentSlot
+                {
+                    Date = new DateOnly(2026, 10, 18), StartTime = new TimeOnly(10, 0), EndTime = new TimeOnly(10, 30),
+                    StartsAtUtc = new DateTime(2026, 10, 18, 7, 0, 0, DateTimeKind.Utc)
+                }
             };
             _uow.Appointments.GetByIdAsync(_appointmentId, _ct).Returns(_appointment);
         }
@@ -79,7 +83,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         [Fact]
         public async Task MarkNoShowAsync_WithinGracePeriod_ReturnsNoShowTooEarlyAndChangesNothing()
         {
-            _clock.ClinicNow.Returns(new DateTime(2026, 10, 18, 10, 14, 0));
+            _clock.UtcNow.Returns(new DateTime(2026, 10, 18, 7, 14, 0, DateTimeKind.Utc));
 
             var result = await _sut.MarkNoShowAsync(_doctorUserId, "Doctor", _appointmentId, _ct);
 

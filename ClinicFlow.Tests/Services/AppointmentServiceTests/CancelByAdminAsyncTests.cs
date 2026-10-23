@@ -22,7 +22,6 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 
         public CancelByAdminAsyncTests()
         {
-            _clock.ClinicNow.Returns(_now);
 
             // Starts in 30 minutes: admins are not bound by the patient's 2-hour window
             var slotStart = _now.AddMinutes(30);
@@ -35,6 +34,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                     Id = 1,
                     Date = DateOnly.FromDateTime(slotStart),
                     StartTime = TimeOnly.FromDateTime(slotStart),
+                    StartsAtUtc = UtcNow.AddMinutes(30),
                     Status = SlotStatus.Booked,
                     DoctorSchedule = new DoctorSchedule { StartTime = TimeOnly.MinValue, EndTime = TimeOnly.MaxValue }
                 },

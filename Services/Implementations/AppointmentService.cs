@@ -40,8 +40,8 @@ namespace Services.Implementations
                 logger.LogWarning("Appointment slot is not available for booking. Slot ID: {SlotId}, Status: {Status}", request.SlotId, slot.Status);
                 return AppointmentErrors.SlotNotAvailable;
             }
-            // Slot times are clinic-local, so compare them with the clinic's wall clock (REVIEW.md M2)
-            if (slot.Date.ToDateTime(slot.StartTime) < clock.ClinicNow)
+            // Every rule compares the slot's UTC start with UtcNow, so it holds in any branch zone and across daylight saving (docs/v2/adr/0003)
+            if (slot.StartsAtUtc < clock.UtcNow)
             {
                 logger.LogWarning("Appointment slot is in the past and cannot be booked. Slot ID: {SlotId}, Date: {Date}, StartTime: {StartTime}", request.SlotId, slot.Date, slot.StartTime);
                 return AppointmentErrors.SlotInPast;
@@ -146,9 +146,9 @@ namespace Services.Implementations
             if (CannotCancelError(appointment) is { } statusError)
                 return statusError;
 
-            var slotDateTime = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
+            var slotStart = appointment.Slot.StartsAtUtc;
 
-            if (clock.ClinicNow > slotDateTime.AddHours(-2))
+            if (clock.UtcNow > slotStart.AddHours(-2))
             {
                 logger.LogWarning("Appointment ID: {AppointmentId} cannot be cancelled within 2 hours of the scheduled time.", appointmentId);
                 return AppointmentErrors.CancellationWindowExpired;
@@ -230,8 +230,8 @@ namespace Services.Implementations
                 return AppointmentErrors.AlreadyNoShow;
             }
             // A visit can only be completed once it has started (REVIEW.md M14); completing early would unlock a review
-            var slotStart = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
-            if (clock.ClinicNow < slotStart)
+            var slotStart = appointment.Slot.StartsAtUtc;
+            if (clock.UtcNow < slotStart)
             {
                 logger.LogWarning("Appointment ID: {AppointmentId} cannot be completed before it starts at {SlotStart}.", appointmentId, slotStart);
                 return AppointmentErrors.CannotCompleteBeforeStart;
@@ -308,8 +308,8 @@ namespace Services.Implementations
                 return statusError;
             }
             // The patient may just be late: wait out the grace period after the start (v2 FR-APT-07)
-            var slotStart = appointment.Slot.Date.ToDateTime(appointment.Slot.StartTime);
-            if (clock.ClinicNow < slotStart + NoShowGracePeriod)
+            var slotStart = appointment.Slot.StartsAtUtc;
+            if (clock.UtcNow < slotStart + NoShowGracePeriod)
             {
                 logger.LogWarning("Appointment ID: {AppointmentId} cannot be marked as a no-show before {GraceEnd}.", appointmentId, slotStart + NoShowGracePeriod);
                 return AppointmentErrors.NoShowTooEarly;

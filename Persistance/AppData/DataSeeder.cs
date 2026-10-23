@@ -1,5 +1,6 @@
 using ClinicFlow.Domain.Enums;
 using Domain.Enums;
+using Domain.Time;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -67,11 +68,17 @@ public static partial class DataSeeder
 
     // Slot dates and times are clinic-local wall-clock values; stored timestamps (BookedAt, CancelledAt,
     // CreatedAt, …) are UTC. Seeding with UTC dates put demo data a day off around midnight (REVIEW.md M2).
-    private sealed record SeedClock(DateTime ClinicNow, DateTime UtcNow)
+    // The zone is the clinic's (= the MAIN branch's), so conversions follow its daylight saving rules, as slot generation does.
+    private sealed record SeedClock(DateTime ClinicNow, DateTime UtcNow, TimeZoneInfo Zone)
     {
-        private TimeSpan Offset { get; } = TimeSpan.FromMinutes(Math.Round((ClinicNow - UtcNow).TotalMinutes));
         public DateOnly Today => DateOnly.FromDateTime(ClinicNow);
-        public DateTime ToUtc(DateTime clinicLocal) => DateTime.SpecifyKind(clinicLocal - Offset, DateTimeKind.Utc);
+
+        // A slot's instants; null when daylight saving skips the time (Domain.Time.WallClock)
+        public DateTime? SlotUtc(DateOnly date, TimeOnly time) => WallClock.ToUtc(Zone, date, time);
+
+        // For timestamps derived from a local time; one skipped by daylight saving moves to the end of the jump
+        public DateTime ToUtc(DateTime clinicLocal)
+            => SlotUtc(DateOnly.FromDateTime(clinicLocal), TimeOnly.FromDateTime(clinicLocal)) ?? ToUtc(clinicLocal.AddHours(1));
     }
 
     // ── Entry point ───────────────────────────────────────────────────────────
@@ -103,7 +110,7 @@ public static partial class DataSeeder
         if (!seedDemoData)
             return;
 
-        var clock = new SeedClock(clinicNow, utcNow);
+        var clock = new SeedClock(clinicNow, utcNow, TimeZoneInfo.FindSystemTimeZoneById(clinicTimeZoneId));
 
         // The hand-written demo stories (the accounts listed above) first, then the generated clinic.
         // Each step only runs if its data is missing, so restarts don't duplicate anything.
@@ -622,6 +629,8 @@ public static partial class DataSeeder
                 for (var minute = startMinutes; minute + duration <= endMinutes; minute += duration)
                 {
                     var start = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(minute));
+                    var end = start.AddMinutes(duration);
+                    if (clock.SlotUtc(date, start) is not { } startsAtUtc || clock.SlotUtc(date, end) is not { } endsAtUtc) continue;
                     if (!existing.Add((schedule.DoctorProfileId, date, start))) continue;
 
                     slots.Add(new AppointmentSlot
@@ -631,7 +640,9 @@ public static partial class DataSeeder
                         BranchId = schedule.BranchId,
                         Date = date,
                         StartTime = start,
-                        EndTime = start.AddMinutes(duration),
+                        EndTime = end,
+                        StartsAtUtc = startsAtUtc,
+                        EndsAtUtc = endsAtUtc,
                         Status = SlotStatus.Available,
                     });
                 }

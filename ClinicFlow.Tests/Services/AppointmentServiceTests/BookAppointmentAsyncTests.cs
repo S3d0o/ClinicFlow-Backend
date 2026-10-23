@@ -34,17 +34,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                     User = new ApplicationUser { FirstName = "Mona", LastName = "Hassan", Email = "mona@test.com" }
                 });
 
-            _clock.ClinicNow.Returns(_now);
-
-            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
-            {
-                Id = SlotId,
-                DoctorProfile = ApprovedDoctor(),
-                Status = SlotStatus.Available,
-                BranchId = SlotBranchId,
-                Date = DateOnly.FromDateTime(dateTime),
-                StartTime = TimeOnly.FromDateTime(dateTime),
-            });
+            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(AvailableSlot(UtcNow.AddDays(1), dateTime));
 
             var transaction = Substitute.For<ITransaction>();
             _uow.RunsTransactionsWith<Result<Appointment>>(transaction);
@@ -132,26 +122,15 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         }
 
         [Theory]
-        [InlineData(-1, 0)]   // yesterday, same time
-        [InlineData(0, -1)]   // today, 1 hour ago
-        public async Task BookAppointmentAsync_WhenSlotIsInPast_ReturnsSlotInPastError(
-            int daysOffset, int hoursOffset)
+        [InlineData(-24 * 60)] // yesterday
+        [InlineData(-1)]       // started a minute ago
+        public async Task BookAppointmentAsync_WhenSlotHasStarted_ReturnsSlotInPastError(int minutesFromNow)
         {
             // Arrange
             _uow.Patients
                 .GetPatientByUserIdAsync(_patientUserId, _ct)
                 .Returns(new PatientProfile());
-
-            _clock.ClinicNow.Returns(_now);
-
-            var slotDateTime = _now.AddDays(daysOffset).AddHours(hoursOffset);
-            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
-            {
-                DoctorProfile = ApprovedDoctor(),
-                Status = SlotStatus.Available,
-                Date = DateOnly.FromDateTime(slotDateTime),
-                StartTime = TimeOnly.FromDateTime(slotDateTime),
-            });
+            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(AvailableSlot(UtcNow.AddMinutes(minutesFromNow), _now));
 
             // Act
             var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
@@ -164,20 +143,25 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         }
 
         [Fact]
-        public async Task BookAppointmentAsync_WhenSlotStartedOnClinicClockButNotInUtc_ReturnsSlotInPastError()
+        public async Task BookAppointmentAsync_WhenSlotStartsNow_Books()
         {
-            // REVIEW.md M2: 10:00 clinic time (UTC+3) is 07:00 UTC. A 09:00 slot has started at the clinic,
-            // although 09:00 is still ahead of the UTC clock
+            SetupHappyPath();
+            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(AvailableSlot(UtcNow, _now));
+
+            var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
+
+            Assert.True(result.IsSuccess);
+        }
+
+        [Fact]
+        public async Task BookAppointmentAsync_ComparesTheSlotsUtcStartNotItsWallClockTime()
+        {
+            // REVIEW.md M2: a 09:00 slot in Cairo (UTC+3) starts at 06:00 UTC. At 07:00 UTC it has started,
+            // although "09:00" is later than "07:00"
             _uow.Patients.GetPatientByUserIdAsync(_patientUserId, _ct).Returns(new PatientProfile());
-            _clock.ClinicNow.Returns(_now);
-            _clock.UtcNow.Returns(_now.AddHours(-3));
-            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
-            {
-                DoctorProfile = ApprovedDoctor(),
-                Status = SlotStatus.Available,
-                Date = DateOnly.FromDateTime(_now),
-                StartTime = new TimeOnly(9, 0),
-            });
+            _clock.UtcNow.Returns(new DateTime(2026, 10, 19, 7, 0, 0, DateTimeKind.Utc));
+            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(
+                AvailableSlot(new DateTime(2026, 10, 19, 6, 0, 0, DateTimeKind.Utc), new DateTime(2026, 10, 19, 9, 0, 0)));
 
             var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
 
@@ -192,16 +176,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 .GetPatientByUserIdAsync(_patientUserId, _ct)
                 .Returns(new PatientProfile());
 
-            _clock.ClinicNow.Returns(_now);
-
-            var dateTime = _now.AddDays(1).AddHours(1);
-            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
-            {
-                DoctorProfile = ApprovedDoctor(),
-                Status = SlotStatus.Available,
-                Date = DateOnly.FromDateTime(dateTime),
-                StartTime = TimeOnly.FromDateTime(dateTime),
-            });
+            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(AvailableSlot(UtcNow.AddDays(1), _now.AddDays(1)));
 
             var transaction = Substitute.For<ITransaction>();
             _uow.RunsTransactionsWith<Result<Appointment>>(transaction);
@@ -318,7 +293,8 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 DoctorProfile = new DoctorProfile { IsApprovedByAdmin = approved, User = new ApplicationUser { IsActive = active } },
                 Status = SlotStatus.Available,
                 Date = DateOnly.FromDateTime(_now.AddDays(2)),
-                StartTime = new TimeOnly(10, 0)
+                StartTime = new TimeOnly(10, 0),
+                StartsAtUtc = UtcNow.AddDays(2)
             });
 
             var result = await _sut.BookAppointmentAsync(_patientUserId, new BookAppointmentRequest(SlotId, null), _ct);
@@ -327,6 +303,19 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             Assert.Equal(AppointmentErrors.SlotNotFound(SlotId), Assert.Single(result.Errors));
             await _uow.Slots.DidNotReceive().SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
+
+        // An available slot of an approved doctor; startsAtUtc drives the rules, wallClock is what the patient sees
+        private static AppointmentSlot AvailableSlot(DateTime startsAtUtc, DateTime wallClock) => new()
+        {
+            Id = SlotId,
+            DoctorProfile = ApprovedDoctor(),
+            Status = SlotStatus.Available,
+            BranchId = SlotBranchId,
+            Date = DateOnly.FromDateTime(wallClock),
+            StartTime = TimeOnly.FromDateTime(wallClock),
+            StartsAtUtc = startsAtUtc,
+            EndsAtUtc = startsAtUtc.AddMinutes(30),
+        };
 
         private static DoctorProfile ApprovedDoctor() => new()
         {

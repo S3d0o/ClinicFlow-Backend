@@ -1,4 +1,5 @@
 ﻿using Domain.Entities.AppModule;
+using Domain.Time;
 using Domain.Entities.Tenancy;
 using Domain.Entities.IdentityModule;
 using Domain.Enums;
@@ -14,6 +15,11 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
         // Slot dates are clinic-local (Clinic:TimeZoneId, Africa/Cairo by default), see REVIEW.md M2
         private static DateOnly ClinicToday
             => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTime.UtcNow, "Africa/Cairo"));
+
+            // A slot's UTC instant, as slot generation computes it (docs/v2/adr/0003); the MAIN branch is in Africa/Cairo
+        public static DateTime SlotUtc(DateOnly date, TimeOnly time)
+            => WallClock.ToUtc(TimeZoneInfo.FindSystemTimeZoneById("Africa/Cairo"), date, time)
+               ?? throw new ArgumentException($"{date} {time} is skipped by daylight saving in Africa/Cairo");
 
         public static async Task<(Guid patientUserId, Guid doctorUserId, int slotId, int appointmentId)>
             SeedBaseAppointmentAsync(ClinicDbContext db, AppointmentStatus status = AppointmentStatus.Confirmed, string suffix = "")
@@ -102,6 +108,8 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
                 Date = ClinicToday.AddDays(3),
                 StartTime = new TimeOnly(10, 0),
                 EndTime = new TimeOnly(10, 30),
+                StartsAtUtc = SlotUtc(ClinicToday.AddDays(3), new TimeOnly(10, 0)),
+                EndsAtUtc = SlotUtc(ClinicToday.AddDays(3), new TimeOnly(10, 30)),
                 Status = SlotStatus.Available
             };
             db.AppointmentSlots.Add(slot);
@@ -217,6 +225,8 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
                 Date = ClinicToday.AddDays(s.daysFromToday),
                 StartTime = s.start,
                 EndTime = s.start.AddMinutes(30),
+                StartsAtUtc = SlotUtc(ClinicToday.AddDays(s.daysFromToday), s.start),
+                EndsAtUtc = SlotUtc(ClinicToday.AddDays(s.daysFromToday), s.start.AddMinutes(30)),
                 Status = s.status
             }).ToList();
             db.AppointmentSlots.AddRange(entities);

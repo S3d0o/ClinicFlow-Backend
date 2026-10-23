@@ -14,6 +14,7 @@ namespace Domain.Interfaces
         IRefreshTokenRepo RefreshTokens { get; }
         IPatientRepo Patients { get; }
         IAdminRepo Admins { get; }
+        IBranchRepo Branches { get; }
 
         // Runs the operation in one transaction, inside the SQL retry strategy: a transient error re-runs it, with the
         // tracked entities rewound to how they were before it started. Commit as the operation's last step; returning

@@ -1,6 +1,7 @@
 using AutoMapper;
 using Domain.Entities.AppModule;
 using Domain.Interfaces;
+using Domain.Time;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -21,7 +22,10 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         protected const int DefaultBranchId = 4; // distinct from every other id, so a test can tell where a BranchId came from
         protected readonly ITransaction _transaction = Substitute.For<ITransaction>();
 
-        // Clinic-local "now" for every test: Sunday 18 Oct 2026, 08:00
+        // Branch-local "now" for every test: Sunday 18 Oct 2026, 08:00 in the branch's zone. Slot instants use the real
+        // conversion rule (WallClock), so a test can set "today" near a daylight saving change
+        protected const string BranchZone = "Africa/Cairo";
+        protected static readonly TimeZoneInfo Cairo = TimeZoneInfo.FindSystemTimeZoneById(BranchZone);
         protected static readonly DateTime ClinicNow = new(2026, 10, 18, 8, 0, 0);
         protected static DateOnly ClinicToday => DateOnly.FromDateTime(ClinicNow);
 
@@ -40,6 +44,14 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
             _clock = Substitute.For<IClock>();
             _clock.ClinicNow.Returns(ClinicNow);
             _clock.ClinicToday.Returns(ClinicToday);
+            _clock.Today(BranchZone).Returns(ClinicToday);
+            _clock.ToUtc(BranchZone, Arg.Any<DateOnly>(), Arg.Any<TimeOnly>())
+                .Returns(call => WallClock.ToUtc(Cairo, call.ArgAt<DateOnly>(1), call.ArgAt<TimeOnly>(2)));
+
+            // Every branch is in the same zone; schedules built in tests may leave BranchId at 0
+            _uow.Branches.GetTimeZoneIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(BranchZone);
+            _uow.Branches.GetTimeZoneIdsAsync(Arg.Any<CancellationToken>())
+                .Returns(new Dictionary<int, string> { [0] = BranchZone, [DefaultBranchId] = BranchZone });
             _mapper = new ServiceCollection()
                 .AddLogging()
                 .AddAutoMapper(cfg => { }, typeof(ServiceAssemblyReference).Assembly)

@@ -22,6 +22,7 @@ namespace Persistence
         private IRefreshTokenRepo? _refreshTokens;
         private IPatientRepo? _patients;
         private IAdminRepo? _admins;
+        private IBranchRepo? _branches;
 
         public IDoctorRepo Doctors
             => _doctors ??= new DoctorRepo(_context);
@@ -45,6 +46,7 @@ namespace Persistence
         public IPatientRepo Patients => _patients ??= new PatientRepo(_context);
 
         public IAdminRepo Admins => _admins ??= new AdminRepo(_context);
+        public IBranchRepo Branches => _branches ??= new BranchRepo(_context);
 
         public Task<T> ExecuteInTransactionAsync<T>(Func<ITransaction, Task<T>> operation, CancellationToken ct)
             => _context.ExecuteInTransactionAsync(operation, ct);

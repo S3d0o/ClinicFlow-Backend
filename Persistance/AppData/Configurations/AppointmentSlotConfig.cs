@@ -10,6 +10,9 @@
             // Regeneration lookup — "all slots from this schedule template"
             builder.HasIndex(s => s.DoctorScheduleId);
 
+            // Time-window queries (reminders) compare the UTC start with "now"
+            builder.HasIndex(s => s.StartsAtUtc);
+
             builder.Property(s => s.Status).HasConversion<string>();
 
             // Unique — no duplicate slots
