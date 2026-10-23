@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Services;
+using Services.Abstraction.Contracts;
 using Services.Implementations;
 
 namespace ClinicFlow.Tests.Services.NotificationServiceTests
@@ -14,6 +15,8 @@ namespace ClinicFlow.Tests.Services.NotificationServiceTests
         protected readonly IUnitOfWork _uow;
         protected readonly ILogger<NotificationService> _logger;
         protected readonly IMapper _mapper;
+        protected readonly IClock _clock;
+        protected static readonly DateTime UtcNow = new(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc);
 
         // System Under Test
         protected readonly NotificationService _sut;
@@ -28,7 +31,10 @@ namespace ClinicFlow.Tests.Services.NotificationServiceTests
                 .BuildServiceProvider()
                 .GetRequiredService<IMapper>();
 
-            _sut = new NotificationService(_uow, _logger, _mapper);
+            _clock = Substitute.For<IClock>();
+            _clock.UtcNow.Returns(UtcNow);
+
+            _sut = new NotificationService(_uow, _logger, _mapper, _clock);
         }
     }
 }

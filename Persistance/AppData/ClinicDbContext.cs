@@ -1,6 +1,7 @@
 ﻿using Domain.Entities.AppModule;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Persistence.AppData.Converters;
 
 namespace Persistence.AppData
 {
@@ -23,6 +24,10 @@ namespace Persistence.AppData
             modelBuilder.Entity<IdentityUserLogin<Guid>>().ToTable("UserLogins");
             modelBuilder.Entity<IdentityUserToken<Guid>>().ToTable("UserTokens");
         }
+
+        // Covers DateTime? properties too
+        protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+            => configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
 
         public DbSet<DoctorProfile> DoctorProfiles => Set<DoctorProfile>();
         public DbSet<Specialty> Specialties => Set<Specialty>();

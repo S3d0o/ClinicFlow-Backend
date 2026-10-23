@@ -42,7 +42,7 @@ Status-code notes marked *(REVIEW Mx)* refer to known issues in [REVIEW.md](REVI
 | `DateOnly` | `"yyyy-MM-dd"`, e.g. `"2026-10-11"` |
 | `TimeOnly` | Responses use `"HH:mm:ss"` (`"09:30:00"`). Requests accept `"HH:mm"` or `"HH:mm:ss"` |
 | Slot and schedule times | **Clinic local wall-clock time**, with no time zone. Show them as they are; do not convert. The clinic's zone is configured on the server (`Clinic:TimeZoneId`, default `Africa/Cairo`), and every time rule (slot in the past, 2-hour cancellation window, completion, no-show grace, reminders) uses the clinic's clock |
-| Timestamps (`DateTime`) | UTC. ⚠️ Values read from the database are serialized **without** a `Z` suffix (e.g. `"bookedAt": "2026-10-08T12:17:34.1027961"`). Treat every timestamp as UTC: append `Z` before parsing if it is missing. `LoginResponse.expiresAt` does include the `Z` |
+| Timestamps (`DateTime`) | UTC, always with the `Z` suffix (e.g. `"bookedAt": "2026-10-08T12:17:34.1027961Z"`), since 4.0.0-p0. Contract 3.x sent values read from the database without the `Z`; a client that appends a missing `Z` before parsing keeps working |
 | Money | `consultationFee` is a JSON number (decimal, EGP), e.g. `500.00` |
 | Ids | Entity ids are integers. User ids (`UserProfileResponse.id`, `confirm-email` / `reset-password` `userId`) are GUID strings |
 | Nulls | Optional fields may be `null` or omitted in requests. Nullable response fields are always present, possibly as `null` |
@@ -737,7 +737,7 @@ Types use TypeScript-style notation. `?` means the field may be omitted in a req
 | `OverviewStatsResponse` | `totalDoctors`, `totalPatients`, `totalAppointments`, `totalSpecialties`, `pendingApprovals`, `totalReviews` (numbers) |
 | `AppointmentStatsResponse` | `pending`, `confirmed`, `completed`, `cancelled`, `noShow` (numbers) |
 
-`Timestamp` is a UTC date-time string, possibly without the `Z` ([§1](#1-general-conventions)).
+`Timestamp` is a UTC date-time string ending in `Z` ([§1](#1-general-conventions)).
 
 ## 7. Enums
 
@@ -785,7 +785,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) whose fix **will change the cont
 | 3.1.0 | 2026-10-18 | No breaking changes: every request that worked before still gets the same response. **New: rate limiting (M6).** Register (#1, #2), login (#3), confirm email (#6), forgot password (#7) and reset password (#8) share a per-client-IP limit, 10 requests per 60 s by default ([§2.7](#27-rate-limiting)). Over it: 429 with the new code `RateLimit.Exceeded` and a `Retry-After` header. Refresh and logout are not limited. **Relaxed auth rule: logout (L7).** `POST /api/auth/logout` (#5) no longer requires an access token, so it works after the access token has expired; with an access token, the refresh token must still be the caller's. **Behaviour (H4):** a free slot kept because a cancelled appointment points to it is now `Blocked` while the doctor's schedule no longer covers it (hours moved away, or the schedule deactivated), so it no longer appears in `GET /api/doctors/{id}/slots` and booking it returns 409 `Appointment.SlotNotAvailable`. It is reopened if the hours cover it again. Cancelling an appointment outside the doctor's current hours blocks its slot instead of freeing it. **Behaviour (L8):** a doctor's `averageRating` and `totalReviews` are updated in the same transaction as the review insert or delete, so concurrent reviews can't leave them stale. **Frontend:** show a "try again in N seconds" message for 429 `RateLimit.Exceeded` on the auth forms; logout can be called without refreshing first |
 | 3.1.1 | 2026-10-18 | Bug fix: a 400 from `PUT /api/appointments/{id}/notes` (#24) keys the validation error as `Notes`, like every other validation error (§3.1 B: PascalCase property names). It was `notes`. The request body is unchanged (`{ "notes": … }`). Internal cleanup with no other observable change (REVIEW.md group B). §9 now also lists the removal of #12, which duplicates #26 |
 | 3.1.2 | 2026-10-18 | Bug fix: CORS now exposes the `Retry-After` header, so a frontend on another origin can read the wait time of a 429 `RateLimit.Exceeded` (§2.7). Before, the browser hid it, and only same-origin deployments (e.g. behind the compose nginx proxy) could read it. No other change |
-| 4.0.0-p0 | 2026-10-23 | **Pre-release on the `v2` branch (V2 line)**; the V2 frontend is its only client. Bug fix: `profilePictureUrl` (#31) and `iconUrl` (#41, #42) must be absolute `http` or `https` URLs. Before, the rule accepted any absolute URI, including `javascript:` and `file:`, and on Linux (the Docker image) a path such as `/images/me.png`, which .NET reads as a `file://` URI. Those values now return 400 with a validation error on the field; the message is "... must be an absolute http or https URL." |
+| 4.0.0-p0 | 2026-10-23 | **Pre-release on the `v2` branch (V2 line)**; the V2 frontend is its only client. Bug fix: `profilePictureUrl` (#31) and `iconUrl` (#41, #42) must be absolute `http` or `https` URLs. Before, the rule accepted any absolute URI, including `javascript:` and `file:`, and on Linux (the Docker image) a path such as `/images/me.png`, which .NET reads as a `file://` URI. Those values now return 400 with a validation error on the field; the message is "... must be an absolute http or https URL." **Breaking (format): every timestamp ends in `Z`** (P0 PR 4, REVIEW.md §4.1). Timestamps read from the database (`bookedAt`, `cancelledAt`, `createdAt`, …) used to be sent without it; only `LoginResponse.expiresAt` had it. The values are unchanged and still UTC. A client that appends a missing `Z` before parsing, like §12's `parseTimestamp`, needs no change; one that parsed the bare value as local time now gets the correct instant. The date-of-birth rules (#1, #2, #31) now compare with the clinic's date (`Clinic:TimeZoneId`) instead of the UTC date, which differs only for a few hours around midnight |
 
 ## 11. How to change this contract
 
@@ -804,7 +804,7 @@ Copy this into the frontend (e.g. `src/api/contract.ts`). Keep it in sync with �
 // ---- scalars ----
 export type DateOnly = string;   // "yyyy-MM-dd"
 export type TimeOnly = string;   // "HH:mm:ss" (send "HH:mm" or "HH:mm:ss")
-export type Timestamp = string;  // UTC; may lack "Z" — normalise before parsing
+export type Timestamp = string;  // UTC, ends in "Z" (contract 3.x could omit it)
 
 // ---- enums ----
 export type Role = "Admin" | "Doctor" | "Patient";
@@ -949,7 +949,7 @@ export const readTotalCount = (response: Response): number | null => {
   return value === null ? null : Number(value);
 };
 
-/** Timestamps from the API are UTC but may lack the "Z" suffix. */
+/** Timestamps from the API are UTC with the "Z" suffix; a value without one (contract 3.x) is read as UTC too. */
 export const parseTimestamp = (value: Timestamp): Date =>
   new Date(/[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? value : `${value}Z`);
 ```

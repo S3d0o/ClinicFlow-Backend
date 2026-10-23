@@ -23,7 +23,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 
         public CancelByDoctorAsyncTests()
         {
-            _dateTimeProvider.ClinicNow.Returns(_now);
+            _clock.ClinicNow.Returns(_now);
             _uow.Doctors.GetByUserIdAsync(_doctorUserId, _ct)
                 .Returns(new DoctorProfile { Id = _doctorId, UserId = _doctorUserId });
 
@@ -60,7 +60,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             Assert.Equal(AppointmentStatus.Cancelled, _appointment.Status);
             Assert.Equal(CancelledBy.Doctor, _appointment.CancelledBy);
             Assert.Equal("Doctor unavailable", _appointment.CancellationReason);
-            Assert.NotNull(_appointment.CancelledAt);
+            Assert.Equal(UtcNow, _appointment.CancelledAt);
             Assert.Equal(SlotStatus.Available, _appointment.Slot.Status);
             await _uow.Received(1).SaveChangesAsync(_ct);
         }

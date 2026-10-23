@@ -51,6 +51,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             Assert.Equal(_email, _created.UserName);
             Assert.False(_created.EmailConfirmed);
             Assert.True(_created.IsActive);
+            Assert.Equal(UtcNow, _created.CreatedAt); // from IClock
             await _userManager.Received(1).AddToRoleAsync(_created, "Doctor");
             await _userManager.DidNotReceive().AddToRoleAsync(Arg.Any<ApplicationUser>(), "Patient");
         }

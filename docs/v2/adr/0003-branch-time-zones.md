@@ -18,7 +18,7 @@ V2 adds branches, and in V3 organizations may be in other countries. Staff and p
 2. Slots keep `Date` + `StartTime` + `EndTime` in **branch-local** time (what people see and what schedules generate), and also store `StartsAtUtc` and `EndsAtUtc`, computed when the slot is generated.
 3. Every rule that compares with "now" (booking in the past, cancellation and reschedule windows, check-in window, no-show grace, reminders, doctor-application interview and start dates) uses the UTC columns and `IClock.UtcNow`.
 4. "Today" and other calendar questions use `IClock.Today(branchId)`.
-5. `IClock` extends V1's `IDateTimeProvider` and is the **only** source of time. A test fails the build if `DateTime.UtcNow` or `DateTime.Now` appears outside the clock implementation.
+5. `IClock` is the **only** source of time. A test fails the build if `DateTime.UtcNow` or `DateTime.Now` appears outside the clock implementation. *(Amended 2026-10-23, P0 PR 4: `IClock` replaces V1's `IDateTimeProvider` under the new name instead of extending it, and the clock implementation reads `TimeProvider.System`, so the test allows no `DateTime.UtcNow` at all.)*
 6. Daylight saving: local times that don't exist (the skipped hour) are not generated; ambiguous times (the repeated hour) map to the first occurrence. If zone rules change, a job recomputes the UTC columns of future slots.
 7. API: slot responses return the local `date`/`startTime` **and** `startsAtUtc`; all timestamps are UTC with `Z`.
 

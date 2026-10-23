@@ -26,6 +26,7 @@ namespace ClinicFlow.Tests.Services.NotificationServiceTests
             Assert.Equal(NotificationType.AppointmentConfirmed, added.Type);
             Assert.Equal(15, added.RelatedEntityId);
             Assert.False(added.IsRead);
+            Assert.Equal(UtcNow, added.CreatedAt); // from IClock, not a default on the entity
             await _uow.Notifications.Received(1).AddAsync(Arg.Any<Notification>(), _ct);
             await _uow.Received(1).SaveChangesAsync(_ct);
         }

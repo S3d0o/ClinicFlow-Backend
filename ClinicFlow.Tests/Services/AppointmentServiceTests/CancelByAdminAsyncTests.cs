@@ -22,7 +22,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
 
         public CancelByAdminAsyncTests()
         {
-            _dateTimeProvider.ClinicNow.Returns(_now);
+            _clock.ClinicNow.Returns(_now);
 
             // Starts in 30 minutes: admins are not bound by the patient's 2-hour window
             var slotStart = _now.AddMinutes(30);
@@ -57,7 +57,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             Assert.Equal(AppointmentStatus.Cancelled, _appointment.Status);
             Assert.Equal(CancelledBy.Admin, _appointment.CancelledBy);
             Assert.Equal("Clinic closed", _appointment.CancellationReason);
-            Assert.NotNull(_appointment.CancelledAt);
+            Assert.Equal(UtcNow, _appointment.CancelledAt);
             Assert.Equal(SlotStatus.Available, _appointment.Slot.Status);
             await _uow.Received(1).SaveChangesAsync(_ct);
         }

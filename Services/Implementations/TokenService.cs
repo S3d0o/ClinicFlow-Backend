@@ -13,6 +13,7 @@ namespace Services.Implementations
         UserManager<ApplicationUser> userManager,
         IUnitOfWork uow,
         IAccessTokenFactory accessTokenFactory,
+        IClock clock,
         ILogger<TokenService> logger) : ITokenService
     {
         private const string RotatedReason = "Rotated";
@@ -56,7 +57,7 @@ namespace Services.Implementations
             if (existingToken.ReplacedByTokenHash is not null)
                 return await HandleRotatedTokenReuseAsync(existingToken, ipAddress, ct);
 
-            if (!existingToken.IsActive)
+            if (!existingToken.IsActiveAt(clock.UtcNow))
             {
                 logger.LogWarning("Refresh failed: token {TokenId} is revoked or expired", existingToken.Id);
                 return AuthErrors.InvalidRefreshToken;
@@ -77,7 +78,7 @@ namespace Services.Implementations
             }
 
             // Mark existing token as rotated
-            var now = DateTime.UtcNow;
+            var now = clock.UtcNow;
             var newRefreshToken = GenerateRefreshToken();
             var newRefreshTokenHash = HashRefreshToken(newRefreshToken);
 
@@ -125,7 +126,7 @@ namespace Services.Implementations
 
             if (existingToken.Revoked == null)
             {
-                existingToken.Revoked = DateTime.UtcNow;
+                existingToken.Revoked = clock.UtcNow;
                 existingToken.RevokedByIp = ipAddress;
                 existingToken.RevocationReason = reason ?? "RevokedByUser";
                 await uow.SaveChangesAsync(ct);
@@ -143,7 +144,7 @@ namespace Services.Implementations
         {
             var isLikelyRace = token.LastUsed is not null
                 && token.LastUsedByIp == ipAddress
-                && (DateTime.UtcNow - token.LastUsed.Value).TotalMinutes < _jwt.TheftDetectionWindowMinutes;
+                && (clock.UtcNow - token.LastUsed.Value).TotalMinutes < _jwt.TheftDetectionWindowMinutes;
 
             if (isLikelyRace)
             {
@@ -151,7 +152,7 @@ namespace Services.Implementations
                 return AuthErrors.InvalidRefreshToken;
             }
 
-            var revoked = await uow.RefreshTokens.RevokeAllActiveAsync(token.UserId, ReuseDetectedReason, ipAddress, ct);
+            var revoked = await uow.RefreshTokens.RevokeAllActiveAsync(token.UserId, ReuseDetectedReason, ipAddress, clock.UtcNow, ct);
             logger.LogWarning(
                 "Rotated refresh token {TokenId} reused from {IpAddress}; revoked {Count} active tokens of user {UserId}",
                 token.Id, ipAddress, revoked, token.UserId);
@@ -168,16 +169,19 @@ namespace Services.Implementations
         private string HashRefreshToken(string raw) =>
             Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
 
-        private RefreshToken CreateRefreshEntity(string tokenHash, Guid userId, string ip, int days, string? securityStamp) =>
-            new RefreshToken
+        private RefreshToken CreateRefreshEntity(string tokenHash, Guid userId, string ip, int days, string? securityStamp)
+        {
+            var now = clock.UtcNow;
+            return new RefreshToken
             {
                 TokenHash = tokenHash,
                 UserId = userId,
-                Expires = DateTime.UtcNow.AddDays(days),
-                Created = DateTime.UtcNow,
+                Expires = now.AddDays(days),
+                Created = now,
                 CreatedByIp = ip,
                 SecurityStamp = securityStamp
             };
+        }
 
         #endregion
     }

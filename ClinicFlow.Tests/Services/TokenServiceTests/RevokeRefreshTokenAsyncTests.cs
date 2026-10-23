@@ -13,7 +13,7 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
 
         public RevokeRefreshTokenAsyncTests()
         {
-            _token = new RefreshToken { Id = 5, TokenHash = Hash(RawToken), UserId = _ownerId, Expires = DateTime.UtcNow.AddDays(1) };
+            _token = new RefreshToken { Id = 5, TokenHash = Hash(RawToken), UserId = _ownerId, Expires = UtcNow.AddDays(1) };
             _uow.RefreshTokens.GetRefreshTokenByHashAsync(Hash(RawToken), _ct).Returns(_token);
         }
 
@@ -23,7 +23,7 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
             var result = await _sut.RevokeRefreshTokenAsync(_ownerId, RawToken, Ip, "Logout", _ct);
 
             Assert.True(result.IsSuccess);
-            Assert.NotNull(_token.Revoked);
+            Assert.Equal(UtcNow, _token.Revoked);
             Assert.Equal(Ip, _token.RevokedByIp);
             Assert.Equal("Logout", _token.RevocationReason);
             await _uow.Received(1).SaveChangesAsync(_ct);
@@ -60,7 +60,7 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
         [Fact]
         public async Task RevokeRefreshTokenAsync_WhenAlreadyRevoked_SucceedsWithoutChangingIt()
         {
-            var revokedAt = DateTime.UtcNow.AddHours(-1);
+            var revokedAt = UtcNow.AddHours(-1);
             _token.Revoked = revokedAt;
             _token.RevocationReason = "Rotated";
 

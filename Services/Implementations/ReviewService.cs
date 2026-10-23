@@ -7,7 +7,8 @@ namespace Services.Implementations
     public class ReviewService(
         IUnitOfWork uow,
         IMapper mapper,
-        ILogger<ReviewService> logger) : IReviewService
+        ILogger<ReviewService> logger,
+        IClock clock) : IReviewService
     {
         public async Task<Result<ReviewResponse>> SubmitReviewAsync(Guid patientUserId, SubmitReviewRequest request, CancellationToken ct)
         {
@@ -43,7 +44,7 @@ namespace Services.Implementations
                 Rating = request.Rating,
                 Comment = request.Comment,
                 IsVisible = true,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = clock.UtcNow
             };
 
             // The review and the doctor's rating cache are saved together (REVIEW.md L8)

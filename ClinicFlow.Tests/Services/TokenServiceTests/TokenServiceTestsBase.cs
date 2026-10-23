@@ -22,6 +22,8 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
         protected readonly IUnitOfWork _uow;
         protected readonly IAccessTokenFactory _accessTokenFactory;
         protected readonly ILogger<TokenService> _logger;
+        protected readonly IClock _clock;
+        protected static readonly DateTime UtcNow = new(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc);
         protected readonly JwtSettings _jwt = new()
         {
             RefreshTokenExpirationDays = 7,
@@ -43,7 +45,10 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
                 .Create(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IEnumerable<string>>())
                 .Returns(new AccessToken("access-token", AccessTokenExpiresAt));
 
-            _sut = new TokenService(Options.Create(_jwt), _userManager, _uow, _accessTokenFactory, _logger);
+            _clock = Substitute.For<IClock>();
+            _clock.UtcNow.Returns(UtcNow);
+
+            _sut = new TokenService(Options.Create(_jwt), _userManager, _uow, _accessTokenFactory, _clock, _logger);
         }
 
         // Refresh tokens are stored as the Base64 SHA-256 of the raw value

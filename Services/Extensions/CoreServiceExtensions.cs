@@ -22,7 +22,8 @@ namespace Services.Extensions
             services.AddScoped<INotificationService, NotificationService>();
             services.AddScoped<IAdminService, AdminService>();
             services.AddScoped<IProfileService, ProfileService>();
-            services.AddSingleton<IDateTimeProvider, DateTimeProvider>();
+            services.AddSingleton(TimeProvider.System);
+            services.AddSingleton<IClock, Clock>();
 
             // An unknown zone would make every slot-time rule wrong, so fail at startup (REVIEW.md M2)
             services.AddOptions<ClinicSettings>()

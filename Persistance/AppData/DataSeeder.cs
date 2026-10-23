@@ -78,7 +78,7 @@ public static partial class DataSeeder
     // Roles and specialties are always seeded. The demo dataset (accounts with the published
     // passwords above) is only seeded when seedDemoData is true — never enable it in production.
     // A real admin can be bootstrapped from configuration (Seeding:AdminEmail / Seeding:AdminPassword).
-    // clinicNow and utcNow come from IDateTimeProvider (Persistence can't reference it).
+    // clinicNow and utcNow come from IClock (Persistence can't reference it).
     public static async Task SeedAsync(
         IServiceProvider service, bool seedDemoData, DateTime clinicNow, DateTime utcNow,
         string? adminEmail = null, string? adminPassword = null)
@@ -97,7 +97,7 @@ public static partial class DataSeeder
         await SeedSpecialtiesAsync(context);
 
         if (!string.IsNullOrWhiteSpace(adminEmail) && !string.IsNullOrWhiteSpace(adminPassword))
-            await SeedBootstrapAdminAsync(userManager, adminEmail, adminPassword);
+            await SeedBootstrapAdminAsync(userManager, adminEmail, adminPassword, utcNow);
 
         if (!seedDemoData)
             return;
@@ -106,7 +106,7 @@ public static partial class DataSeeder
 
         // The hand-written demo stories (the accounts listed above) first, then the generated clinic.
         // Each step only runs if its data is missing, so restarts don't duplicate anything.
-        await SeedUsersAsync(userManager, context);
+        await SeedUsersAsync(userManager, context, clock);
         await SeedDoctorSchedulesAsync(context);
         await SeedGeneratedPeopleAsync(context, clock, logger);
         await SeedAppointmentSlotsAsync(context, clock);
@@ -175,7 +175,7 @@ public static partial class DataSeeder
     }
 
     // ── 3. Users + Profiles ───────────────────────────────────────────────────
-    private static async Task SeedUsersAsync(UserManager<ApplicationUser> userManager, ClinicDbContext context)
+    private static async Task SeedUsersAsync(UserManager<ApplicationUser> userManager, ClinicDbContext context, SeedClock clock)
     {
         if (await context.DoctorProfiles.AnyAsync()) return;
 
@@ -192,7 +192,7 @@ public static partial class DataSeeder
             UserName = "admin@clinicflow.com",
             Gender = Gender.Male,
             DateOfBirth = new DateOnly(1990, 1, 1),
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = clock.UtcNow,
             IsActive = true,
             EmailConfirmed = true,
         }, "Admin@1234", "Admin");
@@ -210,7 +210,7 @@ public static partial class DataSeeder
                 PhoneNumber    = "+201001110001",
                 Gender         = Gender.Male,
                 DateOfBirth    = new DateOnly(1974, 4, 15),
-                CreatedAt      = DateTime.UtcNow,
+                CreatedAt      = clock.UtcNow,
                 IsActive       = true,
                 EmailConfirmed = true,
             },
@@ -236,7 +236,7 @@ public static partial class DataSeeder
                 PhoneNumber    = "+201001110002",
                 Gender         = Gender.Female,
                 DateOfBirth    = new DateOnly(1985, 9, 22),
-                CreatedAt      = DateTime.UtcNow,
+                CreatedAt      = clock.UtcNow,
                 IsActive       = true,
                 EmailConfirmed = true,
             },
@@ -262,7 +262,7 @@ public static partial class DataSeeder
                 PhoneNumber    = "+201001110003",
                 Gender         = Gender.Male,
                 DateOfBirth    = new DateOnly(1979, 3, 10),
-                CreatedAt      = DateTime.UtcNow,
+                CreatedAt      = clock.UtcNow,
                 IsActive       = true,
                 EmailConfirmed = true,
             },
@@ -288,7 +288,7 @@ public static partial class DataSeeder
                 PhoneNumber    = "+201001110004",
                 Gender         = Gender.Female,
                 DateOfBirth    = new DateOnly(1982, 7, 30),
-                CreatedAt      = DateTime.UtcNow,
+                CreatedAt      = clock.UtcNow,
                 IsActive       = true,
                 EmailConfirmed = true,
             },
@@ -314,7 +314,7 @@ public static partial class DataSeeder
                 PhoneNumber    = "+201001110005",
                 Gender         = Gender.Male,
                 DateOfBirth    = new DateOnly(1977, 11, 18),
-                CreatedAt      = DateTime.UtcNow,
+                CreatedAt      = clock.UtcNow,
                 IsActive       = true,
                 EmailConfirmed = true,
             },
@@ -340,7 +340,7 @@ public static partial class DataSeeder
                 PhoneNumber    = "+201001110006",
                 Gender         = Gender.Female,
                 DateOfBirth    = new DateOnly(1983, 2, 5),
-                CreatedAt      = DateTime.UtcNow,
+                CreatedAt      = clock.UtcNow,
                 IsActive       = true,
                 EmailConfirmed = true,
             },
@@ -367,7 +367,7 @@ public static partial class DataSeeder
                 PhoneNumber    = "+201001110007",
                 Gender         = Gender.Male,
                 DateOfBirth    = new DateOnly(1991, 11, 5),
-                CreatedAt      = DateTime.UtcNow,
+                CreatedAt      = clock.UtcNow,
                 IsActive       = true,
                 EmailConfirmed = true,
             },
@@ -404,7 +404,7 @@ public static partial class DataSeeder
                 PhoneNumber    = "+201009001001",
                 Gender         = Gender.Male,
                 DateOfBirth    = new DateOnly(1988, 6, 14),
-                CreatedAt      = DateTime.UtcNow,
+                CreatedAt      = clock.UtcNow,
                 IsActive       = true,
                 EmailConfirmed = true,
             },
@@ -428,7 +428,7 @@ public static partial class DataSeeder
                 PhoneNumber    = "+201009001002",
                 Gender         = Gender.Female,
                 DateOfBirth    = new DateOnly(1995, 3, 28),
-                CreatedAt      = DateTime.UtcNow,
+                CreatedAt      = clock.UtcNow,
                 IsActive       = true,
                 EmailConfirmed = true,
             },
@@ -452,7 +452,7 @@ public static partial class DataSeeder
                 PhoneNumber    = "+201009001003",
                 Gender         = Gender.Male,
                 DateOfBirth    = new DateOnly(1982, 12, 1),
-                CreatedAt      = DateTime.UtcNow,
+                CreatedAt      = clock.UtcNow,
                 IsActive       = true,
                 EmailConfirmed = true,
             },
@@ -476,7 +476,7 @@ public static partial class DataSeeder
                 PhoneNumber    = "+201009001004",
                 Gender         = Gender.Female,
                 DateOfBirth    = new DateOnly(1998, 8, 17),
-                CreatedAt      = DateTime.UtcNow,
+                CreatedAt      = clock.UtcNow,
                 IsActive       = true,
                 EmailConfirmed = true,
             },
@@ -500,7 +500,7 @@ public static partial class DataSeeder
                 PhoneNumber    = "+201009001005",
                 Gender         = Gender.Male,
                 DateOfBirth    = new DateOnly(1975, 5, 3),
-                CreatedAt      = DateTime.UtcNow,
+                CreatedAt      = clock.UtcNow,
                 IsActive       = true,
                 EmailConfirmed = true,
             },
@@ -939,7 +939,7 @@ public static partial class DataSeeder
 
     // ── Bootstrap admin (all environments) ────────────────────────────────────
     private static async Task SeedBootstrapAdminAsync(
-        UserManager<ApplicationUser> userManager, string email, string password)
+        UserManager<ApplicationUser> userManager, string email, string password, DateTime utcNow)
     {
         if (await userManager.FindByEmailAsync(email) is not null) return;
 
@@ -949,7 +949,7 @@ public static partial class DataSeeder
             LastName = "Admin",
             Email = email,
             UserName = email,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = utcNow,
             IsActive = true,
             EmailConfirmed = true,
         };

@@ -10,7 +10,8 @@ namespace Infrastructure.Email;
 public class EmailService(
     IOptions<EmailSettings> emailOptions,
     IOptions<FrontendSettings> frontendOptions,
-    ILogger<EmailService> logger) : IEmailService
+    ILogger<EmailService> logger,
+    IClock clock) : IEmailService
 {
     // An unreachable SMTP server must not hold a request for MailKit's default 2 minutes per operation
     private const int SmtpTimeoutMilliseconds = 30_000;
@@ -163,7 +164,7 @@ public class EmailService(
     /// All four email types call this — change the design here once and
     /// it propagates everywhere.
     /// </summary>
-    private static string BuildEmailTemplate(
+    private string BuildEmailTemplate(
         string previewText, string headerTitle, string bodyHtml) => $"""
         <!DOCTYPE html>
         <html lang="en">
@@ -230,7 +231,7 @@ public class EmailService(
                                border-top:none;border-radius:0 0 12px 12px;
                                padding:24px 40px;text-align:center;">
                       <p style="margin:0 0 6px;font-size:12px;color:#9CA3AF;">
-                        &copy; {DateTime.UtcNow.Year} ClinicFlow. All rights reserved.
+                        &copy; {clock.UtcNow.Year} ClinicFlow. All rights reserved.
                       </p>
                       <p style="margin:0;font-size:12px;color:#D1D5DB;">
                         This email was sent to you because you have an account with ClinicFlow.

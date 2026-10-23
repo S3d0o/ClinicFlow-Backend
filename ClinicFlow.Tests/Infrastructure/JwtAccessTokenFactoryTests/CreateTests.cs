@@ -27,7 +27,7 @@ namespace ClinicFlow.Tests.Infrastructure.JwtAccessTokenFactoryTests
 
         public CreateTests()
         {
-            var clock = Substitute.For<IDateTimeProvider>();
+            var clock = Substitute.For<IClock>();
             clock.UtcNow.Returns(Now);
             _sut = new JwtAccessTokenFactory(Options.Create(_jwt), clock);
         }

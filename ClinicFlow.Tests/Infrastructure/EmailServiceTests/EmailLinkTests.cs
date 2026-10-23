@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Infrastructure.Email;
+using NSubstitute;
+using Services.Abstraction.Contracts;
 using Shared.Settings;
 
 namespace ClinicFlow.Tests.Infrastructure.EmailServiceTests
@@ -13,7 +15,8 @@ namespace ClinicFlow.Tests.Infrastructure.EmailServiceTests
         private static EmailService Create(string frontendBaseUrl) => new(
             Options.Create(new EmailSettings()),
             Options.Create(new FrontendSettings { BaseUrl = frontendBaseUrl }),
-            NullLogger<EmailService>.Instance);
+            NullLogger<EmailService>.Instance,
+            Substitute.For<IClock>());
 
         [Fact]
         public void ConfirmEmailUrl_UsesTheFrontendHashRoute()

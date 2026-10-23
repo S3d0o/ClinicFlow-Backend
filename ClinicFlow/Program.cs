@@ -75,7 +75,7 @@ try
 
     // Demo accounts use published passwords: only seed them in Development unless explicitly enabled.
     var seedDemoData = app.Configuration.GetValue<bool?>("Seeding:DemoData") ?? app.Environment.IsDevelopment();
-    var clock = app.Services.GetRequiredService<IDateTimeProvider>(); // demo slot dates follow the clinic's clock
+    var clock = app.Services.GetRequiredService<IClock>(); // demo slot dates follow the clinic's clock
     await DataSeeder.SeedAsync(
         app.Services,
         seedDemoData,

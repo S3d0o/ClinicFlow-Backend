@@ -15,7 +15,8 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         protected readonly ILogger<AppointmentService> _logger;
         protected readonly INotificationService _notificationService;
         protected readonly IEmailService _emailService;
-        protected readonly IDateTimeProvider _dateTimeProvider;
+        protected readonly IClock _clock;
+        protected static readonly DateTime UtcNow = new(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc);
 
         // System Under Test
         protected readonly AppointmentService _sut;
@@ -27,7 +28,8 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             _logger = Substitute.For<ILogger<AppointmentService>>();
             _notificationService = Substitute.For<INotificationService>();
             _emailService = Substitute.For<IEmailService>();
-            _dateTimeProvider = Substitute.For<IDateTimeProvider>();
+            _clock = Substitute.For<IClock>();
+            _clock.UtcNow.Returns(UtcNow);
 
             _sut = new AppointmentService(
                 _uow,
@@ -35,7 +37,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 _logger,
                 _notificationService,
                 _emailService,
-                _dateTimeProvider
+                _clock
             );
         }
     }

@@ -11,7 +11,8 @@ public class AdminService(
     IUnitOfWork unitOfWork,
     IMapper mapper,
     ILogger<AdminService> logger,
-    INotificationService notificationService) : IAdminService
+    INotificationService notificationService,
+    IClock clock) : IAdminService
 {
     public async Task<Result<PagedList<DoctorResponse>>> GetPendingDoctorsAsync(PendingDoctorsFilterRequest filter, CancellationToken ct)
     {
@@ -71,7 +72,7 @@ public class AdminService(
 
         // End existing sessions: refresh also rejects inactive users, and revoking stops
         // further refreshes immediately. Access tokens stay valid until they expire (15 min).
-        await unitOfWork.RefreshTokens.RevokeAllActiveAsync(doctor.UserId, "Account suspended", null, ct);
+        await unitOfWork.RefreshTokens.RevokeAllActiveAsync(doctor.UserId, "Account suspended", null, clock.UtcNow, ct);
 
         await TryNotifyAsync(new CreateNotificationRequest(
             UserId: doctor.UserId,

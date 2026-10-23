@@ -22,7 +22,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 .Returns(new DoctorProfile { Id = _doctorId, UserId = _doctorUserId });
 
             // The visit started at 10:00 and "now" is 10:30, so it can be completed
-            _dateTimeProvider.ClinicNow.Returns(new DateTime(2026, 10, 18, 10, 30, 0, DateTimeKind.Utc));
+            _clock.ClinicNow.Returns(new DateTime(2026, 10, 18, 10, 30, 0, DateTimeKind.Utc));
             _appointment = new Appointment
             {
                 Id = _appointmentId,
@@ -38,7 +38,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         public async Task CompleteAppointmentAsync_WhenAppointmentHasNotStarted_ReturnsCannotCompleteBeforeStartAndChangesNothing()
         {
             // REVIEW.md M14: completing early would unlock a review for a visit that never happened
-            _dateTimeProvider.ClinicNow.Returns(new DateTime(2026, 10, 18, 9, 59, 0, DateTimeKind.Utc));
+            _clock.ClinicNow.Returns(new DateTime(2026, 10, 18, 9, 59, 0, DateTimeKind.Utc));
 
             var result = await _sut.CompleteAppointmentAsync(_doctorUserId, _appointmentId, _ct);
 
@@ -52,7 +52,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
         [Fact]
         public async Task CompleteAppointmentAsync_WhenAppointmentStartsNow_Succeeds()
         {
-            _dateTimeProvider.ClinicNow.Returns(new DateTime(2026, 10, 18, 10, 0, 0, DateTimeKind.Utc));
+            _clock.ClinicNow.Returns(new DateTime(2026, 10, 18, 10, 0, 0, DateTimeKind.Utc));
 
             var result = await _sut.CompleteAppointmentAsync(_doctorUserId, _appointmentId, _ct);
 

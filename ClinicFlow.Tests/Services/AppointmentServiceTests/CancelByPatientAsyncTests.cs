@@ -150,7 +150,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 {
                     Id = _patientId,
                 });
-            _dateTimeProvider.ClinicNow.Returns(_now);
+            _clock.ClinicNow.Returns(_now);
             var slotDateTime = _now.AddHours(1);
             var slot = new AppointmentSlot
             {
@@ -218,7 +218,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                   {
                       Id = _patientId,
                   });
-            _dateTimeProvider.ClinicNow.Returns(_now);
+            _clock.ClinicNow.Returns(_now);
             var slotDateTime = _now.AddHours(10);
             var slot = new AppointmentSlot
             {

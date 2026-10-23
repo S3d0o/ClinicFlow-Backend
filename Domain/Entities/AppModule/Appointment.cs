@@ -14,7 +14,7 @@ namespace Domain.Entities.AppModule
         public string? ReasonForVisit { get; set; }  // patient sets this at booking time
         public string? DoctorNotes { get; set; }      // only the owning doctor can write this
 
-        public DateTime BookedAt { get; set; } = DateTime.UtcNow;
+        public DateTime BookedAt { get; set; }
 
         // All nullable — only populated when the appointment is cancelled
         public DateTime? CancelledAt { get; set; }

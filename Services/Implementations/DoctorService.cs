@@ -9,7 +9,7 @@ namespace Services.Implementations
     public class DoctorService(IUnitOfWork uow
         , IMapper mapper
         , ILogger<DoctorService> logger
-        , IDateTimeProvider dateTimeProvider) : IDoctorService
+        , IClock clock) : IDoctorService
     {
         public async Task<Result<IReadOnlyList<DoctorSummaryResponse>>> GetAllAsync(DoctorFilterRequest filter, CancellationToken ct)
         {
@@ -83,7 +83,7 @@ namespace Services.Implementations
                 mapper.Map(request, existingSchedule);
                 existingSchedule.IsActive = true;
                 await uow.SaveChangesAsync(ct);
-                await uow.Slots.SyncKeptSlotsWithScheduleAsync(existingSchedule, ClinicToday(), ct);
+                await uow.Slots.SyncKeptSlotsWithScheduleAsync(existingSchedule, clock.ClinicToday, ct);
                 await GenerateSlotsAsync(existingSchedule, ct);
 
                 logger.LogInformation("Reactivated schedule {ScheduleId} for doctor {DoctorId} on {DayOfWeek}",
@@ -128,8 +128,8 @@ namespace Services.Implementations
             var created = await uow.ExecuteInTransactionAsync(async transaction =>
             {
                 await uow.SaveChangesAsync(ct);
-                await uow.Slots.DeleteFutureAvailableByScheduleAsync(scheduleId, ClinicToday(), ct);
-                await uow.Slots.SyncKeptSlotsWithScheduleAsync(updatedSchedule, ClinicToday(), ct);
+                await uow.Slots.DeleteFutureAvailableByScheduleAsync(scheduleId, clock.ClinicToday, ct);
+                await uow.Slots.SyncKeptSlotsWithScheduleAsync(updatedSchedule, clock.ClinicToday, ct);
                 var slotCount = await GenerateSlotsAsync(updatedSchedule, ct);
                 await transaction.CommitAsync(ct);
                 return slotCount;
@@ -148,7 +148,7 @@ namespace Services.Implementations
             }
 
             // Upcoming appointments would be orphaned: the doctor cancels them first (REVIEW.md H4)
-            if (await uow.Slots.HasUpcomingBookingsAsync(scheduleId, ClinicToday(), ct))
+            if (await uow.Slots.HasUpcomingBookingsAsync(scheduleId, clock.ClinicToday, ct))
             {
                 logger.LogWarning("Schedule {ScheduleId} has upcoming booked appointments and can't be deleted", scheduleId);
                 return DoctorErrors.CannotDeleteScheduleWithBookedSlots;
@@ -165,7 +165,7 @@ namespace Services.Implementations
                 {
                     existing.IsActive = false;
                     // Future free slots of cancelled appointments stay, but are no longer bookable
-                    await uow.Slots.SyncKeptSlotsWithScheduleAsync(existing, ClinicToday(), ct);
+                    await uow.Slots.SyncKeptSlotsWithScheduleAsync(existing, clock.ClinicToday, ct);
                 }
                 else
                 {
@@ -236,7 +236,7 @@ namespace Services.Implementations
                 return 0;
 
             var slots = new List<AppointmentSlot>();
-            var today = ClinicToday();
+            var today = clock.ClinicToday;
 
             // Idempotent: a time that overlaps an existing slot (e.g. a booked one kept through an update) is skipped,
             // instead of violating the unique index on (doctor, date, start) or double-booking the doctor (REVIEW.md H4)
@@ -276,9 +276,6 @@ namespace Services.Implementations
             await uow.SaveChangesAsync(ct);
             return slots.Count;
         }
-
-        // Slot dates are clinic-local, so "today" is the clinic's date, not the UTC one (REVIEW.md M2)
-        private DateOnly ClinicToday() => DateOnly.FromDateTime(dateTimeProvider.ClinicNow);
 
         #endregion
 

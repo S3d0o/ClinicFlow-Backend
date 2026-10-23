@@ -1,11 +1,12 @@
 ﻿using FluentValidation;
+using Services.Abstraction.Contracts;
 using Shared.DTOs.Profile;
 
 namespace Presentation.Validators;
 
 public class UpdateUserProfileRequestValidator : AbstractValidator<UpdateUserProfileRequest>
 {
-    public UpdateUserProfileRequestValidator()
+    public UpdateUserProfileRequestValidator(IClock clock)
     {
         RuleFor(x => x.FirstName)
             .MaximumLength(50).WithMessage("First name cannot exceed 50 characters.")
@@ -28,7 +29,7 @@ public class UpdateUserProfileRequestValidator : AbstractValidator<UpdateUserPro
             .When(x => x.Gender is not null);
 
         RuleFor(x => x.DateOfBirth)
-            .Must(dob => dob < DateOnly.FromDateTime(DateTime.UtcNow))
+            .Must(dob => dob < clock.ClinicToday)
             .WithMessage("Date of birth must be in the past.")
             .When(x => x.DateOfBirth is not null);
     }

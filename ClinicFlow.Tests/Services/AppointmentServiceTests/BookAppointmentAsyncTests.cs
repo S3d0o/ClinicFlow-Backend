@@ -33,7 +33,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                     User = new ApplicationUser { FirstName = "Mona", LastName = "Hassan", Email = "mona@test.com" }
                 });
 
-            _dateTimeProvider.ClinicNow.Returns(_now);
+            _clock.ClinicNow.Returns(_now);
 
             _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
             {
@@ -140,7 +140,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 .GetPatientByUserIdAsync(_patientUserId, _ct)
                 .Returns(new PatientProfile());
 
-            _dateTimeProvider.ClinicNow.Returns(_now);
+            _clock.ClinicNow.Returns(_now);
 
             var slotDateTime = _now.AddDays(daysOffset).AddHours(hoursOffset);
             _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
@@ -167,8 +167,8 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             // REVIEW.md M2: 10:00 clinic time (UTC+3) is 07:00 UTC. A 09:00 slot has started at the clinic,
             // although 09:00 is still ahead of the UTC clock
             _uow.Patients.GetPatientByUserIdAsync(_patientUserId, _ct).Returns(new PatientProfile());
-            _dateTimeProvider.ClinicNow.Returns(_now);
-            _dateTimeProvider.UtcNow.Returns(_now.AddHours(-3));
+            _clock.ClinicNow.Returns(_now);
+            _clock.UtcNow.Returns(_now.AddHours(-3));
             _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
             {
                 DoctorProfile = ApprovedDoctor(),
@@ -190,7 +190,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
                 .GetPatientByUserIdAsync(_patientUserId, _ct)
                 .Returns(new PatientProfile());
 
-            _dateTimeProvider.ClinicNow.Returns(_now);
+            _clock.ClinicNow.Returns(_now);
 
             var dateTime = _now.AddDays(1).AddHours(1);
             _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
@@ -233,7 +233,7 @@ namespace ClinicFlow.Tests.Services.AppointmentServiceTests
             await _uow.Slots.Received(1)
                       .SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
             await _uow.Appointments.Received(1)
-                      .AddAsync(Arg.Any<Appointment>(), Arg.Any<CancellationToken>());
+                      .AddAsync(Arg.Is<Appointment>(a => a!.BookedAt == UtcNow), Arg.Any<CancellationToken>()); // from IClock
             await _uow.Received(1).SaveChangesAsync();
             await transaction.Received(1).CommitAsync(Arg.Any<CancellationToken>());
         }

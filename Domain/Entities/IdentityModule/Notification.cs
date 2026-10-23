@@ -9,7 +9,7 @@
         public NotificationType Type { get; set; }
 
         public bool IsRead { get; set; } = false;
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; }
 
         // Loose reference — intentionally not a real FK so deleting an appointment
         // doesn't cascade-delete or block deletion of its notifications

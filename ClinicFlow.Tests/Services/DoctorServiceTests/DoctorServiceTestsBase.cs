@@ -16,7 +16,7 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         protected readonly IUnitOfWork _uow;
         protected readonly IMapper _mapper;
         protected readonly ILogger<DoctorService> _logger;
-        protected readonly IDateTimeProvider _dateTimeProvider;
+        protected readonly IClock _clock;
         protected readonly ITransaction _transaction = Substitute.For<ITransaction>();
 
         // Clinic-local "now" for every test: Sunday 18 Oct 2026, 08:00
@@ -35,8 +35,9 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
             _uow.RunsTransactionsWith<int>(_transaction);  // UpdateScheduleAsync: the regenerated slot count
             _uow.RunsTransactionsWith<bool>(_transaction); // DeleteScheduleAsync: whether the schedule was kept
             _logger = Substitute.For<ILogger<DoctorService>>();
-            _dateTimeProvider = Substitute.For<IDateTimeProvider>();
-            _dateTimeProvider.ClinicNow.Returns(ClinicNow);
+            _clock = Substitute.For<IClock>();
+            _clock.ClinicNow.Returns(ClinicNow);
+            _clock.ClinicToday.Returns(ClinicToday);
             _mapper = new ServiceCollection()
                 .AddLogging()
                 .AddAutoMapper(cfg => { }, typeof(ServiceAssemblyReference).Assembly)
@@ -52,7 +53,7 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
             _uow.Slots.GetSlotTimesAsync(Arg.Any<int>(), Arg.Any<DateOnly>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
                 .Returns(new List<(DateOnly, TimeOnly, TimeOnly)>());
 
-            _sut = new DoctorService(_uow, _mapper, _logger, _dateTimeProvider);
+            _sut = new DoctorService(_uow, _mapper, _logger, _clock);
         }
     }
 }

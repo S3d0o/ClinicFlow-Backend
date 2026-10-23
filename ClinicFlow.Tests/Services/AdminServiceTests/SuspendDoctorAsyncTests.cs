@@ -43,7 +43,7 @@ namespace ClinicFlow.Tests.Services.AdminServiceTests
             var result = await _sut.SuspendDoctorAsync(_doctorId, _ct);
 
             Assert.True(result.IsSuccess);
-            await _uow.RefreshTokens.Received(1).RevokeAllActiveAsync(_doctorUserId, "Account suspended", null, _ct);
+            await _uow.RefreshTokens.Received(1).RevokeAllActiveAsync(_doctorUserId, "Account suspended", null, UtcNow, _ct);
         }
 
         [Fact]
@@ -66,7 +66,7 @@ namespace ClinicFlow.Tests.Services.AdminServiceTests
 
             Assert.True(result.IsSuccess);
             Assert.False(_doctor.User.IsActive);
-            await _uow.RefreshTokens.Received(1).RevokeAllActiveAsync(_doctorUserId, "Account suspended", null, _ct);
+            await _uow.RefreshTokens.Received(1).RevokeAllActiveAsync(_doctorUserId, "Account suspended", null, UtcNow, _ct);
         }
 
         [Fact]
@@ -79,7 +79,7 @@ namespace ClinicFlow.Tests.Services.AdminServiceTests
             Assert.True(result.IsFailure);
             Assert.Contains(DoctorErrors.NotFound(999), result.Errors);
             await _uow.RefreshTokens.DidNotReceive().RevokeAllActiveAsync(
-                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
@@ -93,7 +93,7 @@ namespace ClinicFlow.Tests.Services.AdminServiceTests
             Assert.Contains(AdminErrors.DoctorAlreadySuspended, result.Errors);
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
             await _uow.RefreshTokens.DidNotReceive().RevokeAllActiveAsync(
-                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
             await _notificationService.DidNotReceive()
                 .CreateAsync(Arg.Any<CreateNotificationRequest>(), Arg.Any<CancellationToken>());
         }
