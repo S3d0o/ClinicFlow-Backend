@@ -9,3 +9,4 @@ global using Domain.Parameters;
 
 global using Domain.ResultPattern;
 global using Shared.Authorization;
+global using Domain.Entities.Messaging;

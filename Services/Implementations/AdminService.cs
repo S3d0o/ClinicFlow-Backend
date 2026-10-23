@@ -3,7 +3,6 @@ using Shared.DTOs.Admin;
 using Shared.DTOs.Appointment;
 using Shared.DTOs.Common;
 using Shared.DTOs.Doctor;
-using Shared.DTOs.Notification;
 
 namespace Services.Implementations;
 
@@ -11,7 +10,6 @@ public class AdminService(
     IUnitOfWork unitOfWork,
     IMapper mapper,
     ILogger<AdminService> logger,
-    INotificationService notificationService,
     IClock clock) : IAdminService
 {
     public async Task<Result<PagedList<DoctorResponse>>> GetPendingDoctorsAsync(PendingDoctorsFilterRequest filter, CancellationToken ct)
@@ -38,14 +36,8 @@ public class AdminService(
         }
 
         doctor.IsApprovedByAdmin = true;
+        unitOfWork.Outbox.Add(new DoctorApproved(doctor.UserId)); // its handler notifies the doctor
         await unitOfWork.SaveChangesAsync(ct);
-
-        await TryNotifyAsync(new CreateNotificationRequest(
-            UserId: doctor.UserId,
-            Title: "Profile Approved",
-            Message: "Your doctor profile has been approved. You can now set your schedule and accept appointments.",
-            Type: NotificationType.SystemAlert,
-            RelatedEntityId: null), ct);
 
         logger.LogInformation("Doctor {DoctorProfileId} approved successfully.", doctorProfileId);
         return Result.Ok();
@@ -68,18 +60,12 @@ public class AdminService(
         }
 
         doctor.User.IsActive = false;
+        unitOfWork.Outbox.Add(new DoctorSuspended(doctor.UserId));
         await unitOfWork.SaveChangesAsync(ct);
 
         // End existing sessions: refresh also rejects inactive users, and revoking stops
         // further refreshes immediately. Access tokens stay valid until they expire (15 min).
         await unitOfWork.RefreshTokens.RevokeAllActiveAsync(doctor.UserId, "Account suspended", null, clock.UtcNow, ct);
-
-        await TryNotifyAsync(new CreateNotificationRequest(
-            UserId: doctor.UserId,
-            Title: "Profile Suspended",
-            Message: "Your doctor profile has been suspended. Please contact support for more information.",
-            Type: NotificationType.SystemAlert,
-            RelatedEntityId: null), ct);
 
         logger.LogInformation("Doctor {DoctorProfileId} suspended successfully.", doctorProfileId);
         return Result.Ok();
@@ -100,19 +86,6 @@ public class AdminService(
             totalSpecialties,
             pendingApprovals,
             totalReviews);
-    }
-
-    // Runs after the main change is committed: a notification failure is logged, never returned
-    private async Task TryNotifyAsync(CreateNotificationRequest request, CancellationToken ct)
-    {
-        try
-        {
-            await notificationService.CreateAsync(request, ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to create {Type} notification for user {UserId}", request.Type, request.UserId);
-        }
     }
 
     public async Task<Result<AppointmentStatsResponse>> GetAppointmentStatsAsync(CancellationToken ct)

@@ -3,6 +3,7 @@ using Domain.Entities.AppModule;
 using Domain.Entities.IdentityModule;
 using Microsoft.AspNetCore.Identity;
 using NSubstitute;
+using Domain.Events;
 using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Auth;
 using Shared.Enums;
@@ -15,7 +16,6 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
     {
         private const string _email = "new.patient@test.com";
         private const string _password = "Patient@1234";
-        private const string _rawToken = "conf+token/=";
         private readonly CancellationToken _ct = CancellationToken.None;
         private readonly Guid _userId = Guid.NewGuid();
         private ApplicationUser? _created;
@@ -34,7 +34,6 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
                     _created.Id = _userId; // the store assigns the id
                 });
             _userManager.AddToRoleAsync(Arg.Any<ApplicationUser>(), "Patient").Returns(IdentityResult.Success);
-            _userManager.GenerateEmailConfirmationTokenAsync(Arg.Any<ApplicationUser>()).Returns(_rawToken);
         }
 
         [Fact]
@@ -79,26 +78,19 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
         }
 
         [Fact]
-        public async Task RegisterPatientAsync_WhenValid_SendsConfirmationEmailWithEscapedToken()
+        public async Task RegisterPatientAsync_WhenValid_QueuesTheConfirmationEmailInTheTransaction()
         {
+            // Saved with the account: the email goes out if, and only if, the registration commits, and a retried
+            // transaction can't queue it twice (docs/v2/06 §5). EmailConfirmationRequestedHandler sends it
             var result = await _sut.RegisterPatientAsync(_request, _ct);
 
             Assert.True(result.IsSuccess);
             Assert.Equal(_email, result.Value.Email);
-            await _emailService.Received(1).SendEmailConfirmationAsync(
-                _email, _userId, Uri.EscapeDataString(_rawToken), Arg.Any<CancellationToken>());
-        }
-
-        [Fact]
-        public async Task RegisterPatientAsync_WhenValid_SendsTheEmailOnlyAfterTheCommit()
-        {
-            // A retried transaction re-runs its operation, so the email must stay outside it (REVIEW.md NL14)
-            await _sut.RegisterPatientAsync(_request, _ct);
-
             Received.InOrder(() =>
             {
+                _uow.Outbox.Add(Arg.Is<EmailConfirmationRequested>(e => e!.UserId == _userId));
+                _uow.SaveChangesAsync(_ct);
                 _transaction.CommitAsync(_ct);
-                _emailService.SendEmailConfirmationAsync(_email, _userId, Arg.Any<string>(), Arg.Any<CancellationToken>());
             });
         }
 
@@ -128,8 +120,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             await _transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
             await _userManager.DidNotReceive().AddToRoleAsync(Arg.Any<ApplicationUser>(), Arg.Any<string>());
             await _uow.Patients.DidNotReceive().AddAsync(Arg.Any<PatientProfile>(), Arg.Any<CancellationToken>());
-            await _emailService.DidNotReceive().SendEmailConfirmationAsync(
-                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            _uow.Outbox.DidNotReceiveWithAnyArgs().Add(default!);
         }
 
         [Fact]
@@ -155,33 +146,8 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
 
             Assert.True(result.IsFailure);
             Assert.Contains(AuthErrors.RegistrationError, result.Errors);
-            // The rollback must run even if the request was cancelled
+            // The rollback must run even if the request was cancelled. The queued email is rolled back with the rest
             await _transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
-            await _emailService.DidNotReceive().SendEmailConfirmationAsync(
-                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
-        }
-
-        [Fact]
-        public async Task RegisterPatientAsync_WhenConfirmationEmailFails_StillReturnsSuccessWithoutRollback()
-        {
-            _emailService.SendEmailConfirmationAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .ThrowsAsync(new InvalidOperationException("SMTP unavailable"));
-
-            var result = await _sut.RegisterPatientAsync(_request, _ct);
-
-            Assert.True(result.IsSuccess);
-            await _transaction.Received(1).CommitAsync(_ct);
-        }
-
-        [Fact]
-        public async Task RegisterPatientAsync_WhenConfirmationTokenGenerationFails_StillReturnsSuccess()
-        {
-            _userManager.GenerateEmailConfirmationTokenAsync(Arg.Any<ApplicationUser>())
-                .ThrowsAsync(new InvalidOperationException("No token provider"));
-
-            var result = await _sut.RegisterPatientAsync(_request, _ct);
-
-            Assert.True(result.IsSuccess);
         }
     }
 }

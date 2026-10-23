@@ -2,8 +2,7 @@ using Domain.Entities.AppModule;
 using Domain.Entities.IdentityModule;
 using Domain.Enums;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
-using Shared.DTOs.Notification;
+using Domain.Events;
 using Shared.Errors;
 
 namespace ClinicFlow.Tests.Services.AdminServiceTests
@@ -47,26 +46,16 @@ namespace ClinicFlow.Tests.Services.AdminServiceTests
         }
 
         [Fact]
-        public async Task SuspendDoctorAsync_WhenActive_NotifiesDoctor()
+        public async Task SuspendDoctorAsync_WhenActive_QueuesTheEventThatNotifiesTheDoctor()
         {
             await _sut.SuspendDoctorAsync(_doctorId, _ct);
 
-            await _notificationService.Received(1).CreateAsync(
-                Arg.Is<CreateNotificationRequest>(n => n!.UserId == _doctorUserId && n.Type == NotificationType.SystemAlert),
-                _ct);
-        }
-
-        [Fact]
-        public async Task SuspendDoctorAsync_WhenNotificationFails_StillReturnsSuccessAndRevokesTokens()
-        {
-            _notificationService.CreateAsync(Arg.Any<CreateNotificationRequest>(), Arg.Any<CancellationToken>())
-                .ThrowsAsync(new InvalidOperationException("notification store down"));
-
-            var result = await _sut.SuspendDoctorAsync(_doctorId, _ct);
-
-            Assert.True(result.IsSuccess);
-            Assert.False(_doctor.User.IsActive);
-            await _uow.RefreshTokens.Received(1).RevokeAllActiveAsync(_doctorUserId, "Account suspended", null, UtcNow, _ct);
+            // Added before the save, so it is saved with the suspension; DoctorSuspendedHandler creates the notification
+            Received.InOrder(() =>
+            {
+                _uow.Outbox.Add(Arg.Is<DoctorSuspended>(e => e!.DoctorUserId == _doctorUserId));
+                _uow.SaveChangesAsync(_ct);
+            });
         }
 
         [Fact]
@@ -94,8 +83,7 @@ namespace ClinicFlow.Tests.Services.AdminServiceTests
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
             await _uow.RefreshTokens.DidNotReceive().RevokeAllActiveAsync(
                 Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
-            await _notificationService.DidNotReceive()
-                .CreateAsync(Arg.Any<CreateNotificationRequest>(), Arg.Any<CancellationToken>());
+            _uow.Outbox.DidNotReceive().Add(Arg.Any<IDomainEvent>());
         }
     }
 }

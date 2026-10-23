@@ -1,7 +1,5 @@
 using ClinicFlow.Domain.Enums;
-using Domain.Enums;
 using Shared.DTOs.Appointment;
-using Shared.DTOs.Notification;
 
 namespace Services.Implementations
 {
@@ -9,8 +7,6 @@ namespace Services.Implementations
         IUnitOfWork uow,
         IMapper mapper,
         ILogger<AppointmentBookingService> logger,
-        INotificationService notificationService,
-        IEmailService emailService,
         IClock clock) : IAppointmentBookingService
     {
         public async Task<Result<AppointmentResponse>> BookAppointmentAsync(Guid patientUserId, BookAppointmentRequest request, CancellationToken ct)
@@ -60,6 +56,10 @@ namespace Services.Implementations
 
                     await uow.Appointments.AddAsync(created, ct);
                     await uow.SaveChangesAsync(ct);
+                    // The id exists only after the insert; the event is saved before the commit, so it goes out
+                    // exactly when the booking does (docs/v2/06 §5). The handler sends the notifications and the email
+                    uow.Outbox.Add(new AppointmentBooked(created.Id));
+                    await uow.SaveChangesAsync(ct);
                     await transaction.CommitAsync(ct);
                     return created;
                 }, ct);
@@ -76,39 +76,6 @@ namespace Services.Implementations
 
             var appointment = booked.Value;
             logger.LogInformation("Appointment booked successfully for patient ID: {PatientId}, slot ID: {SlotId}, appointment ID: {AppointmentId}", patientProfile.Id, slot.Id, appointment.Id);
-
-            // After the commit and outside the transaction, so a retried transaction can't send them twice
-            try
-            {
-                await notificationService.CreateRangeAsync(
-                    [
-                        new CreateNotificationRequest(
-                            UserId: patientProfile.UserId, // need to include User nav
-                            Title: "Appointment Confirmed",
-                            Message: $"Your appointment with Dr. {slot.DoctorProfile.User.FirstName} {slot.DoctorProfile.User.LastName} on {slot.Date} at {slot.StartTime:HH:mm} has been booked.",
-                            Type: NotificationType.AppointmentConfirmed,
-                            RelatedEntityId: appointment.Id),
-
-                        new CreateNotificationRequest(
-                            UserId: slot.DoctorProfile.UserId, // need to include User nav
-                            Title: "New Appointment Booked",
-                            Message: $"You have a new appointment with {patientProfile.User.FirstName} {patientProfile.User.LastName} on {slot.Date} at {slot.StartTime:HH:mm}.",
-                            Type: NotificationType.SystemAlert,
-                            RelatedEntityId: appointment.Id)
-                    ], ct);
-
-                await emailService.SendAppointmentConfirmationAsync(
-                    email: patientProfile.User.Email!,
-                    patientName: $"{patientProfile.User.FirstName} {patientProfile.User.LastName}",
-                    doctorName: $"{slot.DoctorProfile.User.FirstName} {slot.DoctorProfile.User.LastName}", // the email template adds "Dr."
-                    date: slot.Date,
-                    time: slot.StartTime);
-            }
-            catch (Exception ex)
-            {
-                // notification failure should not fail the booking
-                logger.LogError(ex, "Failed to send booking notification for appointment {AppointmentId}", appointment.Id);
-            }
 
             return mapper.Map<AppointmentResponse>(appointment);
         }

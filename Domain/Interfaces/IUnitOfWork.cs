@@ -15,10 +15,14 @@ namespace Domain.Interfaces
         IPatientRepo Patients { get; }
         IAdminRepo Admins { get; }
         IBranchRepo Branches { get; }
+        IMessageDeliveryRepo MessageDeliveries { get; }
+
+        // Events no entity raises; entity events are added to the outbox when the entity is saved (docs/v2/06 §5)
+        IOutbox Outbox { get; }
 
         // Runs the operation in one transaction, inside the SQL retry strategy: a transient error re-runs it, with the
         // tracked entities rewound to how they were before it started. Commit as the operation's last step; returning
-        // without committing rolls back. Keep emails and notifications outside it, or a retry would repeat them
+        // without committing rolls back. Emails and notifications go through the outbox, so a retry never repeats them
         Task<T> ExecuteInTransactionAsync<T>(Func<ITransaction, Task<T>> operation, CancellationToken ct);
 
         Task<int> SaveChangesAsync(CancellationToken ct = default);

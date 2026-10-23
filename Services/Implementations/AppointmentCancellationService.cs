@@ -1,7 +1,6 @@
 using ClinicFlow.Domain.Enums;
 using Domain.Enums;
 using Shared.DTOs.Appointment;
-using Shared.DTOs.Notification;
 
 namespace Services.Implementations
 {
@@ -9,7 +8,6 @@ namespace Services.Implementations
     public class AppointmentCancellationService(
         IUnitOfWork uow,
         ILogger<AppointmentCancellationService> logger,
-        INotificationService notificationService,
         IClock clock) : IAppointmentCancellationService
     {
         public async Task<Result> CancelByPatientAsync(Guid patientUserId, int appointmentId, CancelAppointmentRequest request, CancellationToken ct)
@@ -72,7 +70,8 @@ namespace Services.Implementations
             return await CancelAsync(appointment, CancelledBy.Admin, request.CancellationReason, ct);
         }
 
-        // Cancels the appointment, frees its slot (or blocks it, see FreedSlotStatus), saves, then notifies the patient and the doctor
+        // Cancels the appointment and frees its slot (or blocks it, see FreedSlotStatus). The AppointmentCancelled event
+        // the entity raises is saved with the change; its handler notifies the patient and the doctor
         private async Task<Result> CancelAsync(Appointment appointment, CancelledBy cancelledBy, string? reason, CancellationToken ct)
         {
             var cancelled = appointment.Cancel(cancelledBy, clock.UtcNow, reason);
@@ -85,21 +84,6 @@ namespace Services.Implementations
             appointment.Slot.Status = FreedSlotStatus(appointment.Slot);
             await uow.SaveChangesAsync(ct);
             logger.LogInformation("Appointment {AppointmentId} cancelled by {CancelledBy}", appointment.Id, cancelledBy);
-
-            // TODO: an AppointmentCancelled domain event (V2, REVIEW.md §4.4)
-            await notificationService.TryNotifyAsync(logger, appointment.Id, [
-                new CreateNotificationRequest(
-                    UserId:          appointment.Patient.UserId,
-                    Title:           "Appointment Cancelled",
-                    Message:         $"Your appointment on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm} has been cancelled.",
-                    Type:            NotificationType.AppointmentCancelled,
-                    RelatedEntityId: appointment.Id),
-                new CreateNotificationRequest(
-                    UserId:          appointment.Doctor.UserId,
-                    Title:           "Appointment Cancelled",
-                    Message:         $"Your appointment with {appointment.Patient.User.FirstName} {appointment.Patient.User.LastName} on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm} has been cancelled.",
-                    Type:            NotificationType.AppointmentCancelled,
-                    RelatedEntityId: appointment.Id) ], ct);
 
             return Result.Ok();
         }

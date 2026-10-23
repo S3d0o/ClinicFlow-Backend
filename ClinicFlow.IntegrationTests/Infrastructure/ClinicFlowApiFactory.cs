@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Persistence.AppData;
+using Persistence.Outbox;
 using Services.Abstraction.Contracts;
 using Shared.Settings;
 using Testcontainers.MsSql;
@@ -62,7 +63,8 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
                 var hostedServiceDescriptors = services.Where(
                     d => d.ServiceType == typeof(IHostedService) &&
-                    (d.ImplementationType == typeof(AppointmentReminderJob) || d.ImplementationType == typeof(SlotGenerationJob)))
+                    (d.ImplementationType == typeof(AppointmentReminderJob) || d.ImplementationType == typeof(SlotGenerationJob)
+                     || d.ImplementationType == typeof(OutboxDispatcher)))
                     .ToList();
 
                 foreach (var d in hostedServiceDescriptors)
@@ -119,6 +121,25 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
             // Every test class starts with no recorded emails and sending switched back on
             Emails.Clear();
+        }
+
+        // The OutboxDispatcher job doesn't run in tests: call this after the request under test to deliver the
+        // notifications and emails it queued, as the job would ~2 s later (docs/v2/06 §5). Pass utcNow to step past
+        // a retry's backoff. Returns how many messages it processed
+        public async Task<int> DrainOutboxAsync(DateTime? utcNow = null)
+        {
+            var processor = Services.GetRequiredService<OutboxProcessor>();
+            var total = 0;
+            for (var pass = 0; pass < 20; pass++)
+            {
+                var claimed = utcNow is { } at
+                    ? await processor.ProcessBatchAsync(at, CancellationToken.None)
+                    : await processor.ProcessBatchAsync(CancellationToken.None);
+                total += claimed;
+                if (claimed == 0)
+                    return total;
+            }
+            throw new InvalidOperationException("The outbox never emptied: a handler keeps adding messages");
         }
 
         // Helper: seed data directly into the test DB

@@ -23,9 +23,6 @@ namespace Persistence.Repositories
             var upperBound = utcNow.AddHours(24);
 
             return await context.Appointments
-                .Include(a => a.Slot)
-                    .ThenInclude(s=>s.DoctorProfile).ThenInclude(d=>d.User)
-                .Include(a => a.Patient).ThenInclude(p => p.User)
                 .Where(a => a.Status == AppointmentStatus.Confirmed
                          && a.ReminderSentAt == null
                          && a.Slot.StartsAtUtc > utcNow

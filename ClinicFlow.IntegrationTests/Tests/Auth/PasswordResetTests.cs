@@ -50,6 +50,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         public async Task ForgotPassword_KnownEmail_Returns204AndSendsResetEmail()
         {
             var response = await _client.PostAsJsonAsync(ForgotUrl, new ForgotPasswordRequest(_email));
+            await _factory.DrainOutboxAsync(); // emails go out through the outbox
 
             response.StatusCode.Should().Be(HttpStatusCode.NoContent);
             _factory.Emails.Sent.Should().ContainSingle(e =>
@@ -60,6 +61,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         public async Task ForgotPassword_UnknownEmail_Returns204AndSendsNothing()
         {
             var response = await _client.PostAsJsonAsync(ForgotUrl, new ForgotPasswordRequest("nobody@test.com"));
+            await _factory.DrainOutboxAsync(); // emails go out through the outbox
 
             // Same status as a known email, so callers can't discover registered emails
             response.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -69,11 +71,13 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         [Fact]
         public async Task ForgotPassword_EmailSendFails_StillReturns204LikeAnUnknownEmail()
         {
-            // A 500 here would only happen for registered emails and reveal them (REVIEW.md NL24)
+            // The request only queues the email, so a failing SMTP server can't change the response for a registered
+            // email (REVIEW.md NL24); the outbox retries the send later
             _factory.Emails.FailSends = true;
 
             var known = await _client.PostAsJsonAsync(ForgotUrl, new ForgotPasswordRequest(_email));
             var unknown = await _client.PostAsJsonAsync(ForgotUrl, new ForgotPasswordRequest("nobody@test.com"));
+            await _factory.DrainOutboxAsync(); // emails go out through the outbox
 
             known.StatusCode.Should().Be(HttpStatusCode.NoContent);
             unknown.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -87,6 +91,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
                 await db.Users.Where(u => u.Id == _userId).ExecuteUpdateAsync(s => s.SetProperty(u => u.IsActive, false)));
 
             var response = await _client.PostAsJsonAsync(ForgotUrl, new ForgotPasswordRequest(_email));
+            await _factory.DrainOutboxAsync(); // emails go out through the outbox
 
             response.StatusCode.Should().Be(HttpStatusCode.NoContent);
             _factory.Emails.Sent.Should().BeEmpty();
@@ -154,6 +159,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         {
             (await _client.PostAsJsonAsync(ForgotUrl, new ForgotPasswordRequest(_email)))
                 .StatusCode.Should().Be(HttpStatusCode.NoContent);
+            await _factory.DrainOutboxAsync(); // emails go out through the outbox
             return _factory.Emails.Sent.Last(e => e.Kind == SentEmailKind.PasswordReset).Token!;
         }
 

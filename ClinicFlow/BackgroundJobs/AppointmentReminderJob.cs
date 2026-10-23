@@ -1,12 +1,13 @@
-﻿using Domain.Enums;
-using Domain.Interfaces;
+﻿using Domain.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Services.Abstraction.Contracts;
-using Shared.DTOs.Notification;
 
 namespace ClinicFlow.BackgroundJobs;
 
+// Hourly: every confirmed visit starting within 24 hours that hasn't been reminded is marked as reminded, and its
+// AppointmentReminderDue event goes into the outbox in the same save. AppointmentReminderDueHandler sends the email
+// and the notification, and the outbox retries a failed email (docs/v2/06 §5)
 public sealed class AppointmentReminderJob(
     IServiceScopeFactory scopeFactory,
     ILogger<AppointmentReminderJob> logger)
@@ -39,9 +40,6 @@ public sealed class AppointmentReminderJob(
             using var scope = scopeFactory.CreateScope();
 
             var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-            var notificationService =
-                scope.ServiceProvider.GetRequiredService<INotificationService>();
-            var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
             var clock = scope.ServiceProvider.GetRequiredService<IClock>();
 
             var appointments =
@@ -54,50 +52,12 @@ public sealed class AppointmentReminderJob(
             }
 
             foreach (var appointment in appointments)
-            {
-                try
-                {
-                    // Email first: if it fails, ReminderSentAt stays null and the reminder is retried next run
-                    await emailService.SendAppointmentReminderAsync(
-                        email: appointment.Patient.User.Email!, // patient + user included in query
-                        patientName: $"{appointment.Patient.User.FirstName} {appointment.Patient.User.LastName}",
-                        doctorName: $"{appointment.Slot.DoctorProfile.User.FirstName} {appointment.Slot.DoctorProfile.User.LastName}",
-                        date: appointment.Slot.Date,
-                        time: appointment.Slot.StartTime,
-                        ct: cancellationToken);
+                appointment.QueueReminder(clock.UtcNow);
 
-                    appointment.ReminderSentAt = clock.UtcNow;
-
-                    // CreateAsync saves the notification and the ReminderSentAt change together
-                    await notificationService.CreateAsync(
-                        new CreateNotificationRequest(
-                            UserId: appointment.Patient.UserId,
-                            Title: "Appointment Reminder",
-                            Message:
-                                $"Reminder: You have an appointment on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm}.",
-                            Type: NotificationType.AppointmentReminder,
-                            RelatedEntityId: appointment.Id), cancellationToken);
-
-                    logger.LogInformation(
-                        "Reminder sent for Appointment {AppointmentId} to Patient {PatientId}.",
-                        appointment.Id,
-                        appointment.Patient.UserId);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    logger.LogError(
-                        ex,
-                        "Failed to send reminder for Appointment {AppointmentId}.",
-                        appointment.Id);
-                }
-            }
-
-            // Persists ReminderSentAt for any reminder whose email went out but whose notification save failed
+            // The ReminderSentAt marks and their events are saved together: each reminder is queued exactly once
             await uow.SaveChangesAsync(cancellationToken);
 
-            logger.LogInformation(
-                 "Appointment reminder job completed. {Count} reminders processed.",
-                 appointments.Count);
+            logger.LogInformation("Appointment reminder job queued {Count} reminders.", appointments.Count);
         }
         catch (OperationCanceledException)
         {

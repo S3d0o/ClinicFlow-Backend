@@ -7,7 +7,6 @@ namespace Services.MappingProfiles
     {
         public NotificationProfile()
         {
-            CreateMap<CreateNotificationRequest, Notification>();
             CreateMap<Notification, NotificationResponse>()
                 .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.Type.ToString()));
         }

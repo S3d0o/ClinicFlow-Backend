@@ -3,6 +3,7 @@ using Domain.Entities.IdentityModule;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
+using Domain.Events;
 using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Auth;
 using Shared.Enums;
@@ -15,7 +16,6 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
     {
         private const string _email = "new.doctor@test.com";
         private const string _password = "Doctor@1234";
-        private const string _rawToken = "conf+token/=";
         private readonly CancellationToken _ct = CancellationToken.None;
         private readonly Guid _userId = Guid.NewGuid();
         private ApplicationUser? _created;
@@ -35,7 +35,6 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
                     _created.Id = _userId; // the store assigns the id
                 });
             _userManager.AddToRoleAsync(Arg.Any<ApplicationUser>(), "Doctor").Returns(IdentityResult.Success);
-            _userManager.GenerateEmailConfirmationTokenAsync(Arg.Any<ApplicationUser>()).Returns(_rawToken);
         }
 
         [Fact]
@@ -79,26 +78,19 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
         }
 
         [Fact]
-        public async Task RegisterDoctorAsync_WhenValid_SendsConfirmationEmailWithEscapedToken()
+        public async Task RegisterDoctorAsync_WhenValid_QueuesTheConfirmationEmailInTheTransaction()
         {
+            // Saved with the account: the email goes out if, and only if, the registration commits, and a retried
+            // transaction can't queue it twice (docs/v2/06 §5). EmailConfirmationRequestedHandler sends it
             var result = await _sut.RegisterDoctorAsync(_request, _ct);
 
             Assert.True(result.IsSuccess);
             Assert.Equal(_email, result.Value.Email);
-            await _emailService.Received(1).SendEmailConfirmationAsync(
-                _email, _userId, Uri.EscapeDataString(_rawToken), Arg.Any<CancellationToken>());
-        }
-
-        [Fact]
-        public async Task RegisterDoctorAsync_WhenValid_SendsTheEmailOnlyAfterTheCommit()
-        {
-            // A retried transaction re-runs its operation, so the email must stay outside it (REVIEW.md NL14)
-            await _sut.RegisterDoctorAsync(_request, _ct);
-
             Received.InOrder(() =>
             {
+                _uow.Outbox.Add(Arg.Is<EmailConfirmationRequested>(e => e!.UserId == _userId));
+                _uow.SaveChangesAsync(_ct);
                 _transaction.CommitAsync(_ct);
-                _emailService.SendEmailConfirmationAsync(_email, _userId, Arg.Any<string>(), Arg.Any<CancellationToken>());
             });
         }
 
@@ -165,21 +157,8 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
 
             Assert.True(result.IsFailure);
             Assert.Contains(AuthErrors.RegistrationError, result.Errors);
+            // The queued email is rolled back with the rest
             await _transaction.DidNotReceive().CommitAsync(Arg.Any<CancellationToken>());
-            await _emailService.DidNotReceive().SendEmailConfirmationAsync(
-                Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
-        }
-
-        [Fact]
-        public async Task RegisterDoctorAsync_WhenConfirmationEmailFails_StillReturnsSuccessWithoutRollback()
-        {
-            _emailService.SendEmailConfirmationAsync(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .ThrowsAsync(new InvalidOperationException("SMTP unavailable"));
-
-            var result = await _sut.RegisterDoctorAsync(_request, _ct);
-
-            Assert.True(result.IsSuccess);
-            await _transaction.Received(1).CommitAsync(_ct);
         }
     }
 }

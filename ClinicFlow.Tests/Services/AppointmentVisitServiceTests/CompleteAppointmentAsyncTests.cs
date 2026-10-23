@@ -1,8 +1,7 @@
 using Domain.Entities.AppModule;
 using Domain.Enums;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
-using Shared.DTOs.Notification;
+using Domain.Events;
 using Shared.Errors;
 using Domain.Errors;
 
@@ -50,7 +49,7 @@ namespace ClinicFlow.Tests.Services.AppointmentVisitServiceTests
             Assert.Contains(AppointmentErrors.CannotCompleteBeforeStart, result.Errors);
             Assert.Equal(AppointmentStatus.Confirmed, _appointment.Status);
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
-            await _notificationService.DidNotReceive().CreateRangeAsync(Arg.Any<IEnumerable<CreateNotificationRequest>>(), Arg.Any<CancellationToken>());
+            Assert.Empty(_appointment.TakeDomainEvents());
         }
 
         [Fact]
@@ -75,32 +74,12 @@ namespace ClinicFlow.Tests.Services.AppointmentVisitServiceTests
         }
 
         [Fact]
-        public async Task CompleteAppointmentAsync_WhenValid_NotifiesPatientOnly()
+        public async Task CompleteAppointmentAsync_WhenValid_RaisesTheEventThatNotifiesThePatient()
         {
-            List<CreateNotificationRequest>? sent = null;
-            await _notificationService.CreateRangeAsync(
-                Arg.Do<IEnumerable<CreateNotificationRequest>>(n => sent = n.ToList()),
-                Arg.Any<CancellationToken>());
-
+            // Saved to the outbox with the change; AppointmentCompletedHandler notifies the patient
             await _sut.CompleteAppointmentAsync(_doctorUserId, _appointmentId, _ct);
 
-            var notification = Assert.Single(sent!);
-            Assert.Equal(_patientUserId, notification.UserId);
-            Assert.Equal(NotificationType.AppointmentCompleted, notification.Type);
-            Assert.Equal(_appointmentId, notification.RelatedEntityId);
-        }
-
-        [Fact]
-        public async Task CompleteAppointmentAsync_WhenNotificationFails_StillReturnsSuccess()
-        {
-            _notificationService
-                .CreateRangeAsync(Arg.Any<IEnumerable<CreateNotificationRequest>>(), Arg.Any<CancellationToken>())
-                .Throws(new InvalidOperationException("notification store down"));
-
-            var result = await _sut.CompleteAppointmentAsync(_doctorUserId, _appointmentId, _ct);
-
-            Assert.True(result.IsSuccess);
-            await _uow.Received(1).SaveChangesAsync(_ct);
+            Assert.Equal([new AppointmentCompleted(_appointmentId)], _appointment.TakeDomainEvents());
         }
 
         [Fact]
@@ -139,8 +118,7 @@ namespace ClinicFlow.Tests.Services.AppointmentVisitServiceTests
             Assert.Contains(AppointmentErrors.Forbidden, result.Errors);
             Assert.Equal(AppointmentStatus.Confirmed, _appointment.Status);
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
-            await _notificationService.DidNotReceive()
-                .CreateRangeAsync(Arg.Any<IEnumerable<CreateNotificationRequest>>(), Arg.Any<CancellationToken>());
+            Assert.Empty(_appointment.TakeDomainEvents());
         }
 
         [Fact]
@@ -166,8 +144,7 @@ namespace ClinicFlow.Tests.Services.AppointmentVisitServiceTests
             Assert.True(result.IsFailure);
             Assert.Contains(AppointmentErrors.AlreadyCompleted, result.Errors);
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
-            await _notificationService.DidNotReceive()
-                .CreateRangeAsync(Arg.Any<IEnumerable<CreateNotificationRequest>>(), Arg.Any<CancellationToken>());
+            Assert.Empty(_appointment.TakeDomainEvents());
         }
 
         [Fact]

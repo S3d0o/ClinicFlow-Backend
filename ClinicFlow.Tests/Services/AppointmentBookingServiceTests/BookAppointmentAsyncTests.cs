@@ -4,7 +4,7 @@ using Domain.Interfaces;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Shared.DTOs.Appointment;
-using Shared.DTOs.Notification;
+using Domain.Events;
 using Shared.Errors;
 using Domain.Errors;
 using Domain.ResultPattern;
@@ -212,37 +212,38 @@ namespace ClinicFlow.Tests.Services.AppointmentBookingServiceTests
                       .SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
             await _uow.Appointments.Received(1)
                       .AddAsync(Arg.Is<Appointment>(a => a!.BookedAt == UtcNow && a.BranchId == SlotBranchId), Arg.Any<CancellationToken>()); // time from IClock, branch from the slot
-            await _uow.Received(1).SaveChangesAsync();
+            await _uow.Received(2).SaveChangesAsync(_ct); // the appointment, then its AppointmentBooked event
             await transaction.Received(1).CommitAsync(Arg.Any<CancellationToken>());
         }
 
         [Fact]
-        public async Task BookAppointmentAsync_WhenBooked_NotifiesAndEmailsOnlyAfterTheCommit()
+        public async Task BookAppointmentAsync_WhenBooked_SavesTheEventBeforeTheCommit()
         {
-            // A retried transaction re-runs its operation, so side effects must stay outside it (REVIEW.md NL14)
+            // The event needs the inserted id, and is saved in the same transaction: the notifications and the
+            // email go out if, and only if, the booking commits (docs/v2/06 §5)
             var (transaction, _) = SetupHappyPath();
 
             await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
 
             Received.InOrder(() =>
             {
+                _uow.Appointments.AddAsync(Arg.Any<Appointment>(), Arg.Any<CancellationToken>());
+                _uow.SaveChangesAsync(_ct);
+                _uow.Outbox.Add(Arg.Any<AppointmentBooked>());
+                _uow.SaveChangesAsync(_ct);
                 transaction.CommitAsync(Arg.Any<CancellationToken>());
-                _notificationService.CreateRangeAsync(Arg.Any<IEnumerable<CreateNotificationRequest>>(), Arg.Any<CancellationToken>());
-                _emailService.SendAppointmentConfirmationAsync(
-                    Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateOnly>(), Arg.Any<TimeOnly>(), Arg.Any<CancellationToken>());
             });
         }
 
         [Fact]
-        public async Task BookAppointmentAsync_WhenSlotAlreadyBooked_SendsNoNotificationOrEmail()
+        public async Task BookAppointmentAsync_WhenSlotAlreadyBooked_QueuesNothing()
         {
             SetupHappyPath();
             _uow.Slots.SetStatusFromAvailableToBookedAsync(SlotId, _ct).Returns(0);
 
             await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
 
-            await _notificationService.DidNotReceiveWithAnyArgs().CreateRangeAsync(default!, default);
-            await _emailService.DidNotReceiveWithAnyArgs().SendAppointmentConfirmationAsync(default!, default!, default!, default, default, default);
+            _uow.Outbox.DidNotReceiveWithAnyArgs().Add(default!);
         }
 
         [Fact]
@@ -257,28 +258,7 @@ namespace ClinicFlow.Tests.Services.AppointmentBookingServiceTests
 
             Assert.True(result.IsFailure);
             Assert.Equal(ErrorType.Failure, result.Errors[0].Type);
-            await _notificationService.DidNotReceiveWithAnyArgs().CreateRangeAsync(default!, default);
-            await _emailService.DidNotReceiveWithAnyArgs().SendAppointmentConfirmationAsync(default!, default!, default!, default, default, default);
-        }
-
-        [Fact]
-        public async Task BookAppointmentAsync_WhenNotificationFails_StillReturnsSuccess()
-        {
-            // Arrange
-            var (transaction, _) = SetupHappyPath();
-
-            _notificationService
-                .CreateRangeAsync(
-                    Arg.Any<IEnumerable<CreateNotificationRequest>>(),
-                    Arg.Any<CancellationToken>())
-                .Throws<Exception>();
-
-            // Act
-            var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
-
-            // Assert
-            Assert.True(result.IsSuccess);
-            await transaction.Received(1).CommitAsync(Arg.Any<CancellationToken>());
+            _uow.Outbox.DidNotReceiveWithAnyArgs().Add(default!);
         }
 
         [Theory]

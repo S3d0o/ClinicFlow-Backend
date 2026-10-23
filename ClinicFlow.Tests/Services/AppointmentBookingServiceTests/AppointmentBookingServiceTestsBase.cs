@@ -13,8 +13,6 @@ namespace ClinicFlow.Tests.Services.AppointmentBookingServiceTests
         protected readonly IUnitOfWork _uow;
         protected readonly IMapper _mapper;
         protected readonly ILogger<AppointmentBookingService> _logger;
-        protected readonly INotificationService _notificationService;
-        protected readonly IEmailService _emailService;
         protected readonly IClock _clock;
         protected static readonly DateTime UtcNow = new(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc);
 
@@ -26,8 +24,6 @@ namespace ClinicFlow.Tests.Services.AppointmentBookingServiceTests
             _uow = Substitute.For<IUnitOfWork>();
             _mapper = Substitute.For<IMapper>();
             _logger = Substitute.For<ILogger<AppointmentBookingService>>();
-            _notificationService = Substitute.For<INotificationService>();
-            _emailService = Substitute.For<IEmailService>();
             _clock = Substitute.For<IClock>();
             _clock.UtcNow.Returns(UtcNow);
 
@@ -35,8 +31,6 @@ namespace ClinicFlow.Tests.Services.AppointmentBookingServiceTests
                 _uow,
                 _mapper,
                 _logger,
-                _notificationService,
-                _emailService,
                 _clock
             );
         }

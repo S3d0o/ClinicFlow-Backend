@@ -15,7 +15,6 @@ namespace ClinicFlow.Tests.Services.NotificationServiceTests
         protected readonly IUnitOfWork _uow;
         protected readonly ILogger<NotificationService> _logger;
         protected readonly IMapper _mapper;
-        protected readonly IClock _clock;
         protected static readonly DateTime UtcNow = new(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc);
 
         // System Under Test
@@ -31,10 +30,8 @@ namespace ClinicFlow.Tests.Services.NotificationServiceTests
                 .BuildServiceProvider()
                 .GetRequiredService<IMapper>();
 
-            _clock = Substitute.For<IClock>();
-            _clock.UtcNow.Returns(UtcNow);
 
-            _sut = new NotificationService(_uow, _logger, _mapper, _clock);
+            _sut = new NotificationService(_uow, _logger, _mapper);
         }
     }
 }

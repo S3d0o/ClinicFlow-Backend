@@ -7,3 +7,4 @@ global using Shared.DTOs;
 global using Shared.Errors;
 global using Domain.Errors;
 global using Domain.ResultPattern;global using Shared.Authorization;
+global using Domain.Events;

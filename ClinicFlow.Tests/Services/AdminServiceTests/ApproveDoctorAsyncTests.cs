@@ -1,8 +1,7 @@
 using Domain.Entities.AppModule;
 using Domain.Enums;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
-using Shared.DTOs.Notification;
+using Domain.Events;
 using Shared.Errors;
 
 namespace ClinicFlow.Tests.Services.AdminServiceTests
@@ -31,27 +30,16 @@ namespace ClinicFlow.Tests.Services.AdminServiceTests
         }
 
         [Fact]
-        public async Task ApproveDoctorAsync_WhenPending_NotifiesDoctor()
+        public async Task ApproveDoctorAsync_WhenPending_QueuesTheEventThatNotifiesTheDoctor()
         {
-            var result = await _sut.ApproveDoctorAsync(_doctorId, _ct);
+            await _sut.ApproveDoctorAsync(_doctorId, _ct);
 
-            Assert.True(result.IsSuccess);
-            await _notificationService.Received(1).CreateAsync(
-                Arg.Is<CreateNotificationRequest>(n => n!.UserId == _doctorUserId && n.Type == NotificationType.SystemAlert),
-                _ct);
-        }
-
-        [Fact]
-        public async Task ApproveDoctorAsync_WhenNotificationFails_StillReturnsSuccess()
-        {
-            _notificationService.CreateAsync(Arg.Any<CreateNotificationRequest>(), Arg.Any<CancellationToken>())
-                .ThrowsAsync(new InvalidOperationException("notification store down"));
-
-            var result = await _sut.ApproveDoctorAsync(_doctorId, _ct);
-
-            Assert.True(result.IsSuccess);
-            Assert.True(_doctor.IsApprovedByAdmin);
-            await _uow.Received(1).SaveChangesAsync(_ct);
+            // Added before the save, so it is saved with the approval; DoctorApprovedHandler creates the notification
+            Received.InOrder(() =>
+            {
+                _uow.Outbox.Add(Arg.Is<DoctorApproved>(e => e!.DoctorUserId == _doctorUserId));
+                _uow.SaveChangesAsync(_ct);
+            });
         }
 
         [Fact]
@@ -76,8 +64,7 @@ namespace ClinicFlow.Tests.Services.AdminServiceTests
             Assert.True(result.IsFailure);
             Assert.Contains(AdminErrors.DoctorAlreadyApproved, result.Errors);
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
-            await _notificationService.DidNotReceive()
-                .CreateAsync(Arg.Any<CreateNotificationRequest>(), Arg.Any<CancellationToken>());
+            _uow.Outbox.DidNotReceive().Add(Arg.Any<IDomainEvent>());
         }
     }
 }

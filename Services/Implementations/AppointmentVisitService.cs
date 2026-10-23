@@ -1,14 +1,12 @@
-using Domain.Enums;
 using Shared.DTOs.Appointment;
-using Shared.DTOs.Notification;
 
 namespace Services.Implementations
 {
-    // Completion, no-shows and notes. The service checks who is asking; the status and time rules are Appointment's
+    // Completion, no-shows and notes. The service checks who is asking; the status and time rules are Appointment's,
+    // and the notifications go out through the events it raises (AppointmentCompletedHandler, AppointmentMarkedNoShowHandler)
     public class AppointmentVisitService(
         IUnitOfWork uow,
         ILogger<AppointmentVisitService> logger,
-        INotificationService notificationService,
         IClock clock) : IAppointmentVisitService
     {
         public async Task<Result> CompleteAppointmentAsync(Guid doctorUserId, int appointmentId, CancellationToken ct)
@@ -39,13 +37,6 @@ namespace Services.Implementations
             }
             await uow.SaveChangesAsync(ct);
             logger.LogInformation("Appointment ID: {AppointmentId} marked as completed by doctor ID: {DoctorId}", appointmentId, doctorProfile.Id);
-
-            await notificationService.TryNotifyAsync(logger, appointment.Id, [new CreateNotificationRequest(
-                 UserId: appointment.Patient.UserId,
-                 Title: "Appointment Completed",
-                 Message: "Your appointment has been completed. You can now leave a review.",
-                 Type: NotificationType.AppointmentCompleted,
-                 RelatedEntityId: appointment.Id)], ct);
 
             return Result.Ok();
         }
@@ -102,13 +93,6 @@ namespace Services.Implementations
 
             await uow.SaveChangesAsync(ct);
             logger.LogInformation("Appointment ID: {AppointmentId} marked as a no-show by user {UserId} ({Role})", appointmentId, userId, role);
-
-            await notificationService.TryNotifyAsync(logger, appointment.Id, [new CreateNotificationRequest(
-                 UserId: appointment.Patient.UserId,
-                 Title: "Missed Appointment",
-                 Message: $"Your appointment on {appointment.Slot.Date} at {appointment.Slot.StartTime:HH:mm} was marked as missed.",
-                 Type: NotificationType.SystemAlert,
-                 RelatedEntityId: appointment.Id)], ct);
 
             return Result.Ok();
         }

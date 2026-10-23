@@ -40,6 +40,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Serialization
             _client.DefaultRequestHeaders.Add(TestAuthHandler.UserRoleHeader, "Patient");
             var cancel = await _client.PostAsJsonAsync($"/api/appointments/{_appointmentId}/cancel", new CancelAppointmentRequest("Travelling"));
             cancel.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            await _factory.DrainOutboxAsync(); // the notification is created by the outbox
         }
 
         public Task DisposeAsync() => Task.CompletedTask;

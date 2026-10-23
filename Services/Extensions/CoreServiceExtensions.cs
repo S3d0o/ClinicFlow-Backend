@@ -10,6 +10,11 @@ namespace Services.Extensions
         public static IServiceCollection AddCoreServices(this IServiceCollection services, IConfiguration config)
         {
             services.AddAutoMapper(cfg => { },typeof(ServiceAssemblyReference).Assembly);
+
+            // Every outbox event handler in this assembly (docs/v2/06 §5), like the AutoMapper profiles above
+            foreach (var type in typeof(ServiceAssemblyReference).Assembly.GetTypes().Where(t => t is { IsClass: true, IsAbstract: false }))
+                foreach (var handler in type.GetInterfaces().Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDomainEventHandler<>)))
+                    services.AddScoped(handler, type);
             
 
             services.AddScoped<ISpecialtyService, SpecialtyService>();

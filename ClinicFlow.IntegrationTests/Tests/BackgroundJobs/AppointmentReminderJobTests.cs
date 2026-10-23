@@ -58,6 +58,7 @@ namespace ClinicFlow.IntegrationTests.Tests.BackgroundJobs
             });
 
             await _job.ProcessRemindersAsync(CancellationToken.None);
+            await _factory.DrainOutboxAsync(); // the job queues the reminders; the outbox sends them
 
             _factory.Emails.Sent.Should().ContainSingle()
                 .Which.Should().Be(new SentEmail(SentEmailKind.AppointmentReminder, "patientdue@test.com"));
@@ -77,7 +78,9 @@ namespace ClinicFlow.IntegrationTests.Tests.BackgroundJobs
             await _factory.SeedAsync(async db => await AddAppointmentAsync(db, "once", hoursFromNow: 4));
 
             await _job.ProcessRemindersAsync(CancellationToken.None);
+            await _factory.DrainOutboxAsync(); // the job queues the reminders; the outbox sends them
             await _job.ProcessRemindersAsync(CancellationToken.None);
+            await _factory.DrainOutboxAsync(); // the job queues the reminders; the outbox sends them
 
             _factory.Emails.Sent.Should().ContainSingle();
             await _factory.SeedAsync(async db =>
@@ -85,7 +88,7 @@ namespace ClinicFlow.IntegrationTests.Tests.BackgroundJobs
         }
 
         [Fact]
-        public async Task Run_WhenOneEmailFails_RemindsTheOthersAndRetriesTheFailedOneNextRun()
+        public async Task Run_WhenOneEmailFails_SendsTheOthers_AndTheOutboxRetriesTheFailedOne()
         {
             int failingId = 0, okId = 0;
             await _factory.SeedAsync(async db =>
@@ -94,24 +97,28 @@ namespace ClinicFlow.IntegrationTests.Tests.BackgroundJobs
                 okId = await AddAppointmentAsync(db, "fine", hoursFromNow: 4);
             });
             _factory.Emails.FailFor("patientbounce@test.com");
+            var t0 = DateTime.UtcNow;
 
             await _job.ProcessRemindersAsync(CancellationToken.None);
+            await _factory.DrainOutboxAsync(t0);
 
             _factory.Emails.Sent.Select(e => e.To).Should().Equal("patientfine@test.com");
             await _factory.SeedAsync(async db =>
             {
-                (await db.Appointments.AsNoTracking().SingleAsync(a => a.Id == okId)).ReminderSentAt.Should().NotBeNull();
-                // Email first: a failed send leaves the reminder unstamped and without a notification
-                (await db.Appointments.AsNoTracking().SingleAsync(a => a.Id == failingId)).ReminderSentAt.Should().BeNull();
+                // Both are queued, so the job won't queue them again; the failed message waits for its retry
+                (await db.Appointments.AsNoTracking().Where(a => a.Id == okId || a.Id == failingId).Select(a => a.ReminderSentAt).ToListAsync())
+                    .Should().OnlyContain(sentAt => sentAt != null);
+                // Email first: the notification comes with the email's retry
                 (await db.Notifications.AnyAsync(n => n.RelatedEntityId == failingId)).Should().BeFalse();
             });
 
             _factory.Emails.Clear(); // the mailbox recovers
             await _job.ProcessRemindersAsync(CancellationToken.None);
+            await _factory.DrainOutboxAsync(t0.AddMinutes(1)); // past the backoff
 
             _factory.Emails.Sent.Select(e => e.To).Should().Equal("patientbounce@test.com");
             await _factory.SeedAsync(async db =>
-                (await db.Appointments.AsNoTracking().SingleAsync(a => a.Id == failingId)).ReminderSentAt.Should().NotBeNull());
+                (await db.Notifications.CountAsync(n => n.RelatedEntityId == failingId)).Should().Be(1));
         }
 
         [Fact]
@@ -120,6 +127,7 @@ namespace ClinicFlow.IntegrationTests.Tests.BackgroundJobs
             await _factory.SeedAsync(async db => await AddAppointmentAsync(db, "far", hoursFromNow: 48));
 
             await _job.ProcessRemindersAsync(CancellationToken.None);
+            await _factory.DrainOutboxAsync(); // the job queues the reminders; the outbox sends them
 
             _factory.Emails.Sent.Should().BeEmpty();
             await _factory.SeedAsync(async db => (await db.Notifications.AnyAsync()).Should().BeFalse());

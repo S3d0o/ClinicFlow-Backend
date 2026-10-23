@@ -56,6 +56,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         public async Task RegisterPatient_NewEmail_Returns200AndCreatesUnconfirmedPatient()
         {
             var response = await _client.PostAsJsonAsync(RegisterPatientUrl, PatientRequest("new.patient@test.com"));
+            await _factory.DrainOutboxAsync(); // emails go out through the outbox
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             (await response.Content.ReadFromJsonAsync<RegisterResponse>(_json))!.Email.Should().Be("new.patient@test.com");
@@ -78,6 +79,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         {
             (await _client.PostAsJsonAsync(RegisterPatientUrl, PatientRequest("confirm.me@test.com")))
                 .StatusCode.Should().Be(HttpStatusCode.OK);
+            await _factory.DrainOutboxAsync(); // emails go out through the outbox
 
             var beforeConfirm = await _client.PostAsJsonAsync(LoginUrl, new LoginRequest("confirm.me@test.com", Password));
             beforeConfirm.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -98,6 +100,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         {
             (await _client.PostAsJsonAsync(RegisterPatientUrl, PatientRequest("bad.token@test.com")))
                 .StatusCode.Should().Be(HttpStatusCode.OK);
+            await _factory.DrainOutboxAsync(); // emails go out through the outbox
             var userId = _factory.Emails.Sent.Single().UserId!.Value;
 
             var response = await _client.PostAsJsonAsync(ConfirmEmailUrl, new ConfirmEmailRequest(userId.ToString(), "not-a-real-token"));
@@ -135,6 +138,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         public async Task RegisterDoctor_ValidRequest_Returns200AndCreatesUnapprovedDoctor()
         {
             var response = await _client.PostAsJsonAsync(RegisterDoctorUrl, DoctorRequest("new.doctor@test.com", _specialtyId));
+            await _factory.DrainOutboxAsync(); // emails go out through the outbox
 
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             await _factory.SeedAsync(async db =>
@@ -156,6 +160,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
         {
             // REVIEW.md M3: checked up front now, instead of failing on the foreign key with a 500
             var response = await _client.PostAsJsonAsync(RegisterDoctorUrl, DoctorRequest("nospecialty@test.com", specialtyId: 999_999));
+            await _factory.DrainOutboxAsync(); // emails go out through the outbox
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
             (await response.Content.ReadAsStringAsync()).Should().Contain("Specialty.NotFound");
@@ -185,6 +190,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Auth
                 "CREATE TRIGGER FailDoctorInsert ON Doctors INSTEAD OF INSERT AS THROW 50000, 'Simulated insert failure', 1;"));
 
             var response = await _client.PostAsJsonAsync(RegisterDoctorUrl, DoctorRequest("orphan@test.com", _specialtyId));
+            await _factory.DrainOutboxAsync(); // emails go out through the outbox
 
             await _factory.SeedAsync(async db => await db.Database.ExecuteSqlRawAsync("DROP TRIGGER FailDoctorInsert;"));
             response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
