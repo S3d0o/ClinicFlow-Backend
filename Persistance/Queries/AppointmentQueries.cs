@@ -28,9 +28,9 @@ namespace Persistence.Queries
             // Appointments contain medical data: only the owning patient, the owning doctor or an admin may read them
             var canRead = role switch
             {
-                "Admin" => true,
-                "Patient" => owners.PatientUserId == userId,
-                "Doctor" => owners.DoctorUserId == userId,
+                Roles.Admin => true,
+                Roles.Patient => owners.PatientUserId == userId,
+                Roles.Doctor => owners.DoctorUserId == userId,
                 _ => false
             };
             if (!canRead)

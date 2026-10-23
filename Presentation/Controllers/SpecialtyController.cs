@@ -16,7 +16,7 @@ namespace Presentation.Controllers
             CancellationToken ct,
             [FromQuery] bool includeInactive = false)
         {
-            if (includeInactive && !User.IsInRole("Admin"))
+            if (includeInactive && !User.IsInRole(Roles.Admin))
                 return Forbid();
 
             return HandleResult(await service.GetAllAsync(includeInactive, ct));
@@ -37,7 +37,7 @@ namespace Presentation.Controllers
         [ProducesResponseType(typeof(SpecialtyResponse), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<ActionResult<SpecialtyResponse>> Create([FromBody] SpecialtyRequest dto, CancellationToken ct)
         {
             var result = await service.CreateAsync(dto, ct);
@@ -51,7 +51,7 @@ namespace Presentation.Controllers
         [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<ActionResult<SpecialtyResponse>> Update(
             [FromRoute] int id,
             [FromBody] SpecialtyRequest dto,
@@ -64,7 +64,7 @@ namespace Presentation.Controllers
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = Roles.Admin)]
         public async Task<IActionResult> Delete(int id, CancellationToken ct)
             => HandleResult(await service.DeleteByIdAsync(id, ct));
     }

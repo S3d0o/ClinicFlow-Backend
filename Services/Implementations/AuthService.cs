@@ -29,7 +29,7 @@ namespace Services.Implementations
             }
 
             var user = NewUser(request.FirstName, request.LastName, request.Email, request.PhoneNumber, request.Gender, request.DateOfBirth);
-            return await RegisterAsync(user, request.Password, "Doctor", token => uow.Doctors.AddAsync(new DoctorProfile
+            return await RegisterAsync(user, request.Password, Roles.Doctor, token => uow.Doctors.AddAsync(new DoctorProfile
             {
                 UserId = user.Id,
                 SpecialtyId = request.SpecialtyId,
@@ -51,7 +51,7 @@ namespace Services.Implementations
             }
 
             var user = NewUser(request.FirstName, request.LastName, request.Email, request.PhoneNumber, request.Gender, request.DateOfBirth);
-            return await RegisterAsync(user, request.Password, "Patient", token => uow.Patients.AddAsync(new PatientProfile
+            return await RegisterAsync(user, request.Password, Roles.Patient, token => uow.Patients.AddAsync(new PatientProfile
             {
                 UserId = user.Id,
                 BloodType = request.BloodType,

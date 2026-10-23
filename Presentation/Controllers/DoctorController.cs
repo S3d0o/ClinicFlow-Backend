@@ -69,7 +69,7 @@ public class DoctorController(IDoctorService service) : ApiController
     /// Updatable fields: Bio, ConsultationFee, ClinicAddress, ClinicCity.
     /// Specialty and approval status cannot be changed through this endpoint.
     /// </remarks>
-    [Authorize(Roles = "Doctor")]
+    [Authorize(Roles = Roles.Doctor)]
     [HttpPut("profile")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -90,7 +90,7 @@ public class DoctorController(IDoctorService service) : ApiController
     ///  Get the doctor's own schedules
     /// </remarks>
     [HttpGet("schedule")]
-    [Authorize(Roles = "Doctor")]
+    [Authorize(Roles = Roles.Doctor)]
     public async Task<ActionResult<IEnumerable<ScheduleResponse>>> GetMySchedules(CancellationToken ct)
     {
         var userId = User.GetUserId();
@@ -104,7 +104,7 @@ public class DoctorController(IDoctorService service) : ApiController
     /// for the next 14 days immediately. One schedule per day of week — duplicate
     /// days are rejected.
     /// </remarks>
-    [Authorize(Roles = "Doctor")]
+    [Authorize(Roles = Roles.Doctor)]
     [HttpPost("schedule")]
     [ProducesResponseType(typeof(ScheduleResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -123,7 +123,7 @@ public class DoctorController(IDoctorService service) : ApiController
     /// Future free slots are deleted and regenerated with the new times, in one transaction.
     /// Booked slots, and slots a cancelled appointment points to, are kept; new slots skip times that overlap them.
     /// </remarks>
-    [Authorize(Roles = "Doctor")]
+    [Authorize(Roles = Roles.Doctor)]
     [HttpPut("schedule/{id}")]
     [ProducesResponseType(typeof(ScheduleResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -141,7 +141,7 @@ public class DoctorController(IDoctorService service) : ApiController
     /// Removes the schedule and its free slots. Returns 409 while upcoming appointments are booked on it.
     /// A schedule whose slots have past appointments is deactivated instead, to keep that history.
     /// </remarks>
-    [Authorize(Roles = "Doctor")]
+    [Authorize(Roles = Roles.Doctor)]
     [HttpDelete("schedule/{id}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]

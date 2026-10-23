@@ -73,7 +73,7 @@ namespace Services.Implementations
                 return ReviewErrors.NotFound(reviewId);
             }
             // Only the patient who wrote the review, or an admin, may delete it (doctors must not remove their own reviews)
-            var canDelete = role == "Admin" || (role == "Patient" && review.Patient.UserId == userId);
+            var canDelete = role == Roles.Admin || (role == Roles.Patient && review.Patient.UserId == userId);
             if (!canDelete)
             {
                 logger.LogWarning("User ID: {UserId} is not authorized to delete review ID: {ReviewId}", userId, reviewId);

@@ -18,7 +18,7 @@ public class AppointmentController(
     /// Patient books an available slot. Slot must be Available and in the future.
     /// Atomic check prevents race conditions — two patients cannot book the same slot.
     /// </remarks>
-    [Authorize(Roles = "Patient")]
+    [Authorize(Roles = Roles.Patient)]
     [HttpPost]
     [ProducesResponseType(typeof(AppointmentResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -37,7 +37,7 @@ public class AppointmentController(
     /// Returns the authenticated patient's appointments.
     /// Filter by Status. Paginated via PageNumber and PageSize.
     /// </remarks>
-    [Authorize(Roles = "Patient")]
+    [Authorize(Roles = Roles.Patient)]
     [HttpGet("my")]
     [ProducesResponseType(typeof(List<AppointmentResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -54,7 +54,7 @@ public class AppointmentController(
     /// Returns the authenticated doctor's appointments.
     /// Filter by Status. Paginated via PageNumber and PageSize.
     /// </remarks>
-    [Authorize(Roles = "Doctor")]
+    [Authorize(Roles = Roles.Doctor)]
     [HttpGet("doctor/my")]
     [ProducesResponseType(typeof(List<AppointmentResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -101,9 +101,9 @@ public class AppointmentController(
 
         return role switch
         {
-            "Patient" => HandleResult(await cancellation.CancelByPatientAsync(userId, id, request, ct)),
-            "Doctor" => HandleResult(await cancellation.CancelByDoctorAsync(userId, id, request, ct)),
-            "Admin" => HandleResult(await cancellation.CancelByAdminAsync(id, request, ct)),
+            Roles.Patient => HandleResult(await cancellation.CancelByPatientAsync(userId, id, request, ct)),
+            Roles.Doctor => HandleResult(await cancellation.CancelByDoctorAsync(userId, id, request, ct)),
+            Roles.Admin => HandleResult(await cancellation.CancelByAdminAsync(id, request, ct)),
             _ => Forbid()
         };
     }
@@ -114,7 +114,7 @@ public class AppointmentController(
     /// Only the doctor who owns the appointment can complete it.
     /// Patient can leave a review once the appointment is completed.
     /// </remarks>
-    [Authorize(Roles = "Doctor")]
+    [Authorize(Roles = Roles.Doctor)]
     [HttpPost("{id}/complete")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -133,7 +133,7 @@ public class AppointmentController(
     /// The owning doctor or an admin marks a Confirmed appointment as missed, at least 15 minutes
     /// after it was due to start. Cancelled, completed and already-marked appointments return 409.
     /// </remarks>
-    [Authorize(Roles = "Doctor,Admin")]
+    [Authorize(Roles = Roles.Doctor + "," + Roles.Admin)]
     [HttpPost("{id}/no-show")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -149,7 +149,7 @@ public class AppointmentController(
     /// Can only be added to Confirmed or Completed appointments — not Cancelled or Pending.
     /// Only the owning doctor can add notes.
     /// </remarks>
-    [Authorize(Roles = "Doctor")]
+    [Authorize(Roles = Roles.Doctor)]
     [HttpPut("{id}/notes")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]

@@ -15,7 +15,7 @@ namespace Presentation.Controllers
         /// One review per appointment — duplicates are rejected.
         /// Doctor's average rating is recomputed after submission.
         /// </remarks>
-        [Authorize(Roles = "Patient")]
+        [Authorize(Roles = Roles.Patient)]
         [HttpPost]
         [ProducesResponseType(typeof(ReviewResponse), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]

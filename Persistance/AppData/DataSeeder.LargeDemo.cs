@@ -87,7 +87,7 @@ public static partial class DataSeeder
                 new DateOnly(clock.Today.Year - experience - rng.Next(25, 31), rng.Next(1, 13), rng.Next(1, 29)),
                 doctorHash, isActive: !suspended,
                 createdAt: clock.UtcNow.AddDays(pending ? -rng.Next(1, 10) : -rng.Next(120, 720))));
-            userRoles.Add(new IdentityUserRole<Guid> { UserId = id, RoleId = roles["Doctor"] });
+            userRoles.Add(new IdentityUserRole<Guid> { UserId = id, RoleId = roles[Roles.Doctor] });
             doctors.Add((n, new DoctorProfile
             {
                 UserId = id,
@@ -110,7 +110,7 @@ public static partial class DataSeeder
             users.Add(NewUser(id, $"patient{n:D2}@{GeneratedEmailDomain}", name,
                 new DateOnly(rng.Next(1950, 2007), rng.Next(1, 13), rng.Next(1, 29)),
                 patientHash, isActive: true, createdAt: clock.UtcNow.AddDays(-rng.Next(90, 720))));
-            userRoles.Add(new IdentityUserRole<Guid> { UserId = id, RoleId = roles["Patient"] });
+            userRoles.Add(new IdentityUserRole<Guid> { UserId = id, RoleId = roles[Roles.Patient] });
 
             var hasEmergencyContact = rng.NextDouble() < 0.6;
             var contact = NewName();

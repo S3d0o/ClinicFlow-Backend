@@ -167,7 +167,7 @@ public static partial class DataSeeder
     // ── 1. Roles ──────────────────────────────────────────────────────────────
     private static async Task SeedRolesAsync(RoleManager<IdentityRole<Guid>> roleManager)
     {
-        foreach (var role in new[] { "Admin", "Doctor", "Patient" })
+        foreach (var role in new[] { Roles.Admin, Roles.Doctor, Roles.Patient })
         {
             if (!await roleManager.RoleExistsAsync(role))
                 await roleManager.CreateAsync(new IdentityRole<Guid>(role));
@@ -218,7 +218,7 @@ public static partial class DataSeeder
             CreatedAt = clock.UtcNow,
             IsActive = true,
             EmailConfirmed = true,
-        }, "Admin@1234", "Admin");
+        }, "Admin@1234", Roles.Admin);
 
         // ── Doctors ───────────────────────────────────────────────────────────
         var doctors = new[]
@@ -409,7 +409,7 @@ public static partial class DataSeeder
 
         foreach (var (user, profile) in doctors)
         {
-            await CreateUserAsync(userManager, user, "Doctor@1234", "Doctor");
+            await CreateUserAsync(userManager, user, "Doctor@1234", Roles.Doctor);
             profile.UserId = user.Id;
             await context.DoctorProfiles.AddAsync(profile);
         }
@@ -540,7 +540,7 @@ public static partial class DataSeeder
 
         foreach (var (user, profile) in patients)
         {
-            await CreateUserAsync(userManager, user, "Patient@1234", "Patient");
+            await CreateUserAsync(userManager, user, "Patient@1234", Roles.Patient);
             profile.UserId = user.Id;
             await context.PatientProfiles.AddAsync(profile);
         }
@@ -1019,7 +1019,7 @@ public static partial class DataSeeder
                 "Could not create the bootstrap admin from Seeding:AdminEmail/AdminPassword: "
                 + string.Join(", ", result.Errors.Select(e => e.Description)));
 
-        await userManager.AddToRoleAsync(admin, "Admin");
+        await userManager.AddToRoleAsync(admin, Roles.Admin);
     }
 
     // ── Helper ────────────────────────────────────────────────────────────────

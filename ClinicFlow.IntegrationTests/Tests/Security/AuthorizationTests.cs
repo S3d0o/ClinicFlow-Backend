@@ -4,9 +4,12 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Presentation.Authorization;
+using Shared.Authorization;
 using Shared.DTOs.Specialty;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
 
 namespace ClinicFlow.IntegrationTests.Tests.Security
 {
@@ -115,6 +118,58 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
             actions.Where(e => e.Metadata.GetMetadata<IAuthorizeData>() is null && e.Metadata.GetMetadata<IAllowAnonymous>() is null)
                 .Select(e => e.DisplayName)
                 .Should().BeEmpty();
+        }
+
+        // Every endpoint anyone can call without logging in (docs/v2/adr/0002 decision 4). A new public endpoint
+        // fails this test until it is added here on purpose; a removed one fails it until it is taken out
+        private static readonly string[] AnonymousAllowlist =
+        [
+            "POST api/auth/register/patient",
+            "POST api/auth/register/doctor",
+            "POST api/auth/login",
+            "POST api/auth/refresh-token",
+            "POST api/auth/logout",
+            "POST api/auth/confirm-email",
+            "POST api/auth/forgot-password",
+            "POST api/auth/reset-password",
+            "GET api/doctors",
+            "GET api/doctors/{id}",
+            "GET api/doctors/{id}/slots",
+            "GET api/doctors/{id}/reviews",
+            "GET api/reviews/doctor/{doctorId}",
+            "GET api/Specialty",
+            "GET api/Specialty/{id}",
+            "ANY health",
+        ];
+
+        [Fact]
+        public void AnonymousEndpoints_AreExactlyTheAllowlist()
+        {
+            var anonymous = _factory.Services.GetRequiredService<EndpointDataSource>().Endpoints
+                .OfType<RouteEndpoint>()
+                .Where(e => e.Metadata.GetMetadata<IAllowAnonymous>() is not null)
+                .Select(e => $"{string.Join(",", e.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods ?? ["ANY"])} {e.RoutePattern.RawText!.TrimStart('/')}")
+                .Where(e => !e.Contains(" openapi/") && !e.Contains(" scalar")) // API docs, mapped in Development only
+                .ToList();
+
+            anonymous.Should().BeEquivalentTo(AnonymousAllowlist);
+        }
+
+        [Theory]
+        [InlineData("Admin", true)]
+        [InlineData("Patient", false)]
+        public async Task PermissionPolicies_AreWiredIntoTheApp(string role, bool allowed)
+        {
+            // No inherited route uses [HasPermission] yet (ADR 0002), so this checks the registration directly:
+            // the app's policy provider builds the policy and the matrix decides (Admin holds staff.view)
+            var policy = await _factory.Services.GetRequiredService<IAuthorizationPolicyProvider>()
+                .GetPolicyAsync(PermissionPolicy.NameFor(Permissions.Staff.View));
+            var user = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Role, role)], "Test"));
+
+            var result = await _factory.Services.GetRequiredService<IAuthorizationService>().AuthorizeAsync(user, null, policy!);
+
+            result.Succeeded.Should().Be(allowed);
         }
 
         // ── Appointment details are owner/admin only (C4) ──────────────────
