@@ -52,7 +52,8 @@ namespace Persistence.AppData.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("DoctorNotes")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasAnnotation("ClinicFlow:Audit:Mode", "Redacted");
 
                     b.Property<int>("DoctorProfileId")
                         .HasColumnType("int");
@@ -67,10 +68,12 @@ namespace Persistence.AppData.Migrations
                         .HasColumnType("int");
 
                     b.Property<string>("ReasonForVisit")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(max)")
+                        .HasAnnotation("ClinicFlow:Audit:Mode", "Redacted");
 
                     b.Property<DateTime?>("ReminderSentAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("datetime2")
+                        .HasAnnotation("ClinicFlow:Audit:Mode", "Ignored");
 
                     b.Property<int?>("RescheduledFromId")
                         .HasColumnType("int");
@@ -103,6 +106,10 @@ namespace Persistence.AppData.Migrations
                     b.HasIndex("SlotId");
 
                     b.ToTable("Appointments", (string)null);
+
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "Appointment");
                 });
 
             modelBuilder.Entity("Domain.Entities.AppModule.AppointmentSlot", b =>
@@ -177,7 +184,8 @@ namespace Persistence.AppData.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<double>("AverageRating")
-                        .HasColumnType("float");
+                        .HasColumnType("float")
+                        .HasAnnotation("ClinicFlow:Audit:Mode", "Ignored");
 
                     b.Property<string>("Bio")
                         .HasMaxLength(500)
@@ -203,7 +211,8 @@ namespace Persistence.AppData.Migrations
                         .HasColumnType("int");
 
                     b.Property<int>("TotalReviews")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasAnnotation("ClinicFlow:Audit:Mode", "Ignored");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
@@ -221,6 +230,10 @@ namespace Persistence.AppData.Migrations
                         .IsUnique();
 
                     b.ToTable("Doctors", (string)null);
+
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "DoctorProfile");
                 });
 
             modelBuilder.Entity("Domain.Entities.AppModule.DoctorSchedule", b =>
@@ -380,6 +393,68 @@ namespace Persistence.AppData.Migrations
                     b.ToTable("Specialties");
                 });
 
+            modelBuilder.Entity("Domain.Entities.Auditing.AuditEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Changes")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("EntityId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("nvarchar(45)");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("EntityType", "EntityId");
+
+                    b.ToTable("AuditEntries", (string)null);
+                });
+
             modelBuilder.Entity("Domain.Entities.IdentityModule.ApplicationUser", b =>
                 {
                     b.Property<Guid>("Id")
@@ -415,7 +490,8 @@ namespace Persistence.AppData.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
+                        .HasColumnType("bit")
+                        .HasAnnotation("ClinicFlow:Audit:Mode", "Recorded");
 
                     b.Property<string>("LastName")
                         .IsRequired()
@@ -468,6 +544,10 @@ namespace Persistence.AppData.Migrations
                         .HasFilter("[NormalizedUserName] IS NOT NULL");
 
                     b.ToTable("Users", (string)null);
+
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Ignored")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "User");
                 });
 
             modelBuilder.Entity("Domain.Entities.IdentityModule.Notification", b =>
@@ -894,6 +974,10 @@ namespace Persistence.AppData.Migrations
                     b.HasIndex("RoleId");
 
                     b.ToTable("UserRoles", (string)null);
+
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "UserRole");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserToken<System.Guid>", b =>
@@ -1082,6 +1166,15 @@ namespace Persistence.AppData.Migrations
                     b.Navigation("Doctor");
 
                     b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("Domain.Entities.Auditing.AuditEntry", b =>
+                {
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Domain.Entities.IdentityModule.Notification", b =>

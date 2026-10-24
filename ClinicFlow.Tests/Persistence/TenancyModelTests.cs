@@ -1,4 +1,5 @@
 using Domain.Entities.AppModule;
+using Domain.Entities.Auditing;
 using Domain.Entities.IdentityModule;
 using Domain.Entities.Messaging;
 using Domain.Entities.Tenancy;
@@ -19,7 +20,8 @@ namespace ClinicFlow.Tests.Persistence
 
         private static readonly Type[] ExpectedOrganizationOwned =
             [typeof(Branch), typeof(DoctorProfile), typeof(DoctorSchedule), typeof(AppointmentSlot), typeof(Appointment), typeof(Review), typeof(Notification),
-             typeof(OutboxMessage), typeof(MessageDelivery)]; // an event belongs to the organization whose change raised it
+             typeof(OutboxMessage), typeof(MessageDelivery), // an event belongs to the organization whose change raised it
+             typeof(AuditEntry)];
 
         private static readonly Type[] ExpectedBranchOwned =
             [typeof(DoctorSchedule), typeof(AppointmentSlot), typeof(Appointment)];

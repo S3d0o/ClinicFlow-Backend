@@ -64,6 +64,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Tenancy
             });
 
             await using var otherDb = OtherOrganizationContext();
+            otherDb.RecordAudit = false; // seeded history, as in SeedAsync
             await SeedOtherOrganizationAsync(otherDb);
         }
 
