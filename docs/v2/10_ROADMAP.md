@@ -28,6 +28,8 @@ Each phase ends with a **phase review**: exit criteria met, docs updated (`API_C
 
 ### P0: Foundation
 
+**Status:** done 2026-10-24 (tag `v2.0.0-p0`; [plans/P0.md](plans/P0.md)).
+
 **Goal:** fix what V2 would otherwise build on top of, and lay the cross-cutting pieces.
 
 **Already delivered by V1** (finished 2026-10-18, contract 3.1.2; see [09 §5](09_MIGRATION_FROM_V1.md#5-where-each-v1-issue-is-resolved)), so P0 no longer includes:
@@ -221,3 +223,5 @@ Each needs an owner and a decision date at the phase where it's needed.
 | 2026-10-23 | **Permissions in code, checked against the document** (P0 PR 8): the 02 §5 catalog and §6 default matrix are constants (`Shared/Authorization`), and a test compares them with the document cell by cell. `[HasPermission]` with a dynamic policy provider; `IAccessGuard` answers with `bool` so services keep their error codes; `ICurrentUser` over the HTTP context. The anonymous endpoints are an explicit allowlist | [ADR 0002](adr/0002-permission-based-authorization.md), [06 §3](06_TECHNICAL_DESIGN.md#3-authorization), [plans/P0.md](plans/P0.md) |
 | 2026-10-24 | **Transactional outbox for every notification and email** (P0 PR 9): domain events saved as `OutboxMessage` rows in the change's transaction, one handler per event, at-least-once delivery with backoff and a dead letter, `MessageDelivery` per channel for idempotency, one dispatcher at a time under `sp_getapplock`. No inline sends remain | [06 §5](06_TECHNICAL_DESIGN.md#5-domain-events-and-the-outbox), [ADR 0004](adr/0004-appointment-state-machine.md), [plans/P0.md](plans/P0.md) |
 | 2026-10-24 | **Audit by interceptor, opted into per type** (P0 PR 10): an `AuditEntry` per create, update and delete, written by a save interceptor in the change's transaction. A type opts in from its EF configuration, and each property is recorded, redacted (clinical values become "changed") or ignored. Inserts with database-generated keys are audited by a second save, so they must run in a transaction; entries are append-only in code, and in the database from PR 11 | [06 §5.1](06_TECHNICAL_DESIGN.md#51-audit-trail), [plans/P0.md](plans/P0.md) |
+| 2026-10-24 | **Migrations as a deploy step; least-privilege app login; split probes** (P0 PR 11): an EF migration bundle in the image, run by a one-shot `migrate` service as a deploy login; startup migrates only in Development and otherwise refuses pending migrations. The app's rights are a database role created by a migration (read/write, no DDL, no `UPDATE`/`DELETE` on audit entries), so they exist wherever the schema does. `/health/live` restarts, `/health/ready` routes (the outbox lag only degrades) | [06 §14](06_TECHNICAL_DESIGN.md#14-operations), [plans/P0.md](plans/P0.md) |
+| 2026-10-24 | **P0 done**, tagged `v2.0.0-p0`; contract 4.0.0-p0. P1 is next | [plans/P0.md](plans/P0.md) |
