@@ -86,8 +86,9 @@ public static partial class DataSeeder
     // passwords above) is only seeded when seedDemoData is true — never enable it in production.
     // A real admin can be bootstrapped from configuration (Seeding:AdminEmail / Seeding:AdminPassword).
     // clinicNow and utcNow come from IClock, clinicTimeZoneId from Clinic:TimeZoneId (Persistence can't reference either).
+    // migrateOnStartup is Database:MigrateOnStartup (EnsureSchemaAsync).
     public static async Task SeedAsync(
-        IServiceProvider service, bool seedDemoData, DateTime clinicNow, DateTime utcNow, string clinicTimeZoneId,
+        IServiceProvider service, bool migrateOnStartup, bool seedDemoData, DateTime clinicNow, DateTime utcNow, string clinicTimeZoneId,
         string? adminEmail = null, string? adminPassword = null)
     {
         using var scope = service.CreateScope();
@@ -101,8 +102,7 @@ public static partial class DataSeeder
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
         var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(DataSeeder));
 
-        // Applies any pending migrations automatically — safe to call on every startup.
-        await MigrateWithRetryAsync(context, logger);
+        await EnsureSchemaAsync(context, migrateOnStartup, logger);
 
         await SyncMainBranchTimeZoneAsync(context, clinicTimeZoneId);
         await SeedRolesAsync(roleManager);
@@ -128,10 +128,30 @@ public static partial class DataSeeder
         await SeedGeneratedActivityAsync(context, clock, logger);
     }
 
+    // Brings the schema up to date (migrate = true: `dotnet run` and the tests), or checks that it already is
+    // (Docker and production, where the migration bundle runs first as a deploy step: docs/v2/plans/P0.md D1,
+    // REVIEW.md §4.9). Starting against an older schema would fail on the first query that needs a new column,
+    // so it fails here instead, naming the pending migrations. The app's own login can't run DDL there anyway.
+    public static async Task EnsureSchemaAsync(ClinicDbContext context, bool migrate, ILogger logger)
+    {
+        if (migrate)
+        {
+            await WithRetryWhileDatabaseRecoversAsync(() => context.Database.MigrateAsync(), logger);
+            return;
+        }
+
+        var pending = (await WithRetryWhileDatabaseRecoversAsync(() => context.Database.GetPendingMigrationsAsync(), logger)).ToList();
+        if (pending.Count > 0)
+            throw new InvalidOperationException(
+                $"The database is missing {pending.Count} migration(s): {string.Join(", ", pending)}. " +
+                "Run the migration bundle (the migrate service in docker-compose.yml) before starting the app, " +
+                "or set Database:MigrateOnStartup to true in development.");
+    }
+
     // SQL Server accepts connections before it has finished recovering existing databases (e.g. when
     // the db and backend containers start together). In that window EF reads "cannot open database"
     // as "database doesn't exist", runs CREATE DATABASE and fails with error 1801. Retry until it's online.
-    private static async Task MigrateWithRetryAsync(ClinicDbContext context, ILogger logger)
+    private static async Task<T> WithRetryWhileDatabaseRecoversAsync<T>(Func<Task<T>> operation, ILogger logger)
     {
         const int maxAttempts = 12;
         var delay = TimeSpan.FromSeconds(5);
@@ -140,18 +160,24 @@ public static partial class DataSeeder
         {
             try
             {
-                await context.Database.MigrateAsync();
-                return;
+                return await operation();
             }
             catch (SqlException ex) when (attempt < maxAttempts)
             {
                 logger.LogWarning(
-                    "Database not ready (SQL error {SqlErrorNumber}: {SqlErrorMessage}). Retrying migration in {DelaySeconds}s (attempt {Attempt}/{MaxAttempts})",
+                    "Database not ready (SQL error {SqlErrorNumber}: {SqlErrorMessage}). Retrying in {DelaySeconds}s (attempt {Attempt}/{MaxAttempts})",
                     ex.Number, ex.Message, delay.TotalSeconds, attempt, maxAttempts);
                 await Task.Delay(delay);
             }
         }
     }
+
+    private static Task WithRetryWhileDatabaseRecoversAsync(Func<Task> operation, ILogger logger)
+        => WithRetryWhileDatabaseRecoversAsync(async () =>
+        {
+            await operation();
+            return true;
+        }, logger);
 
     // ── 0. Organization and main branch ──────────────────────────────────────
     // The migration creates both with Africa/Cairo; the configured clinic zone wins, so a deployment

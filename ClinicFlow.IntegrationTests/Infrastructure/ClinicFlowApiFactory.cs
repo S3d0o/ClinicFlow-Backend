@@ -55,6 +55,8 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
             builder.UseSetting("ConnectionStrings:DefaultConnection", TestConnectionString);
             builder.UseSetting("Database:ExpectedName", TestDatabaseName);
             builder.UseSetting("JwtSettings:Secret", "integration-tests-only-signing-key-0123456789");
+            // The test host creates its database at startup, as `dotnet run` does (docs/v2/plans/P0.md D1)
+            builder.UseSetting("Database:MigrateOnStartup", "true");
 
             builder.ConfigureServices(services =>
             {

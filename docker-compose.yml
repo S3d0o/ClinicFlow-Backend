@@ -36,6 +36,8 @@ services:
       APP_DATABASE: ClinicFlowV2
       APP_LOGIN: clinicflow_v2_app
       APP_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env (see .env.example)}
+      APP_DEPLOY_LOGIN: clinicflow_v2_deploy
+      APP_DEPLOY_PASSWORD: ${DEPLOY_DB_PASSWORD:?Set DEPLOY_DB_PASSWORD in .env (see .env.example)}
     volumes:
       - ./docker/db-init.sql:/db-init.sql:ro
     # The healthcheck passes before SQL Server has brought an existing database online, and the script
@@ -53,19 +55,35 @@ services:
         exit 1
     restart: "no"
 
+  # One-shot: applies pending migrations with the EF migration bundle built into the backend image (/app/efbundle),
+  # as the deploy login. The backend doesn't migrate at startup outside development; it checks that this ran
+  # (docs/v2/plans/P0.md D1, REVIEW.md §4.9). The bundle reads the connection string like the app does
+  migrate:
+    image: clinicflow-backend-v2
+    container_name: clinicflow-v2-migrate
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      ConnectionStrings__DefaultConnection: "Server=db;Database=ClinicFlowV2;User Id=clinicflow_v2_deploy;Password=${DEPLOY_DB_PASSWORD:?Set DEPLOY_DB_PASSWORD in .env (see .env.example)};TrustServerCertificate=True"
+      ASPNETCORE_ENVIRONMENT: "Production"
+    entrypoint: ["./efbundle"]
+    restart: "no"
+
   backend:
     image: clinicflow-backend-v2
     container_name: clinicflow-v2-backend
-    # Safety net: startup already retries while SQL Server recovers (DataSeeder.MigrateWithRetryAsync)
+    # Safety net: startup already retries while SQL Server recovers (DataSeeder.EnsureSchemaAsync)
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
-      db-init:
+      migrate:
         condition: service_completed_successfully
     environment:
       ConnectionStrings__DefaultConnection: "Server=db;Database=ClinicFlowV2;User Id=clinicflow_v2_app;Password=${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env (see .env.example)};MultipleActiveResultSets=true;TrustServerCertificate=True"
       ASPNETCORE_ENVIRONMENT: "Production"
+      Database__MigrateOnStartup: "false" # the migrate service did it; the app's login can't run DDL anyway
       ASPNETCORE_URLS: "http://+:8080"
       JwtSettings__Secret: ${JWT_SECRET}
       JwtSettings__Issuer: "http://backend:8080"
