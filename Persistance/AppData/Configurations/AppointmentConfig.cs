@@ -6,6 +6,13 @@
         {
             builder.ToTable("Appointments");
 
+            // Every booking, transition and note is audited (FR-AUD-01). The visit's reason and the doctor's notes
+            // are clinical, so only the fact that they changed is (08 §4); the reminder mark is the job's bookkeeping
+            builder.IsAudited("Appointment");
+            builder.Property(a => a.ReasonForVisit).IsAuditRedacted();
+            builder.Property(a => a.DoctorNotes).IsAuditRedacted();
+            builder.Property(a => a.ReminderSentAt).IsNotAudited();
+
             // relationships
 
             builder.HasOne(a=>a.Review)

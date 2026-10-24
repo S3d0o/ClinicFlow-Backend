@@ -10,6 +10,11 @@
 
             builder.Property(d => d.ConsultationFee).HasPrecision(18, 2);
 
+            // Approval, the fee and the profile are audited (FR-AUD-01); the rating cache is recomputed from reviews
+            builder.IsAudited("DoctorProfile");
+            builder.Property(d => d.AverageRating).IsNotAudited();
+            builder.Property(d => d.TotalReviews).IsNotAudited();
+
             // Relationships
             builder.HasMany(d=>d.Schedules)
                 .WithOne(s=>s.DoctorProfile)

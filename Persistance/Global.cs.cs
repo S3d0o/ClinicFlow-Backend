@@ -10,3 +10,5 @@ global using Domain.Parameters;
 global using Domain.ResultPattern;
 global using Shared.Authorization;
 global using Domain.Entities.Messaging;
+global using Domain.Entities.Auditing;
+global using Persistence.Auditing;

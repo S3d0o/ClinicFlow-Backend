@@ -142,11 +142,13 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
             throw new InvalidOperationException("The outbox never emptied: a handler keeps adding messages");
         }
 
-        // Helper: seed data directly into the test DB
+        // Helper: seed data directly into the test DB. Seeded rows are stored history, not actions, so they write no
+        // audit entries (a test of the audit itself sets db.RecordAudit back to true)
         public async Task SeedAsync(Func<ClinicDbContext, Task> seeder)
         {
             using var scope = Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ClinicDbContext>();
+            db.RecordAudit = false;
             await seeder(db);
         }
     }
