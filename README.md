@@ -169,11 +169,11 @@ dotnet test ClinicFlow.IntegrationTests    # integration tests (Docker must be r
 ```bash
 docker build -t clinicflow-backend-v2 .                     # Dockerfile is at the repo root
 docker build -t clinicflow-frontend-v2 -f DockerFile .      # run in the frontend repo, on its v2 branch
-cp .env.example .env    # fill in DB_PASSWORD, APP_DB_PASSWORD, JWT_SECRET, EMAIL_*, optionally ADMIN_*
-docker compose up -d    # frontend http://localhost:3001, backend http://localhost:5002, SQL 127.0.0.1:1434
+cp .env.example .env    # fill in DB_PASSWORD, APP_DB_PASSWORD, DEPLOY_DB_PASSWORD, JWT_SECRET, EMAIL_*, optionally ADMIN_*
+docker compose -p clinicflow-v2 up -d    # always pass -p: a COMPOSE_PROJECT_NAME in the shared .env would win; frontend http://localhost:3001, backend http://localhost:5002, SQL 127.0.0.1:1434
 ```
 
-Compose runs the V2 stack (project `clinicflow-v2`) next to V1's without sharing anything: SQL Server with its own volume, a one-shot `db-init` that creates the `ClinicFlowV2` database and the app's own login (the backend doesn't connect as `sa`), the backend and the frontend. It runs in Production mode with no demo accounts; set `SEED_DEMO_DATA=true` in `.env` to load the demo clinic on a local machine (never on a real deployment).
+Compose runs the V2 stack (project `clinicflow-v2`) next to V1's without sharing anything: SQL Server with its own volume, a one-shot `db-init` that creates the `ClinicFlowV2` database and two logins (a deploy login for migrations and a read/write login for the app; nothing but `db-init` uses `sa`), a one-shot `migrate` that applies migrations with the bundle in the backend image, the backend and the frontend. Probes: `/health/live` and `/health/ready`. It runs in Production mode with no demo accounts; set `SEED_DEMO_DATA=true` in `.env` to load the demo clinic on a local machine (never on a real deployment).
 
 ## 🔐 Authentication flow
 

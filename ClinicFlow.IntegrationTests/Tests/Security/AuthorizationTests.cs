@@ -90,6 +90,8 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
         [InlineData("/api/Specialty")]
         [InlineData("/api/reviews/doctor/1")]
         [InlineData("/health")]
+        [InlineData("/health/live")]
+        [InlineData("/health/ready")]
         public async Task PublicEndpoints_Anonymous_Return200(string url)
         {
             var response = await _client.GetAsync(url);
@@ -140,6 +142,8 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
             "GET api/Specialty",
             "GET api/Specialty/{id}",
             "ANY health",
+            "ANY health/live",
+            "ANY health/ready",
         ];
 
         [Fact]

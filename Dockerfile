@@ -25,6 +25,18 @@ RUN dotnet publish ClinicFlow/ClinicFlow.csproj \
     -o /app/publish \
     --no-restore
 
+# The EF migration bundle, run by the compose migrate service (docs/v2/plans/P0.md PR 11). Building it reads the
+# model through the host, which refuses to start without a connection string naming the V2 database; nothing
+# connects to it here. dotnet-ef matches the EF Core version in the projects
+RUN dotnet tool install --global dotnet-ef --version 10.0.13
+ENV PATH="$PATH:/root/.dotnet/tools"
+RUN ConnectionStrings__DefaultConnection="Server=unused;Database=ClinicFlowV2" \
+    dotnet ef migrations bundle \
+    --project Persistance/Persistence.csproj \
+    --startup-project ClinicFlow/ClinicFlow.csproj \
+    --configuration Release \
+    --output /app/publish/efbundle
+
 # ── Stage 2: Runtime ─────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 
@@ -43,7 +55,7 @@ ENV ASPNETCORE_ENVIRONMENT=Production
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD curl -fs http://localhost:8080/health || exit 1
+  CMD curl -fs http://localhost:8080/health/live || exit 1
 
 USER app
 

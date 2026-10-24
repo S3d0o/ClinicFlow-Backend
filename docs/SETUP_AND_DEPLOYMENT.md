@@ -55,7 +55,7 @@ dotnet run --project ClinicFlow/ClinicFlow.csproj --launch-profile https   # htt
 ```
 
 **On startup the app:**
-1. applies pending migrations
+1. applies pending migrations in Development (`Database:MigrateOnStartup`, default `true` in Development only). Elsewhere it only checks that none are pending and refuses to start if any are: the migration bundle applies them first (section 6)
 2. seeds roles and specialties
 3. creates the bootstrap admin, if configured
 4. in Development, seeds the demo clinic
@@ -85,7 +85,9 @@ dotnet ef database update --project Persistance/Persistence.csproj --startup-pro
 dotnet ef migrations remove --project Persistance/Persistence.csproj --startup-project ClinicFlow
 ```
 
-`dotnet ef` builds the host, so `ConnectionStrings:DefaultConnection` must be configured, and it must name `ClinicFlowV2`. Startup also applies migrations automatically.
+`dotnet ef` builds the host, so `ConnectionStrings:DefaultConnection` must be configured, and it must name `ClinicFlowV2`. In Development, startup also applies migrations automatically.
+
+**Deployments** apply migrations with a migration bundle, not at startup (docs/v2/plans/P0.md D1). The Docker image carries it as `/app/efbundle`; it reads `ConnectionStrings__DefaultConnection` like the app, so run it with a login that may change the schema (compose's `migrate` service does this, section 6). To build one by hand: `dotnet ef migrations bundle --project Persistance/Persistence.csproj --startup-project ClinicFlow --output efbundle`.
 
 ## 5. Tests
 
@@ -109,7 +111,7 @@ docker build -t clinicflow-backend-v2 .   # Dockerfile is at the repo root
 
 1. Build `clinicflow-backend-v2` (above) and `clinicflow-frontend-v2` (from the frontend repo's `v2` branch).
 2. Copy [`../.env.example`](../.env.example) to `.env` and fill it in. V1's and V2's stacks read the same file.
-3. `docker compose up -d`. The compose project is `clinicflow-v2`, with its own containers and the volume `clinicflow_v2_data`, so V1's stack can run at the same time.
+3. `docker compose -p clinicflow-v2 up -d`. Pass `-p clinicflow-v2` every time (`up`, `down`, `logs`): a `COMPOSE_PROJECT_NAME` in the shared `.env`, such as V1's `clinicflow`, overrides the compose file's `name:` and would make V2 adopt V1's containers. The compose project is `clinicflow-v2`, with its own containers and the volume `clinicflow_v2_data`, so V1's stack can run at the same time.
 
 | Service | URL (V1's stack uses 3000 / 5001 / 1433) |
 |---|---|
@@ -119,7 +121,13 @@ docker build -t clinicflow-backend-v2 .   # Dockerfile is at the repo root
 
 Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data** by default. Set `ADMIN_EMAIL` / `ADMIN_PASSWORD` to get a first admin. For a local demo, set `SEED_DEMO_DATA=true` in `.env` to load the demo clinic (published passwords: never on a real deployment).
 
-**Database login.** The backend doesn't connect as `sa`. Before it starts, the one-shot `db-init` service runs [`docker/db-init.sql`](../docker/db-init.sql) as `sa`. The script creates the `ClinicFlowV2` database and the login `clinicflow_v2_app` with the password `APP_DB_PASSWORD` (names from `APP_DATABASE` / `APP_LOGIN` in compose). That login is `db_owner` of `ClinicFlowV2` only, with no server-level rights. It needs DDL because the app applies migrations at startup. The script is idempotent, and it re-applies `APP_DB_PASSWORD`, so a changed password takes effect on the next `docker compose up`. **Upgrading from an `.env` without `APP_DB_PASSWORD`:** add it (and `EMAIL_FROM_ADDRESS`). Compose refuses to start without it. The existing database volume is kept, and the script adds the login to it.
+**Start order.** `db` → `db-init` (database and logins) → `migrate` (applies pending migrations, then exits) → `backend`. A failed migration stops the backend from starting; `docker compose logs migrate` shows why.
+
+**Database logins.** Only `db` and `db-init` use `sa`. The one-shot `db-init` service runs [`docker/db-init.sql`](../docker/db-init.sql) as `sa`; it creates the `ClinicFlowV2` database and two logins (names from `APP_LOGIN` / `APP_DEPLOY_LOGIN` in compose):
+- `clinicflow_v2_deploy` (`DEPLOY_DB_PASSWORD`) is `db_owner` of `ClinicFlowV2` only. The `migrate` service uses it to run the migration bundle.
+- `clinicflow_v2_app` (`APP_DB_PASSWORD`) is what the backend connects as. It is a member of the `clinicflow_app` role, which the `AddAppDatabaseRole` migration sets up: read and write data, no schema changes, and no `UPDATE` or `DELETE` on `AuditEntries` (append-only audit, FR-AUD-04).
+
+The script is idempotent and re-applies both passwords, so a changed password takes effect on the next `docker compose up`. **Upgrading:** add `DEPLOY_DB_PASSWORD` to `.env` (compose refuses to start without it). On an existing volume, `db-init` moves `clinicflow_v2_app` out of `db_owner` into the role.
 
 ## 7. Production checklist
 
@@ -132,10 +140,10 @@ Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data** by de
 - [ ] `RateLimiting:Auth` suits the deployment. The default is 10 requests per minute per client IP, shared across login, registration, confirm-email and the password-reset endpoints. Clients behind one NAT address share that budget.
 - [ ] Behind a reverse proxy, the proxy is added to `ForwardedHeadersOptions.KnownProxies` (`ClinicFlow/Extensions/WebApiExtensions.cs`). Otherwise client IPs show as the proxy's address.
 - [ ] HTTPS terminates at the proxy or at Kestrel.
-- [ ] The database login is a dedicated user, not `sa`. Compose does this with `db-init` (`clinicflow_v2_app`, `db_owner` of `ClinicFlowV2` only); elsewhere, run [`docker/db-init.sql`](../docker/db-init.sql) the same way (REVIEW NM6).
+- [ ] The app connects with a read/write login in the `clinicflow_app` role, never `sa` or `db_owner`, and migrations run as a separate deploy login before the app starts. Compose does this with `db-init` and `migrate`; elsewhere, run [`docker/db-init.sql`](../docker/db-init.sql) and the migration bundle the same way (REVIEW NM6). `Database:MigrateOnStartup` is not `true`.
 - [ ] Only one instance runs the reminder job (there is no distributed lock yet; REVIEW M9).
 - [ ] Logs: the Seq URL is configured, or the Seq sink is removed; `logs/` is on persistent storage, if file logs are wanted.
-- [ ] The orchestrator restarts the container on failure (compose: `restart: unless-stopped`), and probes `GET /health` (liveness only; it doesn't check the database). Startup failures exit with 1.
+- [ ] The orchestrator restarts the container on failure (compose: `restart: unless-stopped`) and probes `GET /health/live` (the process answers; `/health` is the same). A load balancer routes by `GET /health/ready`: 503 when the database can't be reached, and 200 with `"status": "Degraded"` when the oldest due outbox message has waited over a minute (notifications and emails are stuck; the API still serves). Startup failures exit with 1.
 
 ## 8. Troubleshooting
 
@@ -146,7 +154,9 @@ Compose runs with `ASPNETCORE_ENVIRONMENT=Production`, so **no demo data** by de
 | `OptionsValidationException: JwtSettings:Secret must be at least 32 bytes` | Set a longer secret |
 | `A network-related or instance-specific error … wait operation timed out` with `Server=localhost,<port>` | `localhost` may resolve to IPv6 while SQL Server is bound to IPv4. Use `127.0.0.1` |
 | Integration tests fail to start | Docker isn't running |
-| Log shows `Database not ready (SQL error 1801 …). Retrying migration` | Normal when SQL Server and the API start together: SQL Server is still recovering the database. Startup retries for about a minute; if it still fails, check that SQL Server is up |
+| Log shows `Database not ready (SQL error 1801 …). Retrying in 5s` | Normal when SQL Server and the API start together: SQL Server is still recovering the database. Startup retries for about a minute; if it still fails, check that SQL Server is up |
+| `ports are not available: … 127.0.0.1:1434` on `docker compose up` | Something on the host already listens on 1434, such as a local SQL Server instance. Stop it, or map the db service to another host port with an override file (`ports: !override ["127.0.0.1:<port>:1433"]`, then `-f docker-compose.yml -f <override>`) |
+| `The database is missing N migration(s): …` at startup | Migrations don't run at startup outside Development. Run the migration bundle first (compose: the `migrate` service; check `docker compose logs migrate`), or set `Database:MigrateOnStartup=true` on a development machine |
 | Demo appointments are all in the past | The demo dataset is created once and keeps its dates (slots are topped up on every start). Drop the database and restart to reseed. A database seeded before the large demo clinic existed gets the generated doctors, patients and their appointments on its next start; no drop needed |
 | Login returns `Auth.AccountLockedOut` | 5 wrong passwords: wait 15 minutes, or clear `LockoutEnd` for the user |
 | Login returns `Auth.EmailNotConfirmed` | Confirm the email, or set `EmailConfirmed = 1` in `Users` for local testing |

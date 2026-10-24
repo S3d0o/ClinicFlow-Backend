@@ -43,8 +43,8 @@ try
     builder.Services.AddSingleton<OutboxProcessor>();
     builder.Services.AddHostedService<OutboxDispatcher>();
 
-    // Liveness probe for the Docker HEALTHCHECK (GET /health)
-    builder.Services.AddHealthChecks();
+    // /health/live for the Docker HEALTHCHECK, /health/ready for load balancers (HealthCheckExtensions)
+    builder.Services.AddHealthProbes();
 
 
     #endregion
@@ -78,9 +78,13 @@ try
 
     // Demo accounts use published passwords: only seed them in Development unless explicitly enabled.
     var seedDemoData = app.Configuration.GetValue<bool?>("Seeding:DemoData") ?? app.Environment.IsDevelopment();
+    // Migrations run at startup only in development and tests; elsewhere the migration bundle runs first, and
+    // startup only checks that it did (docs/v2/plans/P0.md D1)
+    var migrateOnStartup = app.Configuration.GetValue<bool?>("Database:MigrateOnStartup") ?? app.Environment.IsDevelopment();
     var clock = app.Services.GetRequiredService<IClock>(); // demo slot dates follow the clinic's clock
     await DataSeeder.SeedAsync(
         app.Services,
+        migrateOnStartup,
         seedDemoData,
         clock.ClinicNow,
         clock.UtcNow,
@@ -127,7 +131,7 @@ try
     #endregion
 
     app.MapControllers();
-    app.MapHealthChecks("/health").AllowAnonymous(); // the fallback policy would otherwise require a login
+    app.MapHealthProbes();
     await app.RunAsync();
     return 0;
 }
