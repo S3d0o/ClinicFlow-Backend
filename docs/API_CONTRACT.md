@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Contract version** | 4.0.0-p0 (pre-release, `v2` branch). V1's contract stays 3.1.2 on `master` ([docs/v2/adr/0007](v2/adr/0007-v2-separate-product-line.md)) |
-| **Last updated** | 2026-10-23 |
+| **Last updated** | 2026-10-24 |
 | **Applies to** | ClinicFlow backend (`ClinicFlow.Backend`) and the ClinicFlow frontend (React) |
 | **Canonical copy** | `ClinicFlow.Backend/docs/API_CONTRACT.md`. The frontend repo keeps an identical copy at `docs/API_CONTRACT.md` |
 | **Machine-readable companion** | [`openapi.json`](openapi.json) (OpenAPI 3.1, generated from the running API) |

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review |
+| **Status** | Agreed; being built. P0 (foundation) done 2026-10-24, tag `v2.0.0-p0`; P1 next |
 | **Last updated** | 2026-10-22 |
 | **Applies to** | ClinicFlow backend and frontend, `v2` branch, contract version 4.0.0 (V1 is 3.x on `master`/`main`) |
 | **Builds on** | V1 docs: [PROJECT_OVERVIEW.md](../PROJECT_OVERVIEW.md), [API_CONTRACT.md](../API_CONTRACT.md), [REVIEW.md](../REVIEW.md) |
@@ -30,7 +30,7 @@ Read them in this order:
 | 9 | [09_MIGRATION_FROM_V1.md](09_MIGRATION_FROM_V1.md) | Moving data, API and frontend from V1 to V2; where each open REVIEW item gets fixed |
 | 10 | [10_ROADMAP.md](10_ROADMAP.md) | Phases, exit criteria, risks, open questions |
 | — | [adr/](adr/) | Architecture decision records for the big choices |
-| — | [plans/](plans/) | Implementation plan per phase: [P0](plans/P0.md) |
+| — | [plans/](plans/) | Implementation plan per phase: [P0](plans/P0.md) (done) |
 
 ### Architecture decision records
 
@@ -96,4 +96,4 @@ These names are defined once and used verbatim in every document and, later, in 
 
 V2 is a **separate product line** ([ADR 0007](adr/0007-v2-separate-product-line.md)). It is built on the `v2` branch of both repos with its own database, while V1 stays untouched on `master`/`main`. The owner decides if and when V2 replaces V1.
 
-These are **planning** documents. Nothing here is implemented yet. When a phase ships, the matching parts move into the living docs on the `v2` branch (`PROJECT_OVERVIEW.md`, `API_CONTRACT.md` 4.0.0, `SETUP_AND_DEPLOYMENT.md`) and these files record what was decided. Open business questions are collected in [10_ROADMAP.md §5](10_ROADMAP.md#5-open-questions).
+These are **planning** documents. P0, the foundation, is implemented (each design doc marks what was built with an **As built** note); P1 onwards is not. When a phase ships, the matching parts move into the living docs on the `v2` branch (`PROJECT_OVERVIEW.md`, `API_CONTRACT.md` 4.0.0, `SETUP_AND_DEPLOYMENT.md`) and these files record what was decided. Open business questions are collected in [10_ROADMAP.md §5](10_ROADMAP.md#5-open-questions).
