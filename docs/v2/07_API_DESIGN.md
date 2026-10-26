@@ -2,6 +2,8 @@
 
 This is the **direction** for the V2 API, not the contract itself. When each phase ships, its endpoints move into `docs/API_CONTRACT.md` 4.x with full request/response tables, following [API_CONTRACT.md §11](../API_CONTRACT.md#11-how-to-change-this-contract).
 
+**Where this document and [API_CONTRACT.md §13](../API_CONTRACT.md#13-planned-apiv2-endpoints-agreed-not-built) differ, §13 wins.** §13 holds the endpoints the V2 frontend already uses, agreed on 2026-10-27 (for example `phone` instead of `phoneNumber`, `otp/send` returning a ticket instead of 204, a two-step MFA result instead of 401 `Auth.MfaRequired`, string ids, and 400/429 instead of 401 for wrong credentials and lockouts). The rest of this document stays the direction for the screens the frontend hasn't built yet.
+
 ## 1. Versioning
 
 See [ADR 0005](adr/0005-api-v2-versioning.md) and [ADR 0007](adr/0007-v2-separate-product-line.md).
