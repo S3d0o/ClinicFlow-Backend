@@ -9,7 +9,7 @@
 
 V1 is a **patient-facing booking product**. Patients find doctors and book slots, doctors publish schedules, and one Admin approves doctors. The clinic itself is not modelled: each doctor carries their own address and fee, and the people who actually run a clinic (managers, receptionists, nurses, accountants) have no place in the system.
 
-V2 turns ClinicFlow into the **operating system of one clinic organization with several branches**. It covers the full visit, from booking to the front desk, the nurse, the doctor, the cashier and the insurer. It also covers hiring doctors, sign-up by mobile number with SMS codes, Arabic and English throughout, and optional online deposits through Paymob. Every design choice is **tenant-ready**, so a later V3 can host many clinic organizations on one platform without a rewrite.
+V2 turns ClinicFlow into the **operating system of one clinic organization with several branches**. It covers the full visit, from booking to the front desk, the nurse, the doctor, the cashier and the insurer. It also covers hiring doctors, sign-up by mobile number with one-time codes by WhatsApp, Arabic and English throughout, and optional online deposits through Paymob. Every design choice is **tenant-ready**, so a later V3 can host many clinic organizations on one platform without a rewrite.
 
 ---
 
@@ -30,7 +30,7 @@ Read them in this order:
 | 9 | [09_MIGRATION_FROM_V1.md](09_MIGRATION_FROM_V1.md) | Moving data, API and frontend from V1 to V2; where each open REVIEW item gets fixed |
 | 10 | [10_ROADMAP.md](10_ROADMAP.md) | Phases, exit criteria, risks, open questions |
 | — | [adr/](adr/) | Architecture decision records for the big choices |
-| — | [plans/](plans/) | Implementation plan per phase: [P0](plans/P0.md) (done) |
+| — | [plans/](plans/) | Implementation plan per phase: [P0](plans/P0.md) (done), [P1](plans/P1.md) (draft) |
 
 ### Architecture decision records
 
@@ -43,6 +43,7 @@ Read them in this order:
 | [0005](adr/0005-api-v2-versioning.md) | V2 endpoints live under `/api/v2`, contract 4.x (its V1-coexistence parts are superseded by 0007) |
 | [0006](adr/0006-clean-architecture-modular-monolith.md) | Keep Clean Architecture as a modular monolith with CQRS-lite (no MediatR); patterns on merit; SOLID rules enforced by architecture tests |
 | [0007](adr/0007-v2-separate-product-line.md) | V2 is a separate product line: `v2` branch, its own database; V1 stays untouched; the owner decides when to switch |
+| [0008](adr/0008-multi-clinic-platform-module-entitlements.md) | *Proposed:* one multi-tenant platform for many clinics; each clinic's subscription switches modules and limits on (amends 0001) |
 
 ## Canonical names
 
@@ -58,7 +59,7 @@ These names are defined once and used verbatim in every document and, later, in 
 | Claim status | `Draft`, `Submitted`, `Approved`, `PartiallyApproved`, `Rejected`, `Paid`, `Closed` | [05 §4.4](05_DOMAIN_MODEL.md#44-claim) |
 | Doctor application status | `Applied`, `Interview`, `Accepted`, `Rejected`, `Withdrawn` | [05 §4.6](05_DOMAIN_MODEL.md#46-doctor-application) |
 | Languages | `ar` (default), `en` | [04 FR-ACC-06](04_FUNCTIONAL_REQUIREMENTS.md#415-accounts-and-sign-in-acc) |
-| Notification channels | `Sms`, `Email`, `Both` (patient choice); in-app always | [04 FR-NTF-04](04_FUNCTIONAL_REQUIREMENTS.md#410-notifications-ntf) |
+| Notification channels | `Phone` (WhatsApp, or SMS when on), `Email`, `Both` (patient choice); in-app always | [04 FR-NTF-04](04_FUNCTIONAL_REQUIREMENTS.md#410-notifications-ntf) |
 | Requirement ids | `FR-<MODULE>-nn` (including `REC` recruitment, `ACC` accounts, `BOT` chatbot), `NFR-nn` | [04](04_FUNCTIONAL_REQUIREMENTS.md) |
 | Phases | `P0` … `P7` | [10](10_ROADMAP.md) |
 
@@ -89,7 +90,7 @@ These names are defined once and used verbatim in every document and, later, in 
 | **Claim** | The request sent to a payer to pay its share of one or more invoices |
 | **Break-glass** | Emergency access to a record outside one's normal permissions, with a mandatory reason and audit |
 | **Doctor application** | A doctor's request to join the clinic, with a CV and an optional cover letter. A reviewer with `recruitment.manage` moves it through `Applied` → `Interview` → `Accepted` |
-| **OTP** | A one-time code sent by SMS to verify a phone number or reset a password |
+| **OTP** | A one-time code sent by WhatsApp (or SMS when it is on) to verify a phone number or reset a password |
 | **Deposit** | An **optional** online prepayment through Paymob. A booking never waits for it; the rest is paid at the desk |
 
 ## Status of these documents

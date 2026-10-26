@@ -26,7 +26,7 @@ V1 solves only the first minute of that day: a patient choosing a slot online.
 | G3 | Structured clinical records | ≥ 90% of completed visits have a signed encounter within 24 h |
 | G4 | Every visit is billed and every pound is accounted for | 100% of completed visits have an invoice; daily cash sessions close with a recorded variance |
 | G5 | Insurance visits are paid | Claim rejection rate and days-to-payment are tracked; rejected claims are resubmitted from the system |
-| G6 | Fewer no-shows | No-show rate tracked per branch and doctor; reminders by SMS/WhatsApp; optional deposits and no-show fees |
+| G6 | Fewer no-shows | No-show rate tracked per branch and doctor; reminders by WhatsApp (SMS when switched on); optional deposits and no-show fees |
 | G7 | Managers decide from data | Daily, weekly and monthly reports per branch, doctor and service |
 | G8 | Ready for a multi-clinic platform | No V2 table or API needs a breaking change to support more than one organization ([ADR 0001](adr/0001-single-organization-tenant-ready.md)) |
 
@@ -51,14 +51,14 @@ V1 solves only the first minute of that day: a patient choosing a slot online.
 | **Organization and branches** | One organization, many branches: addresses, time zones, working hours, holidays, rooms, settings |
 | **Staff and access** | Staff accounts by invitation, roles, branch assignments, permission-based access, deactivation, MFA |
 | **Doctor recruitment** | Doctors apply online with a CV and an optional cover letter; a reviewer moves the application through `Applied` → `Interview` → `Accepted` (or `Rejected`); an automatic email at each stage carries the details the reviewer entered (interview time and place, start date) |
-| **Accounts and sign-in** | Patient sign-up with an Egyptian mobile number verified by SMS code (email optional); login with phone or email; password reset by SMS or email; preferred language (Arabic or English) per user |
+| **Accounts and sign-in** | Patient sign-up with an Egyptian mobile number verified by a one-time code sent by WhatsApp, or SMS when it is switched on (email optional); login with phone or email; password reset by code or email; preferred language (Arabic or English) per user |
 | **Services and pricing** | Service catalog (consultation, follow-up, procedures) with duration and price per branch or doctor |
 | **Scheduling 2.0** | Doctor schedules per branch and room, exceptions, leave, holidays, a rolling slot window, blocking, controlled overbooking |
 | **Front desk** | Booking on behalf of patients, walk-ins, check-in, queue board, reschedule, no-show handling, patient registration |
 | **Clinical records (EMR)** | Encounters, triage vitals, SOAP notes, ICD-10 diagnoses, prescriptions, referrals and orders, attachments, signing, addenda, patient history |
 | **Billing and payments** | Invoices from visits, discounts, cash/card payments collected by the **receptionist** at the desk, optional online deposits through **Paymob**, receipts, refunds, cash sessions, branch numbering. Works without an accountant |
 | **Insurance** | Payers, plans, coverage rules, patient policies, eligibility, co-pay split, pre-authorizations, claims, denials and resubmission |
-| **Notifications** | In-app (existing), email (existing), SMS for verification, confirmations and reminders; the patient chooses SMS, email or both. Templates in Arabic and English. WhatsApp later |
+| **Notifications** | In-app (existing), email (existing), and phone messages for verification, confirmations and reminders: **WhatsApp** first, **SMS** built but switched off until needed; the patient chooses phone, email or both. Templates in Arabic and English |
 | **Reporting** | An admin dashboard with a few meaningful charts (at most four), plus operational, clinical and financial reports and exports |
 | **Audit** | Who did what, when, from where, on every sensitive record |
 | **Patient portal updates** | Book by branch and service, see prices, optionally pay a deposit, view invoices, prescriptions and visit summaries, upload insurance cards |
@@ -95,8 +95,8 @@ The rule for V2 work: **if a design would have to change when a second organizat
 ## 6. Assumptions
 
 - The clinic operates in **Egypt**. Currency is **EGP**. Amounts are stored as `decimal(18,2)`.
-- The user interface is **Arabic and English**, Arabic by default. The backend stores user-entered text as-is and returns error codes, so the frontend translates. Emails and SMS are rendered by the backend in each recipient's preferred language.
-- Most patients identify by **mobile number**; many have no email. Phone verification by SMS is the main sign-up path.
+- The user interface is **Arabic and English**, Arabic by default. The backend stores user-entered text as-is and returns error codes, so the frontend translates. Emails and phone messages are rendered by the backend in each recipient's preferred language.
+- Most patients identify by **mobile number**; many have no email. Phone verification by a one-time code (WhatsApp first) is the main sign-up path.
 - Most clinics have **no accountant**: the receptionist takes the money and the manager approves exceptions. The `Accountant` role is optional.
 - Each branch has a **time zone** (default `Africa/Cairo`). All slot dates and times are branch-local wall-clock times ([ADR 0003](adr/0003-branch-time-zones.md)).
 - Patients may visit **any branch**. Their record and history are shared across the organization's branches.

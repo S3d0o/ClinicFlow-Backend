@@ -232,7 +232,7 @@ erDiagram
 | `OutboxMessage` | `Id`, `OccurredAt`, `Type`, `PayloadJson`, `ProcessedAt?`, `Attempts`, `LastError` | [06 §5](06_TECHNICAL_DESIGN.md#5-domain-events-and-the-outbox) |
 | `MessageDelivery` | `Id`, `OutboxMessageId`, `Channel`, `Recipient`, `TemplateKey`, `Status`, `ProviderMessageId`, `SentAt`, `Error` | FR-NTF-05 |
 | `MessageTemplate` | `OrganizationId`, `Key`, `Channel`, `Language` (`ar`, `en`), `Subject?`, `Body`, `Placeholders` | FR-NTF-02; also the doctor-application stage emails (FR-REC-04) |
-| `ApplicationUser` (V1) | Adds `PreferredLanguage` (`ar`, `en`), `NotificationChannel` (`Sms`, `Email`, `Both`); uses Identity's `PhoneNumber` (E.164) and `PhoneNumberConfirmed`; `Email` becomes optional for patients | FR-ACC-01…06, FR-NTF-04. Global, not organization-owned |
+| `ApplicationUser` (V1) | Adds `PreferredLanguage` (`ar`, `en`), `NotificationChannel` (`Phone`, `Email`, `Both`; `Phone` = WhatsApp, or SMS when it is on); uses Identity's `PhoneNumber` (E.164) and `PhoneNumberConfirmed`; `Email` becomes optional for patients | FR-ACC-01…06, FR-NTF-04. Global, not organization-owned |
 | `PhoneVerificationCode` | `Id`, `PhoneNumber`, `Purpose` (`SignUp`, `ChangePhone`, `PasswordReset`), `CodeHash`, `ExpiresAt`, `Attempts`, `ConsumedAt?`, `RequestIp`, `CreatedAt` | Global. Rows older than a day are purged (FR-ACC-02) |
 | `Notification`, `RefreshToken`, `Review`, `Specialty` | V1 entities. `Notification` and `Review` gain `OrganizationId`; `Review` gains `BranchId` | `Specialty` stays global reference data |
 
@@ -362,7 +362,7 @@ Every transition writes a `DoctorApplicationStageChange` and raises `DoctorAppli
 | `DoctorProfile.ClinicAddress`, `ClinicCity` | `Branch` | Branches created from distinct values ([09 §2](09_MIGRATION_FROM_V1.md#2-importing-v1-data)) |
 | `DoctorProfile.ConsultationFee` | `PriceListItem` for the doctor's consultation service | One item per doctor |
 | `DoctorProfile.IsApprovedByAdmin` | `StaffMember.Status` + `DoctorProfile.IsPublic`; `DoctorApplication` | Approved → `Active` staff + public; unapproved → a `DoctorApplication` in `Applied`, flagged "migrated from V1, no CV" |
-| `ApplicationUser.Email` required; `PhoneNumber` stored but never verified | `Email` optional for patients; `PhoneNumber` normalised to E.164 and verified by SMS | V1 users keep their email; their phone is normalised, left unverified, and verified at the first V2 login |
+| `ApplicationUser.Email` required; `PhoneNumber` stored but never verified | `Email` optional for patients; `PhoneNumber` normalised to E.164 and verified by a one-time code (WhatsApp or SMS) | V1 users keep their email; their phone is normalised, left unverified, and verified at the first V2 login |
 | `PatientProfile.BloodType`, `Allergies`, `ChronicConditions`, emergency contact | `PatientRecord` + `Allergy` / `Condition` | Free text copied into one entry each, flagged "migrated" |
 | `DoctorSchedule` (one per weekday) | `DoctorSchedule` with `BranchId`, several per weekday | `BranchId` from the doctor's branch |
 | `AppointmentSlot` | + `BranchId`, `StartsAtUtc`, `EndsAtUtc`, `Capacity` | UTC computed with the branch time zone |

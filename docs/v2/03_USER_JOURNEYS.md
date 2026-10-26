@@ -37,7 +37,7 @@ sequenceDiagram
     P->>S: Choose branch, service, doctor, slot
     S-->>P: Price; booking Confirmed
     P->>S: Pay a deposit through Paymob (optional)
-    S-->>P: Confirmation (SMS, email or both, as chosen)
+    S-->>P: Confirmation (phone, email or both, as chosen)
     S-->>P: Reminder 24 h before
     P->>R: Arrives at the branch
     R->>S: Check in (verify phone, insurance, balance, deposit)
@@ -57,7 +57,7 @@ sequenceDiagram
 | 1 | Patient | Searches by specialty and branch, picks Dr. Ahmed, service "Cardiology consultation" | Shows slots in branch-local time, the price from the price list, and the optional deposit amount | FR-PAT-01, FR-PAT-02, FR-SVC-04 |
 | 2 | Patient | Books the slot | Books atomically (no double booking); the appointment is confirmed at once. Offers an optional deposit | `Confirmed`, FR-APT-02 |
 | 3 | Patient | Chooses to pay the deposit through Paymob (or skips it) | Paymob's hosted page takes the card or wallet payment; the webhook records it against the appointment. Skipping changes nothing: the booking stays confirmed | FR-APT-08, FR-BIL-06 |
-| 4 | System | — | Sends the confirmation, then a reminder 24 h before, by SMS, email or both as the patient chose, in their language | FR-NTF-03, FR-NTF-04, FR-APT-09 |
+| 4 | System | — | Sends the confirmation, then a reminder 24 h before, by phone (WhatsApp, or SMS when on), email or both as the patient chose, in their language | FR-NTF-03, FR-NTF-04, FR-APT-09 |
 | 5 | Receptionist | Searches the patient by phone, clicks **Check in** | Shows identity, outstanding balance, any paid deposit, insurance policy status. Creates the queue entry and an empty encounter | `CheckedIn`, FR-FD-03, FR-EMR-01 |
 | 6 | Nurse | Opens "waiting for triage", picks Mohamed | Records vitals (BP, pulse, temperature, weight, height, SpO₂), chief complaint, allergy check | FR-EMR-02 |
 | 7 | Doctor | Sees the queue with triage done, clicks **Call** | Assigns the room, shows the patient on the waiting-room display by ticket number | `InProgress`, FR-FD-05, FR-FD-06 |
@@ -83,10 +83,10 @@ sequenceDiagram
 | # | Actor | Action | System | FR |
 |---|---|---|---|---|
 | 1 | Receptionist | Searches by phone number | Finds the patient, or offers **Register** with duplicate detection (name + date of birth + phone) | FR-FD-01, FR-FD-02 |
-| 2 | Receptionist | Registers a new patient: name, phone, gender, date of birth, optional national ID | Creates a `PatientRecord` with an MRN. Sends an SMS with a portal invitation (optional) | FR-FD-02 |
+| 2 | Receptionist | Registers a new patient: name, phone, gender, date of birth, optional national ID | Creates a `PatientRecord` with an MRN. Sends a phone message with a portal invitation (optional) | FR-FD-02 |
 | 3 | Receptionist | Picks the service; the system shows the first available slots across the doctors who offer it | Slots respect service duration (a 40-minute procedure takes two 20-minute slots) | FR-SCH-09, FR-APT-03 |
 | 4 | Receptionist | Books | Same atomic booking as online; source = `Phone`; `Confirmed` immediately. The patient pays at the desk on arrival | FR-APT-03 |
-| 5 | System | — | Sends the confirmation by the patient's chosen channel (SMS for a new desk-registered patient) | FR-NTF-03, FR-NTF-04 |
+| 5 | System | — | Sends the confirmation by the patient's chosen channel (phone for a new desk-registered patient) | FR-NTF-03, FR-NTF-04 |
 
 ---
 
@@ -271,7 +271,7 @@ sequenceDiagram
     M->>S: Review CV; move to Interview with date, place, interviewer
     S-->>M: Preview of the interview email
     M->>S: Confirm
-    S-->>A: Email (+ SMS): interview invitation with the details
+    S-->>A: Email (+ phone message): interview invitation with the details
     A->>M: Attends the interview
     M->>S: Move to Accepted with start date and branch
     S-->>A: Email: accepted, start date and branch
@@ -281,12 +281,12 @@ sequenceDiagram
 
 | # | Actor | Action | System | Status / FR |
 |---|---|---|---|---|
-| 1 | Applicant | Opens **Join as a doctor**, signs up with phone and email, and verifies both | Sends an SMS code and an email link; the account has no role | FR-ACC-01, FR-ACC-02, FR-REC-01 |
+| 1 | Applicant | Opens **Join as a doctor**, signs up with phone and email, and verifies both | Sends a one-time code by WhatsApp (or SMS) and an email link; the account has no role | FR-ACC-01, FR-ACC-02, FR-REC-01 |
 | 2 | Applicant | Fills in specialty, license number, years of experience, preferred branch; uploads the CV (required) and a cover letter (optional) | Checks type and size, scans the files, stores them outside the database | `Applied`, FR-REC-01 |
 | 3 | System | — | Sends the "application received" email in the applicant's language | FR-REC-04 |
 | 4 | Manager | Opens **Applications**, filters by specialty, opens Dr. Laila's, downloads the CV | Logs the download in the audit trail | FR-REC-07 |
 | 5 | Manager | Clicks **Invite to interview**, enters date and time, branch, interviewer and a note ("bring your syndicate card") | Validates the values; shows the rendered email with the placeholders filled in | FR-REC-03, FR-REC-04 |
-| 6 | Manager | Confirms | Moves the application and records the variables in its history; sends the email (and an SMS if chosen) through the outbox | `Interview` |
+| 6 | Manager | Confirms | Moves the application and records the variables in its history; sends the email (and a phone message if chosen) through the outbox | `Interview` |
 | 7 | Applicant | Sees the interview details in **My application**; attends | — | FR-REC-06 |
 | 8 | Manager | Clicks **Accept**, enters the start date (1 November) and the branch | Shows the rendered acceptance email; on confirm, creates a `Doctor` staff member, `Inactive` until the start date, and a hidden doctor profile | `Accepted`, FR-REC-05 |
 | 9 | System | 1 November | Activates the staff member; the doctor can now log in to the staff app and enrol MFA | FR-REC-05, FR-STF-07 |
@@ -304,9 +304,9 @@ sequenceDiagram
 | # | Actor | Action | System | FR |
 |---|---|---|---|---|
 | 1 | Patient | Opens **Sign up** in Arabic, enters name, mobile number `010…` and a password; leaves email empty | Validates the Egyptian mobile format, stores it as `+2010…`; checks it isn't already used (without revealing it if it is) | FR-ACC-01 |
-| 2 | System | — | Sends a 6-digit code by SMS, valid 5 minutes | FR-ACC-02 |
+| 2 | System | — | Sends a 6-digit code by WhatsApp (by SMS when WhatsApp can't reach the number and SMS is on), valid 5 minutes | FR-ACC-02 |
 | 3 | Patient | Enters the code | Verifies it (at most 5 attempts); marks the phone verified; saves the preferred language `ar`; signs the patient in | FR-ACC-02, FR-ACC-06 |
-| 4 | Patient | Books an appointment | Allowed because the phone is verified; confirmation and reminders go by SMS (no email on file) | FR-APT-02, FR-NTF-04 |
-| 5 | Patient | Later adds an email and picks **both** channels in the profile | Sends a confirmation link; once confirmed, messages go by SMS and email | FR-ACC-05, FR-NTF-04 |
+| 4 | Patient | Books an appointment | Allowed because the phone is verified; confirmation and reminders go by phone message (no email on file) | FR-APT-02, FR-NTF-04 |
+| 5 | Patient | Later adds an email and picks **both** channels in the profile | Sends a confirmation link; once confirmed, messages go by phone and email | FR-ACC-05, FR-NTF-04 |
 
 **Exceptions:** the code expires or is mistyped 5 times → the patient asks for a new one after 60 s; daily caps per number and per IP stop abuse ([08 §2](08_SECURITY_PRIVACY_COMPLIANCE.md#2-threats-and-controls)).

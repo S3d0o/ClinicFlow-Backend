@@ -28,7 +28,7 @@ Run only when the owner decides to switch. The **Built in** column says which ph
 | 2 | Organization on every row | P0 | Every imported organization-owned row gets the one `OrganizationId` |
 | 3 | Create branches | P1 | Extract distinct `(ClinicCity, ClinicAddress)` from approved doctors into a **branch mapping sheet** (CSV). The clinic manager edits it: merges spelling variants, names branches, assigns codes. The tool reads the approved sheet. Doctors with no address go to the default branch `MAIN` |
 | 4 | Staff members | P1 | Users with role `Admin` → `StaffMember` with `Admin` @ Organization. Approved doctors → `StaffMember` `Active` with `Doctor` @ their mapped branch, `DoctorProfile.IsPublic = true`. Unapproved doctors → a `DoctorApplication` in `Applied`, flagged "migrated from V1, no CV", so the manager reviews them like any applicant (they never appeared publicly); their V1 profile data fills the application. Suspended doctors → `StaffMember` `Inactive` |
-| 4a | Users: identity, phone and language | P1 | Users are copied with their Identity data (password hashes, so V1 passwords keep working; refresh tokens are **not** copied, so everyone logs in again). `PhoneNumber` normalised to E.164 (numbers that fail are listed for the desk to fix), `PhoneNumberConfirmed = false` (verified by SMS at the first V2 login); `PreferredLanguage = ar`; `NotificationChannel = Both` for users with a confirmed email, else `Sms` |
+| 4a | Users: identity, phone and language | P1 | Users are copied with their Identity data (password hashes, so V1 passwords keep working; refresh tokens are **not** copied, so everyone logs in again). `PhoneNumber` normalised to E.164 (numbers that fail are listed for the desk to fix), `PhoneNumberConfirmed = false` (verified by a one-time code at the first V2 login); `PreferredLanguage = ar`; `NotificationChannel = Both` for users with a confirmed email, else `Phone` |
 | 5 | Services and prices | P1 | One service per specialty, "Consultation – <Specialty>", 30 min default. One `PriceListItem` per doctor from `ConsultationFee` (doctor-specific price, valid from the import date) |
 | 6 | Schedules and slots | P2 | `DoctorSchedule.BranchId` from the doctor's branch. Future `AppointmentSlot`s with `BranchId`, `StartsAtUtc`, `EndsAtUtc` computed with the branch zone; `Capacity = 1`, `BookedCount` from current status. Past slots are imported only when an appointment refers to them |
 | 7 | Patient records | P2 | One `PatientRecord` per `PatientProfile`; MRNs assigned in `CreatedAt` order. Emergency contact and blood type move to the record. `Allergies` and `ChronicConditions` text → one `Allergy` / `Condition` entry each, flagged "migrated" for review at the next visit |
@@ -69,7 +69,7 @@ The frontend repository follows the same split: `main` is V1, and `v2` is the V2
 | Phase | Frontend work |
 |---|---|
 | P0 | Point at the V2 API and database environment; timestamps with `Z`; new appointment statuses displayed (ProblemDetails and paged lists already handled in V1 code) |
-| P1 | Arabic/English switch with RTL; sign-up by mobile with the SMS code step; login by phone or email; profile language and channels; staff app shell: login with MFA, `GET /api/v2/me`, permission-driven menus; admin screens (staff, roles, branches, rooms, services, prices); **doctor application form and "My application"; recruitment screens** (list, detail, CV download, interview / accept / reject with email preview); remove the inherited doctor sign-up and approval screens |
+| P1 | Arabic/English switch with RTL; sign-up by mobile with the one-time code step; login by phone or email; profile language and channels; staff app shell: login with MFA, `GET /api/v2/me`, permission-driven menus; admin screens (staff, roles, branches, rooms, services, prices); **doctor application form and "My application"; recruitment screens** (list, detail, CV download, interview / accept / reject with email preview); remove the inherited doctor sign-up and approval screens |
 | P2 | Front desk (patient search/registration, calendar, booking on behalf, walk-in, check-in, queue board, waiting-room display); manager scheduling (schedules, leave, worklist); patient portal booking by branch/service with prices; notification channel choice; **admin dashboard** (KPI tiles, charts 1, 2, 4) |
 | P3 | Checkout at the desk (amount due, cash/card, receipt), invoices, refunds, approvals inbox, cash sessions; optional Paymob deposit in the portal; dashboard chart 3 (revenue) |
 | P4 | Nurse triage screen; doctor workspace (queue, history, encounter editor, prescriptions, orders, signing); patient visit summaries |
@@ -94,7 +94,7 @@ From [REVIEW.md](../REVIEW.md). **Status 2026-10-22:** V1 was finished on 2026-1
 | M2 | Local slot times compared to UTC | ✅ `8321b0f` for one configured clinic zone (`ClinicNow`) | Branch time zones, `StartsAtUtc`, `IClock` ([ADR 0003](adr/0003-branch-time-zones.md)) | P0 |
 | M3 | Expected errors return 500 | ✅ `da53e0c` | — | — |
 | M5 | No global exception handler | ✅ `757cf7e` | — | — |
-| M6 | No brute-force protection on login | ✅ `d3b6511`, `b4a2a47` (lockout, per-IP auth rate limit) | Rate limits on booking, public search and SMS-code endpoints (§3.4 of 06) | P0–P1 |
+| M6 | No brute-force protection on login | ✅ `d3b6511`, `b4a2a47` (lockout, per-IP auth rate limit) | Rate limits on booking, public search and one-time-code endpoints (§3.4 of 06) | P0–P1 |
 | M12 | Docker healthcheck always fails | ✅ `/health` | Split into `/health/live` and `/health/ready` | P0 |
 | M13 | Missing validators, inconsistent phone rules | ✅ `757cf7e` | One shared phone (E.164) and password rule set for every V2 validator | P0 (V2 per phase) |
 | M14 | Incomplete appointment state rules | ✅ `38d8a85`, `0bc5c78` (rules in the service) | Move the rules into the entity's state machine ([ADR 0004](adr/0004-appointment-state-machine.md)) | P0 |
@@ -113,7 +113,7 @@ From [REVIEW.md](../REVIEW.md). **Status 2026-10-22:** V1 was finished on 2026-1
 | NL9 | Three 400 shapes, empty error bodies | ✅ `757cf7e` | camelCase validation keys in `/api/v2` | — |
 | NL10 | Controller routes behaviour by first role claim | ⏸ Open | Permissions + one service method per action | P0 |
 | NL11 | Missing `date` returns `[]` | ✅ `757cf7e` | — | — |
-| NL12 | `EmailSettings` not validated | ✅ `e5cc0db`, `b4a2a47` | Validate SMS and Paymob settings the same way | P1, P3 |
+| NL12 | `EmailSettings` not validated | ✅ `e5cc0db`, `b4a2a47` | Validate WhatsApp, SMS and Paymob settings the same way (when the channel is enabled) | P1, P3 |
 | NL14 | No retry on transient SQL faults | ⏸ Open (medium fix risk) | `EnableRetryOnFailure` + execution strategy in `IUnitOfWork` | P0 |
 | NL17 | `Email!` / `Name!` uses | ✅ `d3b6511`, `e5cc0db`, `b4a2a47` | `ICurrentUser` | — |
 | NL18 | Legacy `JwtSecurityTokenHandler` | 🟡 `d3b6511` (`MimeMessage` disposed; handler kept) | Switch to `JsonWebTokenHandler` with V2 tokens, keeping claim names | P1 |
