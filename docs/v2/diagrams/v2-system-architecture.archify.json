@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "ClinicFlow V2 System Architecture",
+    "locale": "en",
+    "output": "docs/v2/diagrams/v2-system-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/S3d0o/ClinicFlow-Backend.git",
+      "revision": "800a5e67edaf7fe06f1e8209309bbf83b9fe0f86"
+    },
+    "views": [
+      { "id": "request-path", "label": "Request path", "focus": ["frontend", "pipeline", "controllers", "guard", "appointments", "persistence", "db"], "note": "A request is authenticated, authorized by permission, handled by a module service and saved through the UnitOfWork." },
+      { "id": "outbox", "label": "Outbox and side effects", "focus": ["domain", "interceptors", "db", "dispatcher", "handlers", "smtp", "jobs"], "note": "Events are stored with the change, then delivered about 2 s later with retries; email never goes out inline." },
+      { "id": "deployment", "label": "Deployment and database access", "focus": ["dbinit", "migrate", "db", "health", "frontend"], "note": "db-init creates the logins, migrate applies the EF bundle as the deploy login, the backend runs as a login without DDL." }
+    ]
+  },
+  "components": [
+    { "id": "frontend", "type": "external", "label": "Frontend SPA", "sublabel": "nginx · :3001", "pos": [40, 340], "size": [120, 64],
+      "sources": [
+        { "path": "docker-compose.yml", "line": 106, "end_line": 113, "label": "frontend service" },
+        { "path": "ClinicFlow/Program.cs", "line": 54, "end_line": 68, "label": "CORS policy" }
+      ] },
+    { "id": "pipeline", "type": "security", "label": "HTTP pipeline", "sublabel": "rate limit · JWT", "tag": "fallback: login", "pos": [270, 340], "size": [140, 64],
+      "sources": [
+        { "path": "ClinicFlow/Program.cs", "line": 99, "end_line": 129, "label": "middleware order" },
+        { "path": "ClinicFlow/Extensions/InfraStructureServiceExtensions.cs", "line": 72, "end_line": 104, "label": "JWT bearer + fallback policy" }
+      ] },
+    { "id": "controllers", "type": "backend", "label": "Controllers", "sublabel": "8 · Result to HTTP", "pos": [510, 200], "size": [130, 484],
+      "sources": [
+        { "path": "Presentation/Controllers/ApiController.cs", "line": 8, "end_line": 35, "label": "HandleResult" },
+        { "path": "Presentation/Controllers/AppointmentController.cs", "line": 9, "end_line": 33, "label": "api/appointments" },
+        { "path": "Presentation/Filters/ValidationFilter.cs", "line": 11, "end_line": 30, "label": "FluentValidation filter" }
+      ] },
+    { "id": "guard", "type": "security", "label": "Permissions", "sublabel": "matrix · AccessGuard", "pos": [510, 760], "size": [130, 64],
+      "sources": [
+        { "path": "Presentation/Authorization/HasPermissionAttribute.cs", "line": 5, "end_line": 12, "label": "[HasPermission]" },
+        { "path": "Services/Implementations/AccessGuard.cs", "line": 6, "end_line": 21, "label": "scope check per record" }
+      ] },
+    { "id": "auth", "type": "backend", "label": "Auth & profile", "sublabel": "Identity · refresh tokens", "pos": [720, 200], "size": [170, 64],
+      "sources": [
+        { "path": "Presentation/Controllers/AuthController.cs", "line": 10, "label": "api/auth" },
+        { "path": "Services/Implementations/AuthService.cs", "line": 157, "label": "LoginAsync" },
+        { "path": "Services/Implementations/TokenService.cs", "line": 45, "end_line": 96, "label": "refresh rotation" }
+      ] },
+    { "id": "appointments", "type": "backend", "label": "Appointments", "sublabel": "book · cancel · visit · reads", "pos": [720, 340], "size": [170, 64],
+      "sources": [
+        { "path": "Presentation/Controllers/AppointmentController.cs", "line": 10, "end_line": 14, "label": "command + query services" },
+        { "path": "Services/Implementations/AppointmentBookingService.cs", "line": 12, "end_line": 65, "label": "BookAppointmentAsync" },
+        { "path": "Persistance/Queries/AppointmentQueries.cs", "line": 13, "end_line": 45, "label": "AsNoTracking projections" }
+      ] },
+    { "id": "directory", "type": "backend", "label": "Doctors & patients", "sublabel": "specialties · slots · admin", "pos": [720, 480], "size": [170, 64],
+      "sources": [
+        { "path": "Presentation/Controllers/DoctorController.cs", "line": 9, "label": "api/doctors" },
+        { "path": "Services/Implementations/AdminService.cs", "line": 23, "label": "ApproveDoctorAsync" },
+        { "path": "Services/Implementations/DoctorService.cs", "line": 210, "label": "GenerateUpcomingSlotsAsync" }
+      ] },
+    { "id": "feedback", "type": "backend", "label": "Reviews & notifications", "sublabel": "api/reviews · api/notifications", "pos": [720, 620], "size": [170, 64],
+      "sources": [
+        { "path": "Presentation/Controllers/ReviewController.cs", "line": 8, "label": "api/reviews" },
+        { "path": "Presentation/Controllers/NotificationController.cs", "line": 9, "label": "api/notifications" },
+        { "path": "Services/Implementations/ReviewService.cs", "line": 54, "label": "TryAddAsync" }
+      ] },
+    { "id": "persistence", "type": "backend", "label": "Persistence", "sublabel": "UnitOfWork · repos · EF Core", "pos": [970, 200], "size": [150, 484],
+      "sources": [
+        { "path": "Persistance/UnitOfWork.cs", "line": 55, "end_line": 58, "label": "Outbox + retrying transaction" },
+        { "path": "ClinicFlow/Extensions/InfraStructureServiceExtensions.cs", "line": 41, "end_line": 44, "label": "DbContext with retry" },
+        { "path": "Persistance/Repositories/SlotRepo.cs", "line": 84, "end_line": 90, "label": "double-booking guard" }
+      ] },
+    { "id": "domain", "type": "backend", "label": "Domain model", "sublabel": "status rules · events", "pos": [1220, 200], "size": [150, 64],
+      "sources": [
+        { "path": "Domain/Entities/AppModule/Appointment.cs", "line": 56, "label": "Appointment.Book" },
+        { "path": "Domain/Entities/AppModule/Appointment.cs", "line": 127, "label": "Cancel raises an event" }
+      ] },
+    { "id": "interceptors", "type": "security", "label": "Save interceptors", "sublabel": "outbox · audit · tenant", "pos": [1220, 340], "size": [150, 64],
+      "sources": [
+        { "path": "Persistance/AppData/ClinicDbContext.cs", "line": 55, "end_line": 56, "label": "registration" },
+        { "path": "Persistance/Auditing/AuditSaveChangesInterceptor.cs", "line": 11, "end_line": 19, "label": "AuditEntry per change" },
+        { "path": "Persistance/Tenancy/TenantSaveChangesInterceptor.cs", "line": 5, "end_line": 36, "label": "stamps OrganizationId" }
+      ] },
+    { "id": "jobs", "type": "backend", "label": "Scheduled jobs", "sublabel": "reminders 1 h · slots 1 d", "pos": [1240, 620], "size": [130, 64],
+      "sources": [
+        { "path": "ClinicFlow/BackgroundJobs/AppointmentReminderJob.cs", "line": 36, "end_line": 58, "label": "queues reminders" },
+        { "path": "ClinicFlow/BackgroundJobs/SlotGenerationJob.cs", "line": 34, "end_line": 41, "label": "generates slots" },
+        { "path": "ClinicFlow/Program.cs", "line": 41, "end_line": 44, "label": "hosted services" }
+      ] },
+    { "id": "dispatcher", "type": "messagebus", "label": "Outbox dispatcher", "sublabel": "every 2 s · app lock", "pos": [1220, 760], "size": [150, 64],
+      "sources": [
+        { "path": "ClinicFlow/BackgroundJobs/OutboxDispatcher.cs", "line": 18, "end_line": 53, "label": "sp_getapplock + drain" },
+        { "path": "Persistance/Outbox/OutboxProcessor.cs", "line": 37, "end_line": 106, "label": "claim, retry, dead-letter" }
+      ] },
+    { "id": "handlers", "type": "backend", "label": "Event handlers", "sublabel": "once per channel", "pos": [970, 760], "size": [150, 64],
+      "sources": [
+        { "path": "Services/Extensions/CoreServiceExtensions.cs", "line": 14, "end_line": 17, "label": "registered by assembly scan" },
+        { "path": "Services/EventHandlers/AppointmentBookedHandler.cs", "line": 8, "end_line": 37, "label": "in-app + email" }
+      ] },
+    { "id": "smtp", "type": "external", "label": "SMTP server", "sublabel": "MailKit · StartTLS", "pos": [970, 920], "size": [150, 64],
+      "sources": [
+        { "path": "Infrastructure/Email/EmailService.cs", "line": 311, "end_line": 335, "label": "SendAsync" },
+        { "path": "Infrastructure/Extensions/ProviderServiceExtensions.cs", "line": 14, "end_line": 17, "label": "adapter registration" }
+      ] },
+    { "id": "db", "type": "database", "label": "SQL Server 2022", "sublabel": "ClinicFlowV2 · host :1434", "pos": [1480, 200], "size": [220, 484],
+      "sources": [
+        { "path": "docker-compose.yml", "line": 7, "end_line": 24, "label": "db service + volume" },
+        { "path": "ClinicFlow/Extensions/InfraStructureServiceExtensions.cs", "line": 24, "end_line": 34, "label": "refuses any DB but ClinicFlowV2" }
+      ] },
+    { "id": "dbinit", "type": "cloud", "label": "db-init", "sublabel": "one-shot · sa", "pos": [1480, 60], "size": [100, 64],
+      "sources": [
+        { "path": "docker-compose.yml", "line": 26, "end_line": 56, "label": "db-init service" },
+        { "path": "docker/db-init.sql", "line": 22, "end_line": 53, "label": "logins + clinicflow_app role" }
+      ] },
+    { "id": "migrate", "type": "cloud", "label": "migrate", "sublabel": "one-shot · deploy", "pos": [1600, 60], "size": [100, 64],
+      "sources": [
+        { "path": "docker-compose.yml", "line": 58, "end_line": 71, "label": "migrate service" },
+        { "path": "Dockerfile", "line": 38, "label": "efbundle build" }
+      ] },
+    { "id": "health", "type": "backend", "label": "Health probes", "sublabel": "live · ready", "pos": [1600, 760], "size": [100, 64],
+      "sources": [
+        { "path": "ClinicFlow/Extensions/HealthCheckExtensions.cs", "line": 15, "end_line": 33, "label": "/health/live, /health/ready" }
+      ] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "docker compose · clinicflow-v2", "wraps": ["frontend", "pipeline", "controllers", "guard", "auth", "appointments", "directory", "feedback", "persistence", "domain", "interceptors", "jobs", "dispatcher", "handlers", "db", "dbinit", "migrate", "health"] }
+  ],
+  "connections": [
+    { "id": "frontend-to-pipeline", "from": "frontend", "to": "pipeline", "label": "HTTPS + JWT", "variant": "emphasis" },
+    { "id": "pipeline-to-controllers", "from": "pipeline", "to": "controllers", "label": "authorized", "variant": "security" },
+    { "id": "controllers-to-guard", "from": "controllers", "to": "guard", "label": "[HasPermission]", "variant": "security" },
+    { "id": "controllers-to-auth", "from": "controllers", "to": "auth" },
+    { "id": "controllers-to-appointments", "from": "controllers", "to": "appointments", "variant": "emphasis" },
+    { "id": "controllers-to-directory", "from": "controllers", "to": "directory" },
+    { "id": "controllers-to-feedback", "from": "controllers", "to": "feedback" },
+    { "id": "auth-to-persistence", "from": "auth", "to": "persistence" },
+    { "id": "appointments-to-persistence", "from": "appointments", "to": "persistence", "variant": "emphasis" },
+    { "id": "directory-to-persistence", "from": "directory", "to": "persistence" },
+    { "id": "feedback-to-persistence", "from": "feedback", "to": "persistence" },
+    { "id": "persistence-to-domain", "from": "persistence", "to": "domain", "label": "entities" },
+    { "id": "domain-to-interceptors", "from": "domain", "to": "interceptors", "label": "raised events", "variant": "dashed" },
+    { "id": "persistence-to-interceptors", "from": "persistence", "to": "interceptors", "label": "SaveChanges" },
+    { "id": "interceptors-to-db", "from": "interceptors", "to": "db", "label": "rows + outbox", "variant": "emphasis" },
+    { "id": "jobs-to-persistence", "from": "jobs", "to": "persistence", "label": "reminders" },
+    { "id": "dispatcher-claims", "from": "dispatcher", "to": "db", "label": "claim batch", "variant": "dashed" },
+    { "id": "dispatcher-to-handlers", "from": "dispatcher", "to": "handlers", "label": "dispatch" },
+    { "id": "handlers-to-persistence", "from": "handlers", "to": "persistence", "label": "notifications" },
+    { "id": "handlers-to-smtp", "from": "handlers", "to": "smtp", "label": "send once" },
+    { "id": "health-to-db", "from": "health", "to": "db", "label": "probe" },
+    { "id": "dbinit-to-db", "from": "dbinit", "to": "db", "label": "logins" },
+    { "id": "migrate-to-db", "from": "migrate", "to": "db", "label": "migrations" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Layers", "items": ["Clean Architecture: Domain, Services, Persistence, Infrastructure, Presentation, host", "Layer rules are enforced by LayerDependencyTests"] },
+    { "dot": "violet", "title": "Outbox", "items": ["Events are stored in the same transaction as the change", "Retries with backoff, dead letter after 10 attempts"] },
+    { "dot": "rose", "title": "Data safety", "items": ["Every save writes audit entries and stamps the organization", "The app login has no DDL rights; migrations run as the deploy login"] },
+    { "dot": "slate", "title": "Observability", "items": ["Serilog to console, rolling files and optional Seq", "/health/ready reports DB down and outbox lag"] }
+  ]
+}

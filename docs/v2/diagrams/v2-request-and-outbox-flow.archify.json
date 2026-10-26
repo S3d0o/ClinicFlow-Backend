@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "ClinicFlow V2 Backend",
+    "locale": "en",
+    "output": "docs/v2/diagrams/v2-request-and-outbox-flow.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/S3d0o/ClinicFlow-Backend.git",
+      "revision": "800a5e67edaf7fe06f1e8209309bbf83b9fe0f86"
+    }
+  },
+  "components": [
+    { "id": "client", "type": "external", "label": "API client", "sublabel": "React SPA", "pos": [40, 40], "size": [130, 64],
+      "sources": [{ "path": "ClinicFlow/Program.cs", "line": 54, "end_line": 68, "label": "CORS policy for the frontend" }] },
+    { "id": "pipeline", "type": "security", "label": "ASP.NET pipeline", "sublabel": "rate limit · JWT · authz", "pos": [270, 40], "size": [150, 64],
+      "sources": [
+        { "path": "ClinicFlow/Program.cs", "line": 124, "end_line": 129, "label": "middleware order" },
+        { "path": "ClinicFlow/Extensions/InfraStructureServiceExtensions.cs", "line": 96, "end_line": 104, "label": "fallback policy + permissions" }
+      ] },
+    { "id": "controllers", "type": "backend", "label": "Controllers", "sublabel": "Presentation", "tag": "HandleResult", "pos": [520, 40], "size": [140, 64],
+      "sources": [
+        { "path": "Presentation/Controllers/AppointmentController.cs", "line": 9, "end_line": 33, "label": "POST /api/appointments" },
+        { "path": "Presentation/Filters/ValidationFilter.cs", "line": 11, "end_line": 30, "label": "FluentValidation filter" },
+        { "path": "Presentation/Controllers/ApiController.cs", "line": 8, "end_line": 35, "label": "Result to HTTP" }
+      ] },
+    { "id": "commands", "type": "backend", "label": "Command services", "sublabel": "Services · Result<T>", "pos": [750, 40], "size": [150, 64],
+      "sources": [{ "path": "Services/Implementations/AppointmentBookingService.cs", "line": 12, "end_line": 65, "label": "BookAppointmentAsync" }] },
+    { "id": "domain", "type": "backend", "label": "Domain entities", "sublabel": "status rules + events", "pos": [1020, 40], "size": [150, 64],
+      "sources": [
+        { "path": "Domain/Entities/AppModule/Appointment.cs", "line": 56, "label": "Appointment.Book" },
+        { "path": "Domain/Entities/AppModule/Appointment.cs", "line": 127, "label": "Cancel raises AppointmentCancelled" }
+      ] },
+    { "id": "queries", "type": "backend", "label": "Query classes", "sublabel": "AsNoTracking reads", "pos": [520, 200], "size": [140, 64],
+      "sources": [
+        { "path": "Persistance/Queries/AppointmentQueries.cs", "line": 13, "end_line": 45, "label": "projections to DTOs" },
+        { "path": "ClinicFlow/Extensions/InfraStructureServiceExtensions.cs", "line": 110, "end_line": 111 }
+      ] },
+    { "id": "uow", "type": "backend", "label": "UnitOfWork", "sublabel": "repos · retrying tx", "pos": [750, 200], "size": [150, 64],
+      "sources": [
+        { "path": "Persistance/UnitOfWork.cs", "line": 55, "end_line": 58, "label": "Outbox + ExecuteInTransactionAsync" },
+        { "path": "Persistance/Repositories/SlotRepo.cs", "line": 84, "end_line": 90, "label": "double-booking guard" }
+      ] },
+    { "id": "interceptors", "type": "security", "label": "Save interceptors", "sublabel": "outbox · audit · tenant", "pos": [1020, 200], "size": [150, 64],
+      "sources": [
+        { "path": "Persistance/AppData/ClinicDbContext.cs", "line": 55, "end_line": 56, "label": "interceptor registration" },
+        { "path": "Persistance/Outbox/OutboxSaveChangesInterceptor.cs", "line": 29, "end_line": 40, "label": "events to OutboxMessages" }
+      ] },
+    { "id": "jobs", "type": "backend", "label": "Scheduled jobs", "sublabel": "reminders 1 h · slots 1 d", "pos": [230, 360], "size": [150, 64],
+      "sources": [
+        { "path": "ClinicFlow/BackgroundJobs/AppointmentReminderJob.cs", "line": 36, "end_line": 58, "label": "queues reminder events" },
+        { "path": "ClinicFlow/BackgroundJobs/SlotGenerationJob.cs", "line": 34, "end_line": 41, "label": "generates upcoming slots" },
+        { "path": "ClinicFlow/Program.cs", "line": 41, "end_line": 44, "label": "hosted services" }
+      ] },
+    { "id": "db", "type": "database", "label": "SQL Server", "sublabel": "ClinicFlowV2 · EF Core with retry on failure", "pos": [520, 360], "size": [650, 64],
+      "sources": [{ "path": "ClinicFlow/Extensions/InfraStructureServiceExtensions.cs", "line": 24, "end_line": 44, "label": "expected DB + EnableRetryOnFailure" }] },
+    { "id": "dispatcher", "type": "messagebus", "label": "Outbox dispatcher", "sublabel": "every 2 s · app lock", "pos": [520, 520], "size": [150, 64],
+      "sources": [
+        { "path": "ClinicFlow/BackgroundJobs/OutboxDispatcher.cs", "line": 18, "end_line": 53, "label": "sp_getapplock + drain" },
+        { "path": "Persistance/Outbox/OutboxProcessor.cs", "line": 37, "end_line": 106, "label": "claim, retry, dead-letter" }
+      ] },
+    { "id": "handlers", "type": "backend", "label": "Event handlers", "sublabel": "once per channel", "pos": [800, 520], "size": [150, 64],
+      "sources": [{ "path": "Services/EventHandlers/AppointmentBookedHandler.cs", "line": 8, "end_line": 37, "label": "in-app + email via Delivery.OnceAsync" }] },
+    { "id": "email", "type": "external", "label": "SMTP server", "sublabel": "MailKit · StartTLS", "pos": [1050, 520], "size": [130, 64],
+      "sources": [{ "path": "Infrastructure/Email/EmailService.cs", "line": 311, "end_line": 335, "label": "SendAsync" }] }
+  ],
+  "connections": [
+    { "id": "client-to-pipeline", "from": "client", "to": "pipeline", "label": "HTTPS + JWT", "variant": "emphasis" },
+    { "id": "pipeline-to-controllers", "from": "pipeline", "to": "controllers", "label": "authorized", "variant": "security" },
+    { "id": "controllers-to-commands", "from": "controllers", "to": "commands", "label": "commands" },
+    { "id": "commands-to-domain", "from": "commands", "to": "domain", "label": "Book · Cancel" },
+    { "id": "controllers-to-queries", "from": "controllers", "to": "queries", "label": "reads" },
+    { "id": "commands-to-uow", "from": "commands", "to": "uow", "label": "save in tx" },
+    { "id": "domain-events", "from": "domain", "to": "interceptors", "label": "raised events", "variant": "dashed" },
+    { "id": "uow-to-interceptors", "from": "uow", "to": "interceptors", "label": "SaveChanges" },
+    { "id": "interceptors-to-db", "from": "interceptors", "to": "db", "label": "rows + outbox" },
+    { "id": "queries-to-db", "from": "queries", "to": "db", "label": "SELECT" },
+    { "id": "jobs-to-db", "from": "jobs", "to": "db", "label": "queue reminders" },
+    { "id": "dispatcher-claims", "from": "dispatcher", "to": "db", "label": "claim batch", "variant": "dashed" },
+    { "id": "dispatcher-to-handlers", "from": "dispatcher", "to": "handlers", "label": "dispatch" },
+    { "id": "handlers-to-db", "from": "handlers", "to": "db", "label": "notifications" },
+    { "id": "handlers-to-email", "from": "handlers", "to": "email", "label": "SMTP send" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Request path", "items": ["Controllers stay thin: services return Result, HandleResult maps it to HTTP", "Commands load tracked entities via IUnitOfWork; queries project with AsNoTracking"] },
+    { "dot": "violet", "title": "Outbox", "items": ["Events are saved as OutboxMessages in the same transaction as the change", "Dispatcher retries with backoff and dead-letters after 10 attempts"] },
+    { "dot": "rose", "title": "Guardrails", "items": ["Fallback policy requires login on every endpoint", "Startup refuses any database but ClinicFlowV2"] }
+  ]
+}
