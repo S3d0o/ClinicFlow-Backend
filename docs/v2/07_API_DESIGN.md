@@ -15,7 +15,7 @@ See [ADR 0005](adr/0005-api-v2-versioning.md) and [ADR 0007](adr/0007-v2-separat
 
 ```
 /api/v2
-├── auth/…                         register (phone), SMS codes, login by phone or email (+ MFA step),
+├── auth/…                         register (phone), one-time codes, login by phone or email (+ MFA step),
 │                                  refresh, logout, invitations/accept, password flows
 ├── me                             profile, roles[], branches[], permissions[], language, channels
 ├── doctor-applications            apply (multipart), my application, withdraw
@@ -65,7 +65,7 @@ See [ADR 0005](adr/0005-api-v2-versioning.md) and [ADR 0007](adr/0007-v2-separat
 | Actions | State changes are explicit sub-resources: `POST /appointments/{id}/check-in`, not `PATCH status` | Same style as V1 `cancel`/`complete` |
 | Enums | Strings (V1); new values are additive and listed in the changelog | — |
 | Partial updates | `PATCH` with only the sent fields; nullable value types fixed (V1 M15) | — |
-| Localisation | The API returns codes and stored texts; the client translates codes. Bilingual reference data is returned with both names (`nameAr`, `nameEn`). Emails and SMS use the recipient's stored `preferredLanguage`; `Accept-Language` only selects the language of PDFs generated for the caller | V1 sends English emails only |
+| Localisation | The API returns codes and stored texts; the client translates codes. Bilingual reference data is returned with both names (`nameAr`, `nameEn`). Emails and phone messages use the recipient's stored `preferredLanguage`; `Accept-Language` only selects the language of PDFs generated for the caller | V1 sends English emails only |
 | Phone numbers | Accepted as `01xxxxxxxxx` or `+201xxxxxxxxx`; always returned as E.164 (`+201…`) | V1 stores the number as typed |
 | Files | Uploads are `multipart/form-data`; downloads stream through an access-checked endpoint, never a public URL | — |
 
@@ -114,7 +114,7 @@ Each row is `METHOD path` → permission. "public" = anonymous.
 
 | Endpoint | Permission | Notes |
 |---|---|---|
-| `POST /api/v2/auth/register` | public; rate-limited | `{ firstName, lastName, phoneNumber, email?, password, preferredLanguage, ... }` → sends an SMS code; the account is usable after `/otp/verify` (FR-ACC-01) |
+| `POST /api/v2/auth/register` | public; rate-limited | `{ firstName, lastName, phoneNumber, email?, password, preferredLanguage, ... }` → sends a one-time code (WhatsApp, or SMS when on); the account is usable after `/otp/verify` (FR-ACC-01) |
 | `POST /api/v2/auth/otp/send` | public; `Otp` rate limit | `{ phoneNumber, purpose }` (`SignUp`, `ChangePhone`, `PasswordReset`); always 204, whether or not the number exists |
 | `POST /api/v2/auth/otp/verify` | public; `Otp` rate limit | `{ phoneNumber, purpose, code }` → for `SignUp`: marks the phone verified and returns tokens |
 | `POST /api/v2/auth/password/reset-by-otp` | public; `Otp` rate limit | `{ phoneNumber, code, newPassword }`; revokes all refresh tokens |
@@ -124,8 +124,8 @@ Each row is `METHOD path` → permission. "public" = anonymous.
 | `POST /api/v2/auth/invitations/accept` | public (invitation token) | Set password, activate staff |
 | `POST /api/v2/auth/refresh-token`, `/logout` | as V1 | Unchanged rules ([API_CONTRACT §2.3](../API_CONTRACT.md#23-refresh-rules-frontend-must-follow-these)) |
 | `GET /api/v2/me` | authenticated | `{ user, phoneVerified, emailConfirmed, preferredLanguage, notificationChannel, roles[], branches[], permissions[{ name, scope, branchIds[] }], isMedicalDirector, hasDoctorApplication }`; the frontend builds its menus from `permissions` |
-| `PATCH /api/v2/me` | authenticated | `preferredLanguage`, `notificationChannel` (`Sms`, `Email`, `Both`; `Email`/`Both` need a confirmed email) |
-| `POST /api/v2/me/phone`, `POST /api/v2/me/email` | authenticated | Change the phone (SMS code to the new number) or add an email (confirmation link) (FR-ACC-05) |
+| `PATCH /api/v2/me` | authenticated | `preferredLanguage`, `notificationChannel` (`Phone`, `Email`, `Both`; `Email`/`Both` need a confirmed email) |
+| `POST /api/v2/me/phone`, `POST /api/v2/me/email` | authenticated | Change the phone (a one-time code to the new number) or add an email (confirmation link) (FR-ACC-05) |
 
 ### Recruitment
 
@@ -137,7 +137,7 @@ Each row is `METHOD path` → permission. "public" = anonymous.
 | `GET /api/v2/recruitment/applications?status=&specialtyId=&branchId=&from=&to=` | `recruitment.view` | Paged, `X-Total-Count` |
 | `GET /api/v2/recruitment/applications/{id}` | `recruitment.view` | Detail and full history |
 | `GET /api/v2/recruitment/applications/{id}/files/{fileId}` | `recruitment.view` | Streams the CV or cover letter; audited |
-| `POST /api/v2/recruitment/applications/{id}/preview-message` | `recruitment.manage` | `{ toStatus, variables }` → the rendered email and SMS in the applicant's language, nothing saved |
+| `POST /api/v2/recruitment/applications/{id}/preview-message` | `recruitment.manage` | `{ toStatus, variables }` → the rendered email and phone message in the applicant's language, nothing saved |
 | `POST /api/v2/recruitment/applications/{id}/interview` | `recruitment.manage` | `{ interviewAt, branchId?, location?, interviewerName, notes?, rowVersion }` |
 | `POST /api/v2/recruitment/applications/{id}/accept` | `recruitment.manage` | `{ startDate, branchId, notes?, rowVersion }`; creates the staff member |
 | `POST /api/v2/recruitment/applications/{id}/reject` | `recruitment.manage` | `{ message?, rowVersion }` |
@@ -239,7 +239,7 @@ V1 clients keep using the V1 deployment, so these aren't breaking changes for th
 | V1 | V2 | Frontend impact |
 |---|---|---|
 | PascalCase validation keys | camelCase keys | Field mapping changes |
-| `POST /api/auth/register` with a required email | `POST /api/v2/auth/register` with a required phone and SMS code; email optional | New sign-up screen with a code step |
+| `POST /api/auth/register` with a required email | `POST /api/v2/auth/register` with a required phone and a one-time code; email optional | New sign-up screen with a code step |
 | Login by email | Login by phone or email (`identifier`) | Login form accepts either |
 | `POST /api/auth/register/doctor`, `/api/admin/doctors/{id}/approve` | Doctor applications (`/api/v2/doctor-applications`, `/api/v2/recruitment/...`) | Doctor sign-up becomes an application form; approval becomes the recruitment screens |
 | `UserProfileResponse.role` (single) | `GET /api/v2/me` with `roles[]` and `permissions[]` | Menus driven by permissions |
@@ -257,4 +257,4 @@ V1 clients keep using the V1 deployment, so these aren't breaking changes for th
 | SignalR `/hubs/queue` | Queue board updates per branch | Access token (`queue.view`) or display device token |
 | SignalR `/hubs/notifications` | Live in-app notifications (replaces polling) | Access token |
 | `POST /api/v2/payments/webhooks/paymob` | Paymob payment confirmations and refunds | Paymob HMAC |
-| `POST /api/v2/messaging/webhooks/{provider}` | SMS/WhatsApp delivery receipts and replies (confirm/cancel links) | Provider signature |
+| `POST /api/v2/messaging/webhooks/{provider}` | WhatsApp/SMS delivery receipts and replies (confirm/cancel links) | Provider signature |

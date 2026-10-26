@@ -6,7 +6,7 @@
 |---|---|---|---|
 | P0 Foundation | Fix what V2 builds on; cross-cutting pieces | M | — |
 | P1 Organization, staff, catalog, recruitment, sign-up | The clinic, its people and prices exist; doctors apply; patients sign up by mobile | L | P0 |
-| P2 Scheduling 2.0 and front desk | One calendar and a live waiting room; SMS/email reminders; the admin dashboard | L | P1 |
+| P2 Scheduling 2.0 and front desk | One calendar and a live waiting room; WhatsApp/email reminders; the admin dashboard | L | P1 |
 | P3 Billing and payments | The receptionist takes the money; optional Paymob deposits | L | P2 |
 | P4 Clinical records (EMR) | Every visit has a structured, signed record | L | P2 |
 | P5 Insurance | Insurance visits are split and claims get paid | M | P3, P4 |
@@ -63,10 +63,10 @@ Each phase ends with a **phase review**: exit criteria met, docs updated (`API_C
 
 **Goal:** the clinic exists in the system with its branches, people and price list; doctors join by application; patients sign up with a mobile number.
 
-**FRs:** FR-ORG-01…05, FR-STF-01…09, FR-SVC-01…03, FR-REC-01…08, FR-ACC-01…06, FR-NTF-01 (SMS), FR-NTF-02, FR-AUD-03.
+**FRs:** FR-ORG-01…05, FR-STF-01…09, FR-SVC-01…03, FR-REC-01…08, FR-ACC-01…06, FR-NTF-01 (phone channels), FR-NTF-02, FR-AUD-03.
 **Deliverables:**
 - branches, rooms, working hours, holidays; staff invitations, roles, scopes, MFA, deactivation; doctor profiles; service catalog and price list; audit viewer
-- **SMS provider** behind `ISmsSender`; **sign-up by mobile number** with SMS codes; login by phone or email; password reset by SMS; preferred language; AR/EN message templates (V1's emails rewritten)
+- **phone channels** behind `IMessageChannel` ([06 §9.2](06_TECHNICAL_DESIGN.md#92-whatsapp-and-sms-phone-channels)): the WhatsApp and SMS adapters, both switched off until their providers are ready, and a log channel for Development and tests; **sign-up by mobile number** with one-time codes (WhatsApp first, SMS when on); login by phone or email; password reset by code; preferred language; AR/EN message templates (V1's emails rewritten)
 - **file storage** with virus scanning (moved here from the EMR phase)
 - **doctor recruitment**: applications with CV and cover letter, the Applied → Interview → Accepted pipeline, stage emails with the reviewer's variables and a preview, staff activation on the start date
 - import-tool steps 3–5 and 4a ([09 §2](09_MIGRATION_FROM_V1.md#2-importing-v1-data)); the inherited doctor registration and approval routes deleted from `v2`
@@ -78,7 +78,7 @@ Each phase ends with a **phase review**: exit criteria met, docs updated (`API_C
 **Goal:** one calendar for every booking, a live waiting room, and the first dashboard.
 
 **FRs:** FR-SCH-01…10, FR-APT-02…07, FR-APT-09, FR-APT-10, FR-FD-01…06, FR-FD-08, FR-NTF-03…06, FR-SVC-04, FR-RPT-01 (operational part), FR-RPT-04, FR-RPT-11 (charts 1, 2, 4), FR-PAT-01, FR-PAT-02, FR-PAT-08, FR-PAT-09.
-**Deliverables:** schedules per branch with shifts, rooms, exceptions, leave and the reschedule worklist; rolling slot generation per branch; booking on behalf, walk-ins, check-in, queue board with SignalR, waiting-room display; reschedule and no-show; **booking confirmations and reminders by SMS, email or both, as the patient chooses**; patient registration with duplicate detection; portal booking by branch and service with prices; consent capture; **admin dashboard** with KPI tiles and three of the four charts; import-tool steps 6–9.
+**Deliverables:** schedules per branch with shifts, rooms, exceptions, leave and the reschedule worklist; rolling slot generation per branch; booking on behalf, walk-ins, check-in, queue board with SignalR, waiting-room display; reschedule and no-show; **booking confirmations and reminders by phone (WhatsApp, or SMS when on), email or both, as the patient chooses**; patient registration with duplicate detection; portal booking by branch and service with prices; consent capture; **admin dashboard** with KPI tiles and three of the four charts; import-tool steps 6–9.
 **Exit criteria:** the pilot branch runs all bookings (online, phone, walk-in) in ClinicFlow for two weeks; zero double bookings; the queue board is used by desk, nurses and doctors; no-show rate measured and shown on the dashboard.
 
 ### P3: Billing and payments
@@ -123,7 +123,7 @@ Each phase ends with a **phase review**: exit criteria met, docs updated (`API_C
 
 ### Not in V2
 
-FR-BIL-16 (e-receipt integration) and FR-INS-13 (electronic payer integration) are *Won't* for V2 and revisited after GA, depending on the open questions below. WhatsApp (part of FR-NTF-01) is *Could* and comes after SMS works.
+FR-BIL-16 (e-receipt integration) and FR-INS-13 (electronic payer integration) are *Won't* for V2 and revisited after GA, depending on the open questions below. WhatsApp is no longer deferred: since 2026-10-26 it is the intended primary phone channel (FR-NTF-01).
 
 ## 3. Dependencies
 
@@ -142,7 +142,7 @@ flowchart LR
 
 External dependencies:
 - **P0:** hosting and storage decisions.
-- **P1:** an SMS provider and Arabic/English sender-name approval.
+- **Before launch** (not blocking P1, which builds against the log channel): Meta business verification and approved WhatsApp templates (AR/EN), and an SMS provider with sender-name approval if SMS is switched on.
 - **P3:** a Paymob merchant account (contract, sandbox, then live keys); start onboarding during P2.
 - **P4:** legal sign-off on the privacy checklist before go-live.
 - **P5:** payer claim formats.
@@ -163,7 +163,7 @@ External dependencies:
 | R9 | A security incident exposes medical data | Low | Very high | [08](08_SECURITY_PRIVACY_COMPLIANCE.md) controls, pen tests before P3/P4, audit and alerts, incident runbook | IT + DPO |
 | R10 | Real-time queue doesn't scale with more instances | Low | Medium | Single instance at first; SignalR backplane when scaling | Developer |
 | R11 | Doctors find structured notes slower than free text | Medium | Medium | Specialty templates, free-text sections allowed, measure documentation time in the pilot | Medical director |
-| R12 | SMS cost or abuse (code pumping) grows; SMS delivery in Egypt is unreliable | Medium | Medium | Caps, cooldowns and a spend alert ([08 §2](08_SECURITY_PRIVACY_COMPLIANCE.md#2-threats-and-controls)); delivery receipts; email as a fallback channel when the patient has one; a second provider behind `ISmsSender` if needed | Developer |
+| R12 | Phone-message cost or abuse (code pumping) grows; Meta's verification or template approval delays WhatsApp; some patients have no WhatsApp | Medium | Medium | Caps, cooldowns and a spend alert ([08 §2](08_SECURITY_PRIVACY_COMPLIANCE.md#2-threats-and-controls)); the WhatsApp Business account registered in Egypt (the international authentication rate is about 18× higher); Meta verification started at P1's kickoff; SMS kept built and switched on as the fallback if needed; email as a fallback channel when the patient has one; delivery receipts | Developer |
 | R13 | The chatbot gives wrong or unsafe answers | Medium | Medium | Built last; grounded in clinic data only; no medical advice; red-team test before launch | Developer + medical director |
 | R14 | V1 and V2 drift apart; a V1 fix is forgotten in V2, or the import tool falls behind V2's schema | Medium | Medium | Every V1 fix on `master` is checked for `v2` and cherry-picked the same day; the import tool has a test per step run in CI against a V1 sample database, so a V2 schema change that breaks it fails the build | Developer |
 
@@ -174,7 +174,7 @@ Each needs an owner and a decision date at the phase where it's needed.
 | # | Question | Needed by | Options / notes |
 |---|---|---|---|
 | Q1 | ~~Which payment gateway?~~ | — | **Decided 2026-10-22: Paymob** (hosted checkout, cards and wallets) |
-| Q2 | Which SMS provider (and later WhatsApp)? | **P1** (sign-up codes) | A local Egyptian SMS aggregator vs an international one (Twilio, Vonage): compare price per Arabic segment, delivery rates on Egyptian networks, sender-name registration time |
+| Q2 | Which **WhatsApp** provider, and which SMS provider for when SMS is switched on? | **Before launch** (P1 is built against the log channel, so it doesn't block P1) | **WhatsApp** (decided 2026-10-26 as the intended primary): Meta's Cloud API directly, or a business solution provider (BSP) for its support and dashboard at a mark-up; register under the Egyptian business. **SMS** (built, switched off): a local Egyptian aggregator vs an international one (Twilio, Vonage); compare price per Arabic segment, delivery on Egyptian networks and sender-name registration time |
 | Q3 | Where is the system hosted, and may data leave Egypt? | P0 | Depends on the legal answer (08 P6); affects storage and provider choices |
 | Q4 | Is the clinic in scope of the Egyptian Tax Authority e-receipt / e-invoice system? | P3 | If yes, FR-BIL-16 becomes *Must* and P3 grows |
 | Q5 | Which insurers / TPAs does the clinic work with, and what are their claim formats and deadlines? | P5 | Collect sample files from the clinic |
@@ -225,3 +225,4 @@ Each needs an owner and a decision date at the phase where it's needed.
 | 2026-10-24 | **Audit by interceptor, opted into per type** (P0 PR 10): an `AuditEntry` per create, update and delete, written by a save interceptor in the change's transaction. A type opts in from its EF configuration, and each property is recorded, redacted (clinical values become "changed") or ignored. Inserts with database-generated keys are audited by a second save, so they must run in a transaction; entries are append-only in code, and in the database from PR 11 | [06 §5.1](06_TECHNICAL_DESIGN.md#51-audit-trail), [plans/P0.md](plans/P0.md) |
 | 2026-10-24 | **Migrations as a deploy step; least-privilege app login; split probes** (P0 PR 11): an EF migration bundle in the image, run by a one-shot `migrate` service as a deploy login; startup migrates only in Development and otherwise refuses pending migrations. The app's rights are a database role created by a migration (read/write, no DDL, no `UPDATE`/`DELETE` on audit entries), so they exist wherever the schema does. `/health/live` restarts, `/health/ready` routes (the outbox lag only degrades) | [06 §14](06_TECHNICAL_DESIGN.md#14-operations), [plans/P0.md](plans/P0.md) |
 | 2026-10-24 | **P0 done**, tagged `v2.0.0-p0`; contract 4.0.0-p0. P1 is next | [plans/P0.md](plans/P0.md) |
+| 2026-10-26 | **WhatsApp is the intended primary phone channel; SMS stays built but switched off.** Every channel is a setting, both phone channels are off until their provider is ready, a log channel stands in for them in Development and tests, and Production refuses to start without a live phone channel. Codes and patient messages go by WhatsApp first, by SMS when WhatsApp can't reach the number and SMS is on. The patient's channel preference becomes `Phone`, `Email` or `Both`. WhatsApp isn't free (Meta charges per template message, about $0.0036 in Egypt), but it reaches patients where they are | [06 §9.2](06_TECHNICAL_DESIGN.md#92-whatsapp-and-sms-phone-channels), FR-NTF-01, FR-ACC-02 |

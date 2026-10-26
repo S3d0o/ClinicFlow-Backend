@@ -18,10 +18,10 @@
 | R4 | Every list endpoint is paged: the body is a JSON array and the total count is in the `X-Total-Count` header, as in V1 ([07 §3](07_API_DESIGN.md#3-conventions)) |
 | R5 | Every error returns ProblemDetails with a stable error code ([07 §3](07_API_DESIGN.md#3-conventions)) |
 | R6 | Every change to a clinical, financial or access-control record writes an audit entry (FR-AUD-01) |
-| R7 | Side effects (notifications, emails, SMS) are published as events after the commit and never fail the main operation ([06 §5](06_TECHNICAL_DESIGN.md#5-domain-events-and-the-outbox)) |
+| R7 | Side effects (notifications, emails, WhatsApp and SMS messages) are published as events after the commit and never fail the main operation ([06 §5](06_TECHNICAL_DESIGN.md#5-domain-events-and-the-outbox)) |
 | R8 | Money is `decimal(18,2)` EGP; no floating point; rounding is half-away-from-zero at line level |
 | R9 | Texts entered by staff are stored as-is (Arabic or English); the API returns codes, and the frontend translates. Reference data shown to patients has both names: `NameAr` and `NameEn` on specialties, services, branches and rooms; a doctor's bio may be written in either or both |
-| R10 | Every email and SMS is rendered by the backend in the recipient's preferred language (FR-ACC-06), from AR/EN templates (FR-NTF-02) |
+| R10 | Every email and phone message (WhatsApp or SMS) is rendered by the backend in the recipient's preferred language (FR-ACC-06), from AR/EN templates (FR-NTF-02) |
 
 ## 3. Module index
 
@@ -111,7 +111,7 @@ Section numbers below follow the order the modules were added, not the phase ord
 | FR-APT-06 | Cancel with a reason code and free text; by patient (window rule), doctor, desk, manager | M | P2 | Slot returns to `Available` if in the future; deposit refund or retention follows the deposit policy |
 | FR-APT-07 | No-show: the desk marks it after the grace period; end-of-day list of unresolved past appointments | M | P2 | No automatic status change; no-show fee applied per policy (FR-BIL-13) |
 | FR-APT-08 | **Optional deposit** through Paymob: when booking online, or later from the appointment, the patient **may** prepay a deposit (amount per service, a setting). It is never required | S | P3 | The booking stays `Confirmed` whether or not a deposit is paid (no hold time, no expiry); a paid deposit is shown to the desk and deducted at checkout (FR-BIL-14); on cancellation it is refunded or kept per the deposit policy (FR-APT-06) |
-| FR-APT-09 | Booking confirmation and reminders at configurable offsets (default 24 h and 2 h) by the patient's chosen channel: SMS, email or both (FR-NTF-04) | M | P2 | Each reminder sent once per channel (idempotent); failures retried; uses branch time; text in the patient's language |
+| FR-APT-09 | Booking confirmation and reminders at configurable offsets (default 24 h and 2 h) by the patient's chosen channel: phone (WhatsApp or SMS), email or both (FR-NTF-04) | M | P2 | Each reminder sent once per channel (idempotent); failures retried; uses branch time; text in the patient's language |
 | FR-APT-10 | Confirmation request: the patient confirms or cancels from the reminder link | C | P2 | Confirmed state shown to the desk; cancellation follows FR-APT-06 |
 | FR-APT-11 | Follow-up booking from the doctor's recommendation | S | P4 | Desk sees "follow-up due" with the suggested date; slots around it are offered |
 | FR-APT-12 | Waitlist: a patient asks to be told when an earlier slot opens | C | P6 | When a slot is freed, waitlisted patients are notified in order |
@@ -192,10 +192,10 @@ Section numbers below follow the order the modules were added, not the phase ord
 
 | Id | Requirement | Pri | Phase | Acceptance criteria |
 |---|---|---|---|---|
-| FR-NTF-01 | Channels: in-app (V1), email (V1), SMS. WhatsApp is **C**, added after SMS works | M | P1 (SMS for sign-up), P2 | Providers behind one interface per channel; channel per message type configurable |
+| FR-NTF-01 | Channels: in-app (V1), email (V1), and two **phone channels**: **WhatsApp** (the intended primary) and **SMS** (built, switched off). Each channel can be switched on or off without a release ([06 §9.2](06_TECHNICAL_DESIGN.md#92-whatsapp-and-sms-phone-channels)) | M | P1 (codes for sign-up), P2 | Providers behind one interface per channel; a setting per channel, both phone channels off by default; in Development and tests a log channel stands in for them and can never be enabled in Production; Production refuses to start without a live phone channel; phone messages go by WhatsApp first and by SMS when WhatsApp can't reach the number and SMS is on; channel per message type configurable |
 | FR-NTF-02 | Templates per event and channel, in Arabic and English, with placeholders | M | P1 | Edited with `notifications.templates`; preview before saving; the recipient's language picks the template (R10) |
 | FR-NTF-03 | Events: booking confirmed, reminder, rescheduled, cancelled, no-show, deposit received, invoice issued, payment received, prescription ready, staff invitation, doctor application stage changed (FR-REC-04), phone verification code (FR-ACC-02) | M | P1–P2 | Delivered from the outbox ([06 §5](06_TECHNICAL_DESIGN.md#5-domain-events-and-the-outbox)); verification codes are sent directly, not queued, because they expire in minutes |
-| FR-NTF-04 | Patient preferences: the channel for booking confirmations and reminders, **SMS, email or both**; language; opt-out of marketing (no marketing in V2, but the flag exists) | M | P2 | Default: both when the email is verified, SMS otherwise; email can't be chosen without a verified email; transactional messages respect the choice |
+| FR-NTF-04 | Patient preferences: the channel for booking confirmations and reminders, **phone, email or both** (phone = WhatsApp, or SMS as FR-NTF-01 decides); language; opt-out of marketing (no marketing in V2, but the flag exists) | M | P2 | Default: both when the email is verified, phone otherwise; email can't be chosen without a verified email; transactional messages respect the choice |
 | FR-NTF-05 | Delivery log with status per message | S | P2 | Visible to Admin; failed messages retried with backoff |
 | FR-NTF-06 | Staff notifications: approvals pending, leave approved, unsigned encounters | S | P2 | In-app |
 
@@ -247,7 +247,7 @@ Doctors join the clinic by applying. This replaces V1's self-registration and ad
 | FR-REC-01 | A doctor applies: creates an account with **phone and email both verified** (FR-ACC-02), then submits specialty, license number, years of experience, preferred branch, a **CV (required)** and a **cover letter (optional**, a file or text) | M | P1 | CV: PDF or DOCX, ≤ 5 MB, virus-scanned before a reviewer can open it ([06 §8](06_TECHNICAL_DESIGN.md#8-files-and-documents)); one open application per user; status starts at `Applied` |
 | FR-REC-02 | Application stages: `Applied` → `Interview` → `Accepted`; `Rejected` from `Applied` or `Interview`; `Withdrawn` by the applicant before acceptance | M | P1 | Any other move returns `DoctorApplication.InvalidStatusTransition` (409); only `recruitment.manage` moves an application, except withdraw |
 | FR-REC-03 | Each stage change carries **stage variables** that the reviewer fills in: **Interview**: date and time, branch or address, interviewer name, notes for the applicant; **Accepted**: **start date**, branch, notes; **Rejected**: an optional message | M | P1 | Validated per stage (interview date in the future; start date today or later; branch active); stored with the stage change in the application history |
-| FR-REC-04 | An **automatic email at every stage** (`Applied` acknowledgement, `Interview` invitation, `Accepted` with the start date, `Rejected`), plus an SMS when the applicant chose it | M | P1 | AR/EN templates per stage with placeholders, e.g. `{{ApplicantName}}`, `{{InterviewDateTime}}`, `{{InterviewLocation}}`, `{{InterviewerName}}`, `{{StartDate}}`, `{{Branch}}`, `{{Notes}}`, filled from FR-REC-03; the reviewer sees the rendered message before confirming; sent through the outbox, so a failed send never undoes the stage change; the delivery shows in the history |
+| FR-REC-04 | An **automatic email at every stage** (`Applied` acknowledgement, `Interview` invitation, `Accepted` with the start date, `Rejected`), plus a phone message (WhatsApp or SMS) when the applicant chose it | M | P1 | AR/EN templates per stage with placeholders, e.g. `{{ApplicantName}}`, `{{InterviewDateTime}}`, `{{InterviewLocation}}`, `{{InterviewerName}}`, `{{StartDate}}`, `{{Branch}}`, `{{Notes}}`, filled from FR-REC-03; the reviewer sees the rendered message before confirming; sent through the outbox, so a failed send never undoes the stage change; the delivery shows in the history |
 | FR-REC-05 | Accepting creates the staff member: role `Doctor` at the chosen branch, a doctor profile from the application, status `Inactive` until the start date, then activated by a daily job | M | P1 | The profile stays hidden (`IsPublic = false`) until a Manager publishes it; no slots exist until a schedule is created; the applicant's account is reused, not duplicated |
 | FR-REC-06 | Applicants see their own application: current stage, history, interview details, start date; they can withdraw | M | P1 | Own application only; a withdrawn or rejected applicant can apply again after a cool-down (setting, default 90 days) |
 | FR-REC-07 | Reviewers get an application list (filter by status, specialty, branch, date; paged), the detail with access-checked CV and cover-letter download, and the full history | M | P1 | `recruitment.view` in the application's preferred branch, or organization scope; every download writes an audit entry |
@@ -260,11 +260,11 @@ Most patients identify by mobile number, and many have no email. Security contro
 | Id | Requirement | Pri | Phase | Acceptance criteria |
 |---|---|---|---|---|
 | FR-ACC-01 | Patient sign-up with an **Egyptian mobile number** and a password; **email optional** | M | P1 | Number validated as an Egyptian mobile (`01[0125]` + 8 digits, or `+20…`) and stored as E.164; unique among accounts; the password policy is V1's |
-| FR-ACC-02 | **SMS one-time code** verifies the phone at sign-up and whenever it changes | M | P1 | 6 digits; valid 5 minutes; at most 5 attempts per code; resend after 60 s; daily caps per number and per IP; codes stored hashed; booking and applying require a verified phone; the account is usable only after verification |
+| FR-ACC-02 | A **one-time code by WhatsApp** (SMS when WhatsApp can't reach the number and SMS is on, FR-NTF-01) verifies the phone at sign-up and whenever it changes | M | P1 | The code is valid whichever channel delivered it; 6 digits; valid 5 minutes; at most 5 attempts per code; resend after 60 s; daily caps per number and per IP; codes stored hashed; booking and applying require a verified phone; the account is usable only after verification |
 | FR-ACC-03 | Log in with phone **or** email, plus the password | M | P1 | One `identifier` field; errors never reveal whether an account exists; lockout as V1 |
-| FR-ACC-04 | Reset the password by SMS code or by email link | M | P1 | Same code rules as FR-ACC-02; a reset revokes all refresh tokens (V1 behaviour) |
+| FR-ACC-04 | Reset the password by a one-time code (WhatsApp or SMS, as FR-ACC-02) or by email link | M | P1 | Same code rules as FR-ACC-02; a reset revokes all refresh tokens (V1 behaviour) |
 | FR-ACC-05 | Change the phone or add an email later | M | P1 | A new phone needs a code before it replaces the old one; a new email gets a confirmation link (V1 flow) and can be used for login and notifications only once confirmed |
-| FR-ACC-06 | Each user has a **preferred language**, `ar` (default) or `en` | M | P1 | Set at sign-up from the UI language, changeable in the profile; drives every email and SMS (R10) |
+| FR-ACC-06 | Each user has a **preferred language**, `ar` (default) or `en` | M | P1 | Set at sign-up from the UI language, changeable in the profile; drives every email and phone message (R10) |
 
 ### 4.16 Chatbot (BOT)
 
@@ -284,7 +284,7 @@ Built last. The scope is confirmed at the P7 kickoff (open question Q16 in [10 �
 | NFR-04 | Backup and restore | Full daily, log every 15 min; RPO ≤ 15 min, RTO ≤ 4 h; restore tested quarterly |
 | NFR-05 | Security | OWASP ASVS level 2 for the API; MFA for staff; TLS 1.2+ everywhere ([08](08_SECURITY_PRIVACY_COMPLIANCE.md)) |
 | NFR-06 | Privacy | Compliance checklist in [08 §5](08_SECURITY_PRIVACY_COMPLIANCE.md#5-privacy-and-consent) signed off before go-live |
-| NFR-07 | Localisation | Arabic (RTL, default) and English UI; codes not texts from the API; dates in branch-local time; every email and SMS in the recipient's preferred language (V1's English-only email templates are rewritten as AR/EN templates); bilingual reference data (R9) |
+| NFR-07 | Localisation | Arabic (RTL, default) and English UI; codes not texts from the API; dates in branch-local time; every email and phone message in the recipient's preferred language (V1's English-only email templates are rewritten as AR/EN templates); bilingual reference data (R9) |
 | NFR-08 | Accessibility | WCAG 2.1 AA for the patient portal |
 | NFR-09 | Observability | Structured logs (Serilog, as V1), health endpoint, metrics for queue length, outbox lag, job failures |
 | NFR-10 | Data retention | Clinical and financial records kept per the policy in [08 §6](08_SECURITY_PRIVACY_COMPLIANCE.md#6-retention-and-deletion) |

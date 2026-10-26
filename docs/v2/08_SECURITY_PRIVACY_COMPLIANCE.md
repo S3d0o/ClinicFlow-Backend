@@ -11,7 +11,7 @@ V2 stores **medical records and payment information**. A breach or misuse harms 
 | **C1 Clinical (sensitive)** | Encounter notes, diagnoses, prescriptions, vitals, attachments, allergies, conditions | Clinical permissions only; read logging; encrypted columns for free-text notes; never in logs, analytics or notifications |
 | **C2 Personal (identifying)** | Name, phone, national ID, date of birth, address, insurance member number, card images, doctor applicants' CVs and cover letters | Need-to-know by role; masked in logs; exports and CV downloads audited |
 | **C3 Financial** | Invoices, payments, refunds, claims, cash sessions | Financial permissions; immutable after issue/close; audited |
-| **C4 Secrets** | Password hashes, MFA secrets, refresh tokens, SMS verification codes, provider API keys (SMS, Paymob API key and HMAC secret), JWT signing key | Never logged or returned; stored hashed or in a secret store |
+| **C4 Secrets** | Password hashes, MFA secrets, refresh tokens, phone verification codes, provider API keys (WhatsApp, SMS, Paymob API key and HMAC secret), JWT signing key | Never logged or returned; stored hashed or in a secret store |
 | **C5 Operational** | Schedules, slots, services, prices, branch data | Normal access control |
 
 Card numbers are **never** received or stored (hosted payment page; [06 §9.1](06_TECHNICAL_DESIGN.md#91-payments)).
@@ -24,8 +24,8 @@ Card numbers are **never** received or stored (hosted payment page; [06 §9.1](0
 | IDOR via sequential ids (V1 C4) | Every service checks scope through `IAccessGuard`; integration matrix tests per endpoint |
 | Account takeover of staff | MFA (TOTP) required; lockout (V1); session revocation on deactivation; password policy aligned across registration and reset (M13) |
 | Endpoint accidentally public (V1 C1) | Fallback authorization policy and the explicit-attribute test, **already in V1**; V2 adds an allowlist of the anonymous endpoints that the test compares against |
-| SMS code brute force | 6-digit codes, 5 attempts per code, 5-minute expiry, codes stored hashed and compared in constant time, `Otp` rate limit per IP |
-| SMS pumping / cost abuse (bots requesting codes to premium numbers) | Egyptian mobile numbers only; 60 s resend cooldown; daily caps per number and per IP; a daily SMS spend alert; CAPTCHA on sign-up if abuse appears |
+| Verification code brute force | 6-digit codes, 5 attempts per code, 5-minute expiry, codes stored hashed and compared in constant time, `Otp` rate limit per IP |
+| Message pumping / cost abuse (bots requesting codes to premium numbers; WhatsApp templates and SMS both cost money) | Egyptian mobile numbers only; 60 s resend cooldown; daily caps per number and per IP; a daily spend alert on phone messages; CAPTCHA on sign-up if abuse appears |
 | Account enumeration through sign-up, login or codes | Uniform responses: "if the number is valid, a code was sent"; one generic login error (V1 behaviour) |
 | Applicant files (CV) used to attack reviewers | Type and size checks, virus scan before any reviewer can open the file, served as `attachment`; downloads audited |
 | Insider fraud (refunds, discounts, voids) | Four-eyes approvals; requester ≠ approver; immutable cash sessions; daily close report; audit |
@@ -39,7 +39,7 @@ Card numbers are **never** received or stored (hosted payment page; [06 §9.1](0
 
 ## 3. Data protection
 
-- **In transit:** TLS 1.2+ for all traffic, including the database connection (`Encrypt=True`, a valid certificate in production; no `TrustServerCertificate=True` outside Development) and SMTP/SMS providers.
+- **In transit:** TLS 1.2+ for all traffic, including the database connection (`Encrypt=True`, a valid certificate in production; no `TrustServerCertificate=True` outside Development) and SMTP, WhatsApp and SMS providers.
 - **At rest:**
   - SQL Server Transparent Data Encryption (TDE) for the whole database (or the managed equivalent).
   - Column-level encryption (ASP.NET Data Protection with a key in a secret store, or SQL Always Encrypted) for C1 free text: encounter notes, addenda, prescription instructions. Searchable fields (diagnosis codes) stay unencrypted.
@@ -67,9 +67,9 @@ Egypt's **Personal Data Protection Law No. 151 of 2020** treats health data as *
 | P3 | A **data protection officer** **(confirm)** | Named in organization settings; receives breach alerts and access-review digests | Clinic |
 | P4 | Data subject rights: access, correction, objection, deletion where allowed | Patient portal shows the data held; correction requests go to the desk; export of a patient's data as PDF/JSON by `patients.edit` + audit | Product |
 | P5 | **Breach notification** to the Centre within the legal deadline (72 hours in the law's text) and to affected people **(confirm)** | Incident runbook; audit and access logs to scope a breach; contact list of affected patients | Clinic + IT |
-| P6 | **Cross-border transfer** restrictions **(confirm)** | Hosting region is a go-live decision: in Egypt, or abroad only if permitted. Providers (SMS, email, storage) reviewed for data location | Clinic + IT |
+| P6 | **Cross-border transfer** restrictions **(confirm)** | Hosting region is a go-live decision: in Egypt, or abroad only if permitted. Providers (WhatsApp, SMS, email, storage) reviewed for data location | Clinic + IT |
 | P7 | Purpose limitation and minimisation | Marketing is out of scope; notifications carry no clinical details ("You have an appointment at …", never the diagnosis) | Product |
-| P8 | Processor agreements with vendors | Contracts with hosting, SMS, Paymob, email and (P7) LLM providers | Clinic |
+| P8 | Processor agreements with vendors | Contracts with hosting, WhatsApp (Meta or a BSP), SMS, Paymob, email and (P7) LLM providers | Clinic |
 | P9 | Applicants' personal data (CVs) is collected for hiring only **(confirm)** | Applicants accept a recruitment privacy notice when applying; files of unsuccessful applicants are deleted after the retention period (FR-REC-08) | Clinic + product |
 
 Additional medical-confidentiality and record-keeping rules (Egyptian medical syndicate ethics, Ministry of Health requirements for clinics) also apply **(confirm)**; they mainly affect retention (§6) and who may access records.
@@ -87,7 +87,7 @@ Additional medical-confidentiality and record-keeping rules (Egyptian medical sy
 | Staff accounts after departure | Deactivated, not deleted (authorship of records) | |
 | Attachments | As clinical records | |
 | Doctor application files (rejected or withdrawn) | 6 months, then the files are deleted; the application row is kept with a marker **(confirm)** | FR-REC-08. Accepted applicants' files move to the staff file |
-| SMS verification codes | 1 day | Hashed; purged hourly |
+| Phone verification codes | 1 day | Hashed; purged hourly |
 
 Deletion in V2 means **anonymisation** where the record must remain for others (e.g. an invoice keeps amounts but the patient's identifying fields are replaced), done by a controlled job with an audit entry.
 
@@ -106,7 +106,7 @@ Deletion in V2 means **anonymisation** where the record must remain for others (
 
 ## 9. Incident response
 
-1. Detect: alerts on login anomalies, break-glass spikes, webhook failures, unusual exports, SMS volume spikes.
+1. Detect: alerts on login anomalies, break-glass spikes, webhook failures, unusual exports, phone-message volume spikes.
 2. Contain: deactivate accounts, revoke all sessions (V1 `RevokeAllActiveAsync`), rotate keys.
 3. Scope: audit and access logs answer "who saw what".
 4. Notify: DPO → legal → the Centre and patients within the deadline (P5).

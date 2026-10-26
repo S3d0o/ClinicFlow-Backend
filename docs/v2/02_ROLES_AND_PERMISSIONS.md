@@ -37,7 +37,7 @@ A **doctor applicant** is a user with a doctor application and **no role**. They
 
 **Admin: Karim, IT officer.**
 - **Goals:** nobody has more access than their job needs; leavers lose access the same day; the system is up.
-- **Daily tasks:** invite staff, assign roles and branches, reset MFA, review the audit log, configure SMS and payment providers.
+- **Daily tasks:** invite staff, assign roles and branches, reset MFA, review the audit log, configure messaging and payment settings.
 - **Pain today (V1):** the V1 Admin also approves doctors and edits specialties; business and technical duties are mixed.
 
 **Manager (organization): Dr. Hala, medical director and co-owner.**
@@ -169,8 +169,8 @@ A **doctor applicant** is a user with a doctor application and **no role**. They
 | | `reports.clinical` | Diagnoses, record completeness (aggregate, no identities) |
 | | `reports.financial` | Revenue, collections, claims, cash |
 | System | `audit.view` | Read the audit log |
-| | `integrations.manage` | SMS, email, payment gateway settings |
-| | `notifications.templates` | Edit SMS/WhatsApp/email templates |
+| | `integrations.manage` | Messaging (WhatsApp, SMS, email) and payment gateway settings |
+| | `notifications.templates` | Edit WhatsApp/SMS/email templates |
 
 ## 6. Role × permission matrix
 
@@ -279,7 +279,7 @@ Requester and approver must be different people. Every approval is audited with 
 | Roles `Admin`, `Doctor`, `Patient` checked as strings | Seven roles; code checks permissions; role names are constants |
 | `Admin` approves doctors and manages specialties | `Admin` is technical. Managers review doctor applications (or invite doctors); specialties are `specialties.manage` (Admin or org Manager) |
 | Doctors self-register and wait for approval (M1 gap: unapproved doctors can log in) | Doctors **apply** with a CV and go through `Applied` → `Interview` → `Accepted`. An applicant has no role, so the M1 gap disappears: only acceptance creates a `Doctor` staff member |
-| Patients register with an email | Patients register with a mobile number verified by SMS; email is optional |
+| Patients register with an email | Patients register with a mobile number verified by a one-time code (WhatsApp, or SMS when on); email is optional |
 | Doctor cancels any own appointment any time | Same, plus reschedule and leave flows |
 | Patients cancel ≥ 2 h before | Unchanged; the window becomes an organization setting |
 | One role per user (`UserProfileResponse.role`) | Several roles; the profile returns `roles[]` and `branches[]` ([07](07_API_DESIGN.md)) |
