@@ -971,7 +971,8 @@ export const parseTimestamp = (value: Timestamp): Date =>
 - **Source.** The shapes come from the frontend's service interfaces (`src/features/*/api/*.service.ts` and `model/*.ts` on the frontend's `v2`, commit `16a6dcb`). Where they differed from [07 §4](v2/07_API_DESIGN.md#4-key-endpoints-per-module), the frontend's shape was taken when it was richer (P1 plan Q-A). Where it clashed with a backend rule, the rule won, and [§13.11](#1311-frontend-changes-this-section-implies) lists the frontend changes that follow.
 - **Building an endpoint** moves it from here into §4–§7 **unchanged**, with a changelog entry. A backend PR that needs a different shape changes this section first, agrees it with the frontend, and records the change in [§13.12](#1312-revisions-of-this-section). A difference between this section and a built endpoint is a backend bug, as in [§11](#11-how-to-change-this-contract) rule 6.
 - **Phase** says which backend phase builds each endpoint ([10_ROADMAP.md](v2/10_ROADMAP.md)). Until then the frontend keeps its mock behind the same interface.
-- **Not covered yet:** staff work screens (front desk, queue board, triage, checkout, cash sessions, recruitment review, organization and staff administration). The front desk's ports are still being built on the frontend's `feature/p2-ui-front-desk`; they are added here when that branch merges. Until then [07 §4](v2/07_API_DESIGN.md#4-key-endpoints-per-module) is the direction for them.
+- **Staff screens:** the front desk and nurse station (patients, the desk's day, the queue board and waiting-room screen, triage, checkout and cash sessions) are in [§13.13–§13.21](#1313-front-desk-and-nurse-station-conventions), added once the frontend built them.
+- **Not covered yet:** the doctor's screens, recruitment review, and organization, staff and catalog administration. The frontend hasn't built them; [07 §4](v2/07_API_DESIGN.md#4-key-endpoints-per-module) is the direction for them until it does, and they are added here then.
 
 ### 13.1 Conventions for every `/api/v2` route
 
@@ -994,7 +995,7 @@ These replace the matching rules of §1–§3 for `/api/v2` routes only. The inh
 | 401 | **Only means the token is the problem**: no access token, or an invalid or expired one (shape E), and on `/auth/refresh-token` and `/auth/logout` a bad refresh token. A wrong password, code or challenge is **400**; a lockout, cooldown or limit is **429** with `retryAt`; an account that may not sign in is **403**. (The frontend's client refreshes and retries on every 401, so a 401 for a wrong password would send it into a refresh.) This differs from §2.2, where those are 401 |
 | Rate limits | The credential and code endpoints are rate-limited per client IP as in [§2.7](#27-rate-limiting); the one-time code endpoints also have the `Otp` limits (per number and per IP). Over a limit: 429 `RateLimit.Exceeded` with `retryAt` and `Retry-After` |
 | Tokens from links | Invitation, reminder, email-confirmation and password-reset tokens travel **in the request body**, never in an API path or query string, so they stay out of server and proxy logs. (The frontend's own hash routes, such as `/#/r/{token}`, never reach the server) |
-| Idempotency | `Idempotency-Key: <uuid>` is **required** on `POST /appointments`, `POST /appointments/{id}/deposit` and `POST /payments/online-checkout`. A repeat with the same key and body within 24 h returns the first response again; the same key with a different body is 409 `Idempotency.KeyReused`; a missing key is 400 |
+| Idempotency | `Idempotency-Key: <uuid>` is **required** on `POST /appointments`, `POST /appointments/{id}/deposit`, `POST /payments/online-checkout`, `POST /appointments/book-on-behalf`, `POST /appointments/walk-in` and `POST /appointments/{id}/payments`. A repeat with the same key and body within 24 h returns the first response again; the same key with a different body is 409 `Idempotency.KeyReused`; a missing key is 400 |
 | Files | Uploads are `multipart/form-data`. Downloads stream from an access-checked endpoint as `Content-Disposition: attachment`, never from a public URL. A file whose virus scan hasn't passed yet returns 409 `File.NotScanned` |
 | Sessions | Login, MFA, sign-up verification, invitation acceptance and refresh all return a `Session` ([§13.2](#132-shared-types)): the tokens of §2.1 plus `user` (the `GET /me` body). Refresh and logout keep the rules of §2.3 and §2.6 |
 
@@ -1379,3 +1380,229 @@ Compared with the mock backend at `16a6dcb`. Screens keep working; most items ar
 | Date | Change |
 |---|---|
 | 2026-10-27 | First version: auth and sessions, me and profile, public reference data and the doctor directory, doctor applications, the patient's appointments, queue and reminders, visits, invoices, documents, insurance and notifications. Settles P1 plan Q-A |
+| 2026-10-27 | Front desk and nurse station added (§13.13–§13.21), from the frontend's interfaces at `22b7f00`: patient search, duplicates and registration; the desk's day, check-in, no-show, booking on behalf and walk-ins; the queue board, waiting-room screen and `WatchBranch` on `/hubs/queue`; triage keyed by appointment (built in P2); checkout lines, desk payments, receipts and cash sessions. Replaces five 07 routes (§13.13). `Idempotency-Key` also on booking on behalf, walk-ins and desk payments |
+
+### 13.13 Front desk and nurse station: conventions
+
+Added on 2026-10-27 from the frontend's interfaces at `22b7f00` (`src/features/{patients,desk,queue,triage,billing}/api/*.service.ts`). §13.1 applies; in addition:
+
+- **Branch scope.** Every route here checks its permission against the record's branch (ADR 0002): a branch in the route, the appointment's branch, or the drawer's branch. Outside the user's scope: 403 `Access.OutOfScope`. A permission missing entirely is 403 without a code (shape E).
+- **"Today"** is the branch's date in its own time zone ([ADR 0003](v2/adr/0003-branch-time-zones.md)).
+- **The settings the frontend now keeps as constants** (check-in opens 60 min before the visit, no-show after 15 min, 5 unslotted walk-ins per doctor a day, a cash variance above EGP 50 needs approval) are organization settings on the server (FR-ORG-05, P1 PR 3), read with `GET /api/v2/organization/settings`. The routes below enforce them; the frontend can keep its constants until it reads that endpoint.
+- **Triage is keyed by appointment**, not by encounter as [07 §4](v2/07_API_DESIGN.md#patients-and-clinical) had it, so the desk never needs an encounter id. It is built in **P2** with the queue, so a visit can move past `WaitingTriage` before the EMR exists; P4 attaches the recorded vitals to the visit's encounter without changing the routes.
+- 07 routes replaced by these: `PUT /branches/{id}/queue/order` (by `move-to-front` with a reason), `GET /appointments/{id}/amount-due` (by `check-in` and `checkout`), `POST /payments` from the desk (by `POST /appointments/{id}/payments`), invoice lines before issue (by the checkout lines), and `POST /encounters/{id}/vitals` (by triage).
+
+### 13.14 Front desk and nurse station: types
+
+```ts
+// ---- patients at the desk ----
+export type Gender = "Male" | "Female";
+export interface PatientSummary {
+  id: Id; mrn: string; /* "MRN-000412", sequential per organization */ fullName: string; phone: Phone;
+  gender?: Gender; dateOfBirth?: DateOnly; nationalId?: string;
+  hasPortalAccount: boolean;    // a desk-registered patient may have no login
+  registeredAt: Instant;
+  lastVisit?: { date: DateOnly; doctorName: string };
+  balanceDue: number;           // across issued invoices
+  insurance?: { payerName: string; status: PolicyStatus };   // the default card
+}
+export interface RegisterPatientRequest {
+  fullName: string; phone: string; gender: Gender; dateOfBirth: DateOnly; nationalId?: string;
+  emergencyContactName?: string; emergencyContactPhone?: string;
+}
+
+// ---- the desk's day ----
+export interface Room { id: Id; nameEn: string; nameAr: string }
+export interface DeskAppointment {
+  id: Id; reference: string; status: AppointmentStatus; source: BookingSource;
+  patient: { id: Id; fullName: string; mrn: string; phone: Phone; dateOfBirth?: DateOnly };
+  doctorId: Id; doctorName: string; specialtyId: Id; serviceId: Id; branchId: Id;
+  date: DateOnly; startTime: TimeOfDay; endTime: TimeOfDay; startsAtUtc: Instant;
+  price: number; depositAmount?: number; depositPaid: boolean; attendanceConfirmed: boolean;
+  checkedInAt?: Instant; completedAt?: Instant;
+  queue?: { ticketNo: string; stage: QueueStage };
+  room?: Room;
+  amountDue: number;            // services − paid deposit − payments
+  invoiced: boolean;            // the first payment issues the invoice
+}
+export interface CheckInView {
+  appointment: DeskAppointment;
+  patient: { phone: Phone; phoneVerified: boolean; nationalId?: string; gender?: Gender; dateOfBirth?: DateOnly };
+  charges: { price: number; depositPaid: number; due: number };
+  insurance?: {
+    payerName: string; planName?: string; memberNo: string; coveragePercent?: number;
+    validTo: DateOnly; status: PolicyStatus;
+  };
+}
+export interface DeskBookRequest {
+  patientId: Id; doctorId: Id; branchId: Id; serviceId: Id; slotId: Id; source: "Phone" | "Desk";
+}
+export interface WalkInRequest { patientId: Id; doctorId: Id; branchId: Id; serviceId: Id; complaint?: string }
+
+// ---- the queue ----
+export interface QueueEntry {
+  appointmentId: Id; ticketNo: string; stage: QueueStage;
+  position: number;             // branch-wide while WaitingTriage, per doctor once ReadyForDoctor
+  patientId: Id; patientName: string; gender?: Gender; dateOfBirth?: DateOnly; mrn: string;
+  doctorId: Id; doctorName: string; specialtyId: Id; serviceId: Id; room?: Room; source: BookingSource;
+  startTime?: TimeOfDay;        // none for an unslotted walk-in
+  checkedInAt: Instant; triagedAt?: Instant; calledAt?: Instant; completedAt?: Instant;
+  lateMinutes: number;          // checked in this long after the booked start; 0 when on time
+  priorityReason?: string;      // set by move-to-front
+  vitals?: { systolic?: number; diastolic?: number; pulse?: number };
+  allergies: { name: string; severity?: "Mild" | "Moderate" | "Severe" }[];
+  complaint?: string;
+  amountDue: number;
+}
+export interface DisplayRoom {
+  doctorId: Id; doctorName: string; specialtyId: Id; room?: Room;
+  nowServing?: string; next: string[]; /* the next two tickets */ waitingCount: number; averageWaitMinutes: number;
+}
+export interface WaitingDisplay { branchId: Id; rooms: DisplayRoom[]; updatedAt: Instant }   // tickets only, no names
+
+// ---- triage ----
+export interface Vitals {
+  systolic?: number; diastolic?: number; pulse?: number; temperature?: number; /* °C */
+  respiratoryRate?: number; spo2?: number; /* % */ weightKg?: number; heightCm?: number; painScore?: number; /* 0–10 */
+}
+export interface TriageForm extends Vitals { chiefComplaint?: string; allergiesConfirmed: boolean }
+export interface TriageCase {
+  entry: QueueEntry;
+  patient: {
+    mrn: string; fullName: string; gender?: Gender; dateOfBirth?: DateOnly; bloodType?: string;
+    allergies: { name: string; severity?: "Mild" | "Moderate" | "Severe" }[]; conditions: string[];
+  };
+  draft?: { form: TriageForm; savedAt: Instant };
+}
+
+// ---- checkout and cash ----
+export type DeskPaymentMethod = "Cash" | "Card" | "Wallet";
+export interface ChargeLine { id: Id; serviceId: Id; quantity: number; unitPrice: number; total: number; booked: boolean }
+export interface Checkout {
+  appointment: DeskAppointment; lines: ChargeLine[];
+  subtotal: number; depositPaid: number; paidSoFar: number; due: number;
+  invoice?: { id: Id; number: string; status: "Issued" | "PartiallyPaid" | "Paid" };   // lines are fixed once it exists
+  addableServiceIds: Id[];      // services the doctor offers
+  insurance?: { payerName: string; coveragePercent?: number };   // shares arrive in P5
+}
+export interface CollectRequest {
+  method: DeskPaymentMethod; amount: number; /* > 0, at most what's due */
+  tendered?: number; /* cash handed over */ reference?: string; /* POS or wallet reference */
+}
+export interface Receipt {
+  paymentId: Id; receiptNo: string; invoiceNumber: string; /* "<BRANCH>-<YYYY>-<000001>" */
+  method: DeskPaymentMethod; amount: number; change: number; paidAt: Instant; remaining: number;
+}
+export interface CashDrawer { id: Id; branchId: Id; nameEn: string; nameAr: string; inUseBy?: string }
+export type CashSessionStatus = "Open" | "Closed" | "Approved";
+export interface CashTransaction {
+  id: Id; receiptNo: string; at: Instant; kind: "Payment" | "Refund"; patientName: string;
+  serviceId?: Id; method: DeskPaymentMethod; amount: number;   // refunds are negative
+}
+export interface CashSession {
+  id: Id; branchId: Id; drawer: CashDrawer; openedAt: Instant; openedByName: string; openingFloat: number;
+  status: CashSessionStatus; cashIn: number; cashOut: number;
+  expectedCash: number;         // float + cash in − cash out
+  byMethod: { method: DeskPaymentMethod; amount: number; count: number }[];
+  transactions: CashTransaction[];
+  closedAt?: Instant; countedAmount?: number; variance?: number; needsApproval?: boolean; note?: string;
+}
+```
+
+### 13.15 Patients at the desk
+
+| Method and path | Permission | Body or query | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/patients` | `patients.view` | `q` (required, at least 2 characters: name in either language, phone or part of it, MRN, national ID, or a `yyyy-MM-dd` date of birth; FR-FD-01), `filter?` (`All`, `Balance`, `Insured`) | 200 `PatientSummary[]`: **at most 20 best matches, not paged** (a search, not a list) | 400 validation | P2 |
+| `GET /api/v2/patients/duplicates` | `patients.register` | `phone?`, `fullName?`, `dateOfBirth?` | 200 `PatientSummary[]`, *full* (at most 10): same phone, or same name and date of birth (FR-FD-02) | 400 validation | P2 |
+| `GET /api/v2/patients/{patientId}` | `patients.view` | — | 200 `PatientSummary` | 404 `Patient.NotFound` | P2 |
+| `POST /api/v2/patients` | `patients.register` | `RegisterPatientRequest` | 201 `PatientSummary` with the next MRN. **A possible duplicate never refuses**: the form checks `duplicates` first | 400 validation (`phone`, `dateOfBirth` not in the future) | P2 |
+| `GET /api/v2/patients/{patientId}/upcoming-appointments` | `appointments.view` | — | 200 `DeskAppointment[]`, *full*, from today on, in the branches the user's scope covers | 404 `Patient.NotFound` | P2 |
+
+### 13.16 The desk's day, check-in, booking and walk-ins
+
+| Method and path | Permission | Body or query | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/branches/{branchId}/calendar` | `appointments.view` | `date` (required), `doctorId?` | 200 `DeskAppointment[]`, *full*: every visit at the branch that day, whatever its status, in time order | 400 validation; 403 `Access.OutOfScope`; 404 `Branch.NotFound` | P2 |
+| `GET /api/v2/appointments/{appointmentId}/check-in` | `appointments.check_in` | — | 200 `CheckInView` | 403 `Access.OutOfScope`; 404 `Appointment.NotFound` | P2 |
+| `POST /api/v2/appointments/{appointmentId}/check-in` | `appointments.check_in` | — | 200 `DeskAppointment` (`CheckedIn`, with a queue ticket; FR-FD-03) | 400 `Appointment.CheckInWindowClosed`; 403 `Access.OutOfScope`; 404 `Appointment.NotFound`; 409 `Appointment.InvalidStatusTransition` | P2 |
+| `POST /api/v2/appointments/{appointmentId}/no-show` | `appointments.mark_no_show` | — | 200 `DeskAppointment` (`NoShow`; FR-APT-07) | 400 `Appointment.NoShowTooEarly`; 403, 404 as above; 409 `Appointment.InvalidStatusTransition` | P2 |
+| `POST /api/v2/appointments/book-on-behalf` | `appointments.book_on_behalf`; `Idempotency-Key` | `DeskBookRequest` | 201 `DeskAppointment`, always `Confirmed` (FR-APT-03) | 400 validation, `Appointment.SlotInPast`, `Booking.ServiceNotOffered`; 403 `Access.OutOfScope`; 404 `Patient.NotFound`, `Appointment.SlotNotFound`; 409 `Slot.CapacityReached`, `Idempotency.KeyReused` | P2 |
+| `POST /api/v2/appointments/walk-in` | `appointments.check_in`; `Idempotency-Key` | `WalkInRequest` | 201 `DeskAppointment`, already `CheckedIn`: the doctor's free slot if one starts within 30 min, otherwise an unslotted queue place (FR-APT-04) | 400 validation, `Booking.ServiceNotOffered`; 403 `Access.OutOfScope`; 404 `Patient.NotFound`; 409 `Appointment.DoctorNotAvailable` (no shift at the branch today), `Appointment.WalkInCapReached`, `Idempotency.KeyReused` | P2 |
+
+### 13.17 The queue board, the waiting-room screen and live updates
+
+| Method and path | Permission | Body or query | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/branches/{branchId}/queue` | `queue.view` | `doctorId?` | 200 `QueueEntry[]`, *full*: today's checked-in visits in every stage | 403 `Access.OutOfScope`; 404 `Branch.NotFound` | P2 |
+| `GET /api/v2/branches/{branchId}/queue/display` | `queue.view`, or the branch's display device token | — | 200 `WaitingDisplay`: tickets and rooms, no names (FR-FD-06) | 403 `Access.OutOfScope`; 404 `Branch.NotFound` | P2 |
+| `POST /api/v2/appointments/{appointmentId}/call` | `queue.manage`, or the visit's doctor | — | 200 `QueueEntry` (`WithDoctor`; the appointment becomes `InProgress`; FR-FD-05) | 403 `Access.OutOfScope`; 404 `Appointment.NotFound`; 409 `Appointment.DoctorBusy` (the doctor already has someone in the room), `Appointment.InvalidStatusTransition` | P2 |
+| `POST /api/v2/appointments/{appointmentId}/queue/move-to-front` | `queue.manage` | `{ reason }` (required, ≤ 200; audited) | 200 `QueueEntry` (first in its line, `priorityReason` set) | 400 validation (`reason`); 403, 404 as above; 409 `Appointment.InvalidStatusTransition` (not waiting) | P2 |
+
+**Live updates.** The hub `/hubs/queue` of §13.7. A staff client calls `WatchBranch(branchId)` (needs `queue.view` in that branch) and receives `QueueChanged(branchId)`, with no payload, whenever anything on that branch's queue changes; it then refetches what it shows. `UnwatchBranch(branchId)` stops it. The waiting-room screen connects with the display device token instead. How a device token is issued (FR-FD-06) comes with the branch settings screens; until then the display works under a staff login.
+
+### 13.18 Triage
+
+| Method and path | Permission | Body | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/appointments/{appointmentId}/triage` | `vitals.write` | — | 200 `TriageCase` | 403 `Access.OutOfScope`; 404 `Appointment.NotFound` | P2 |
+| `PUT /api/v2/appointments/{appointmentId}/triage/draft` | `vitals.write` | `TriageForm` | 200 `{ savedAt }`. Keeps unfinished vitals (one draft per visit, replaced each time) | 400 `Vitals.OutOfRange`; 403, 404 as above; 409 `Appointment.InvalidStatusTransition` (not `WaitingTriage`) | P2 |
+| `POST /api/v2/appointments/{appointmentId}/triage` | `vitals.write` | `TriageForm` | 200 `QueueEntry` (`ReadyForDoctor`). Records the vitals with who took them and when, and deletes the draft (FR-EMR-02) | 400 `Vitals.OutOfRange` (a value no person can have; outside the normal range is only flagged), `Triage.AllergiesNotConfirmed`; 403, 404 as above; 409 `Appointment.InvalidStatusTransition` | P2 |
+
+Accepted ranges, as in the frontend: systolic 50–260, diastolic 30–160, pulse 20–250, temperature 30–45 °C, respiratory rate 4–60, SpO₂ 50–100 %, weight 0.5–350 kg, height 30–250 cm, pain 0–10. Vitals are clinical data: they are audited with their values redacted (FR-AUD-01).
+
+### 13.19 Checkout and cash sessions
+
+| Method and path | Permission | Body or query | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/branches/{branchId}/checkout` | `payments.collect` | — | 200 `DeskAppointment[]`, *full*: today's checked-in visits with something left to pay | 403 `Access.OutOfScope`; 404 `Branch.NotFound` | P3 |
+| `GET /api/v2/appointments/{appointmentId}/checkout` | `payments.collect` | — | 200 `Checkout` | 403 `Access.OutOfScope`; 404 `Appointment.NotFound` | P3 |
+| `POST /api/v2/appointments/{appointmentId}/checkout/lines` | `payments.collect` | `{ serviceId }` | 200 `Checkout` (FR-BIL-02) | 400 `Booking.ServiceNotOffered` (not in `addableServiceIds`); 403, 404 as above; 404 `Service.NotFound`; 409 `Invoice.NotDraft` | P3 |
+| `DELETE /api/v2/appointments/{appointmentId}/checkout/lines/{lineId}` | `payments.collect` | — | 200 `Checkout` | 403, 404 as above; 404 `Invoice.LineNotFound`; 409 `Invoice.NotDraft`, `Invoice.BookedLineNotRemovable` | P3 |
+| `POST /api/v2/appointments/{appointmentId}/payments` | `payments.collect`; `Idempotency-Key` | `CollectRequest` | 201 `Receipt`. The first payment issues the invoice; the payment goes into the user's open cash session, which cash requires | 400 validation, `Payment.InvalidAmount`; 403, 404 as above; 409 `Invoice.NothingDue`, `Payment.NoOpenCashSession`, `Idempotency.KeyReused` | P3 |
+| `GET /api/v2/payments/{paymentId}/receipt` | `payments.collect` | — | 200 PDF (attachment, FR-BIL-07). `Accept-Language` picks its language | 403 `Access.OutOfScope`; 404 `Payment.NotFound` | P3 |
+| `GET /api/v2/me/cash-session` | `cash_sessions.operate` | — | 200 `CashSession` (the user's open one), or 204 when none | — | P3 |
+| `GET /api/v2/branches/{branchId}/cash-drawers` | `cash_sessions.operate` | — | 200 `CashDrawer[]`, *full*, with who has each open | 403 `Access.OutOfScope`; 404 `Branch.NotFound` | P3 |
+| `POST /api/v2/cash-sessions` | `cash_sessions.operate` | `{ drawerId, openingFloat }` (≥ 0) | 201 `CashSession` (`Open`; one per user, FR-BIL-09) | 400 validation; 403 `Access.OutOfScope`; 404 `CashDrawer.NotFound`; 409 `CashSession.AlreadyOpen`, `CashDrawer.InUse` | P3 |
+| `POST /api/v2/cash-sessions/{sessionId}/close` | `cash_sessions.operate` (own session) | `{ countedAmount, note? }` | 200 `CashSession` (`Closed`, with `variance` and `needsApproval`); it can't change afterwards | 400 validation; 404 `CashSession.NotFound` (also someone else's); 409 `CashSession.NotOpen` | P3 |
+| `GET /api/v2/cash-sessions/{sessionId}/report` | `cash_sessions.operate` (own), or `cash_sessions.reconcile` | — | 200 PDF: the interim (X) report while open, the closing (Z) report once closed | 404 `CashSession.NotFound` | P3 |
+
+### 13.20 Front desk and nurse station: error codes
+
+In addition to [§13.10](#1310-error-codes).
+
+| Code | Status | When |
+|---|---|---|
+| `Access.OutOfScope` | 403 | The record's branch is outside the user's scope for the permission |
+| `Patient.NotFound` | 404 | Unknown patient record |
+| `Appointment.CheckInWindowClosed` | 400 | Checking in more than 60 min (the setting) before the visit, or after its day |
+| `Appointment.NoShowTooEarly` | 400 | Less than 15 min (the setting) after the start |
+| `Appointment.DoctorNotAvailable` | 409 | A walk-in for a doctor with no shift at the branch today |
+| `Appointment.WalkInCapReached` | 409 | The doctor's unslotted walk-ins for today are used up (5, the setting) |
+| `Appointment.DoctorBusy` | 409 | Calling a patient in while the doctor has someone in the room |
+| `Vitals.OutOfRange` | 400 | A value outside the accepted ranges of §13.18 |
+| `Triage.AllergiesNotConfirmed` | 400 | Submitting triage with `allergiesConfirmed: false` |
+| `Service.NotFound` | 404 | Unknown or inactive service |
+| `Invoice.NotDraft` | 409 | Changing lines after the invoice is issued |
+| `Invoice.LineNotFound` | 404 | Unknown line |
+| `Invoice.BookedLineNotRemovable` | 409 | Removing the booked service's line |
+| `Payment.InvalidAmount` | 400 | Zero, negative, or more than what's due |
+| `Payment.NoOpenCashSession` | 409 | A cash payment without an open cash session |
+| `Payment.NotFound` | 404 | Unknown payment |
+| `CashSession.AlreadyOpen` | 409 | The user already has an open session |
+| `CashSession.NotOpen` | 409 | Closing a session that is closed |
+| `CashSession.NotFound` | 404 | Unknown session, or another user's |
+| `CashDrawer.InUse` | 409 | Someone else has a session open on the drawer |
+| `CashDrawer.NotFound` | 404 | Unknown drawer, or one at another branch |
+
+### 13.21 Front desk and nurse station: frontend changes
+
+Compared with the mock backend at `22b7f00`.
+
+| # | Change | Where |
+|---|---|---|
+| 1 | The walk-in also sends an `Idempotency-Key`, like booking on behalf (a double tap must not create two walk-ins) | `DeskService.walkIn` adapter |
+| 2 | A missing move-to-front reason is a 400 validation error on `reason`, not the code `Queue.ReasonRequired`; the adapter maps it, or the form shows the field error | Queue board |
+| 3 | Messages for the codes the mocks don't throw yet: `Appointment.DoctorNotAvailable`, `Invoice.LineNotFound`, `Invoice.BookedLineNotRemovable`, `CashSession.NotFound` (`CashDrawer.NotFound` and `Payment.NotFound` too, if missing) | `common:errors` (en, ar), `mocks/contract-errors.test.ts` |
+| 4 | The waiting-room screen will sign in with a display device token instead of a staff login, once the branch settings screens issue them; nothing to do yet | — |
+| 5 | Later: read the check-in window, no-show grace, walk-in cap and variance threshold from `GET /api/v2/organization/settings` instead of `desk/model/policy.ts` and `cash-session.ts` | When the settings endpoint exists (P1) |
