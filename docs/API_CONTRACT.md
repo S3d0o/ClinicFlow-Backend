@@ -3,12 +3,14 @@
 | | |
 |---|---|
 | **Contract version** | 4.0.0-p0 (pre-release, `v2` branch). V1's contract stays 3.1.2 on `master` ([docs/v2/adr/0007](v2/adr/0007-v2-separate-product-line.md)) |
-| **Last updated** | 2026-10-24 |
+| **Last updated** | 2026-10-27 (§13 added; no API change) |
 | **Applies to** | ClinicFlow backend (`ClinicFlow.Backend`) and the ClinicFlow frontend (React) |
 | **Canonical copy** | `ClinicFlow.Backend/docs/API_CONTRACT.md`. The frontend repo keeps an identical copy at `docs/API_CONTRACT.md` |
 | **Machine-readable companion** | [`openapi.json`](openapi.json) (OpenAPI 3.1, generated from the running API) |
 
 This document is the single agreement between the two apps. It describes what the API **does today**, including known quirks, so the frontend can rely on it. Planned changes are listed separately in [§9](#9-pending-contract-changes) and become real only when they move into the changelog ([§10](#10-changelog)). The rules for changing the contract are in [§11](#11-how-to-change-this-contract).
+
+The `/api/v2` endpoints the V2 frontend already builds against are agreed in advance in [§13](#13-planned-apiv2-endpoints-agreed-not-built). None of them exists yet; each moves into §4–§7 unchanged when it is built.
 
 Status-code notes marked *(REVIEW Mx)* refer to known issues in [REVIEW.md](REVIEW.md) that are scheduled to change.
 
@@ -27,6 +29,7 @@ Status-code notes marked *(REVIEW Mx)* refer to known issues in [REVIEW.md](REVI
 10. [Changelog](#10-changelog)
 11. [How to change this contract](#11-how-to-change-this-contract)
 12. [Appendix: TypeScript types](#12-appendix-typescript-types)
+13. [Planned `/api/v2` endpoints (agreed, not built)](#13-planned-apiv2-endpoints-agreed-not-built)
 
 ---
 
@@ -799,6 +802,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) whose fix **will change the cont
 4. **Bug fixes that change observed behaviour** (like those in §9) are listed in the changelog even when the code fix is small.
 5. **Regenerating `openapi.json`:** run the API in Development and save `GET /openapi/v1.json` (see [SETUP_AND_DEPLOYMENT.md](SETUP_AND_DEPLOYMENT.md#regenerating-openapijson)). Set the `servers` URL to `http://localhost:5143/`.
 6. **When the two disagree:** if this document and the running backend differ, the backend is a bug unless the difference is listed in §9. Report it and fix one side in the same week.
+7. **Planned `/api/v2` endpoints ([§13](#13-planned-apiv2-endpoints-agreed-not-built))** are agreed before they are built. The PR that builds one moves it into §4–§7 unchanged. A PR that needs a different shape changes §13 first, with the frontend, and logs it in §13.12.
 
 ## 12. Appendix: TypeScript types
 
@@ -959,3 +963,419 @@ export const readTotalCount = (response: Response): number | null => {
 export const parseTimestamp = (value: Timestamp): Date =>
   new Date(/[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? value : `${value}Z`);
 ```
+
+## 13. Planned `/api/v2` endpoints (agreed, not built)
+
+**Nothing in this section exists in the API yet.** It records the `/api/v2` endpoints the V2 frontend already uses through its mock backend, agreed on 2026-10-27 so that both sides build against one fixed shape. The frontend writes its HTTP adapters against this section; the backend builds these endpoints to match it.
+
+- **Source.** The shapes come from the frontend's service interfaces (`src/features/*/api/*.service.ts` and `model/*.ts` on the frontend's `v2`, commit `16a6dcb`). Where they differed from [07 §4](v2/07_API_DESIGN.md#4-key-endpoints-per-module), the frontend's shape was taken when it was richer (P1 plan Q-A). Where it clashed with a backend rule, the rule won, and [§13.11](#1311-frontend-changes-this-section-implies) lists the frontend changes that follow.
+- **Building an endpoint** moves it from here into §4–§7 **unchanged**, with a changelog entry. A backend PR that needs a different shape changes this section first, agrees it with the frontend, and records the change in [§13.12](#1312-revisions-of-this-section). A difference between this section and a built endpoint is a backend bug, as in [§11](#11-how-to-change-this-contract) rule 6.
+- **Phase** says which backend phase builds each endpoint ([10_ROADMAP.md](v2/10_ROADMAP.md)). Until then the frontend keeps its mock behind the same interface.
+- **Not covered yet:** staff work screens (front desk, queue board, triage, checkout, cash sessions, recruitment review, organization and staff administration). The front desk's ports are still being built on the frontend's `feature/p2-ui-front-desk`; they are added here when that branch merges. Until then [07 §4](v2/07_API_DESIGN.md#4-key-endpoints-per-module) is the direction for them.
+
+### 13.1 Conventions for every `/api/v2` route
+
+These replace the matching rules of §1–§3 for `/api/v2` routes only. The inherited unversioned routes keep §1–§3.
+
+| Topic | Rule |
+|---|---|
+| Ids | **Every id is a JSON string** (`"42"`, or a GUID for users), in requests, responses and paths. Treat ids as opaque: never parse them or compare them as numbers. (The database keys stay integers; V2 responses send them as strings.) |
+| Phone numbers | Field name `phone`. Requests accept an Egyptian mobile as `01xxxxxxxxx` or `+201xxxxxxxxx` (`01` then `0`, `1`, `2` or `5`, then 8 digits). Responses always send E.164 (`+201…`). Anything else is a 400 validation error on the field |
+| Language | `"ar"` or `"en"`. Arabic is the default |
+| Dates and times | Branch wall clock: `date` is `"yyyy-MM-dd"`, `startTime` / `endTime` are **`"HH:mm"`** (no seconds, unlike §1). Requests accept `"HH:mm"` or `"HH:mm:ss"`. Don't convert them to another zone ([ADR 0003](v2/adr/0003-branch-time-zones.md)) |
+| Instants | UTC ISO 8601 ending in `Z`. Fields are named `…At` or `…AtUtc` |
+| Money | JSON number, EGP, 2 decimals |
+| Enums | PascalCase strings in responses and bodies. **Query-string enum values are case-insensitive** (`sort=soonest` = `sort=Soonest`). New values are additive, so show an unknown value instead of failing |
+| Bilingual reference data | `nameEn` and `nameAr` on branches, specialties and services. Text people type (bios, notes) is stored as written, with `…En` / `…Ar` pairs where both exist |
+| Lists | A bare JSON array, with the total of matching items in `X-Total-Count`, on **every** list marked *paged*. `pageNumber` (1-based) and `pageSize`: defaults 1 and 20, `pageSize` at most 100; out of range is 400. Lists marked *full* (small reference data) return every item and no header |
+| Errors with a code | **Always ProblemDetails with `title` = the code** (shape A), whatever the status, 400 included. Shape C (a code as a key of `errors`) is not used on `/api/v2` |
+| Validation errors | Shape B, with **camelCase** keys that are property paths (`phone`, `lines[0].unitPrice`) |
+| Error extensions | Some errors carry extra members at the top level of the ProblemDetails: `attemptsLeft` (number; a wrong one-time code) and `retryAt` (UTC instant; lockouts, cooldowns and limits). They are listed with each code in [§13.10](#1310-error-codes) |
+| 401 | **Only means the token is the problem**: no access token, or an invalid or expired one (shape E), and on `/auth/refresh-token` and `/auth/logout` a bad refresh token. A wrong password, code or challenge is **400**; a lockout, cooldown or limit is **429** with `retryAt`; an account that may not sign in is **403**. (The frontend's client refreshes and retries on every 401, so a 401 for a wrong password would send it into a refresh.) This differs from §2.2, where those are 401 |
+| Rate limits | The credential and code endpoints are rate-limited per client IP as in [§2.7](#27-rate-limiting); the one-time code endpoints also have the `Otp` limits (per number and per IP). Over a limit: 429 `RateLimit.Exceeded` with `retryAt` and `Retry-After` |
+| Tokens from links | Invitation, reminder, email-confirmation and password-reset tokens travel **in the request body**, never in an API path or query string, so they stay out of server and proxy logs. (The frontend's own hash routes, such as `/#/r/{token}`, never reach the server) |
+| Idempotency | `Idempotency-Key: <uuid>` is **required** on `POST /appointments`, `POST /appointments/{id}/deposit` and `POST /payments/online-checkout`. A repeat with the same key and body within 24 h returns the first response again; the same key with a different body is 409 `Idempotency.KeyReused`; a missing key is 400 |
+| Files | Uploads are `multipart/form-data`. Downloads stream from an access-checked endpoint as `Content-Disposition: attachment`, never from a public URL. A file whose virus scan hasn't passed yet returns 409 `File.NotScanned` |
+| Sessions | Login, MFA, sign-up verification, invitation acceptance and refresh all return a `Session` ([§13.2](#132-shared-types)): the tokens of §2.1 plus `user` (the `GET /me` body). Refresh and logout keep the rules of §2.3 and §2.6 |
+
+### 13.2 Shared types
+
+```ts
+// ---- scalars ----
+export type Id = string;          // opaque; integers on the server, strings on the wire
+export type Phone = string;       // E.164 in responses: "+201001234567"
+export type Language = "ar" | "en";
+export type DateOnly = string;    // "yyyy-MM-dd", branch wall clock
+export type TimeOfDay = string;   // "HH:mm", branch wall clock
+export type Instant = string;     // UTC, ends in "Z"
+
+// ---- access (docs/v2/02_ROLES_AND_PERMISSIONS.md §3–§6) ----
+export type Role = "Admin" | "Manager" | "Receptionist" | "Nurse" | "Doctor" | "Accountant" | "Patient";
+export type Scope = "Own" | "Branch" | "Organization";
+export type Permission = string;  // one of the 59 codes of 02 §5 (Shared/Authorization/Permissions.cs), e.g. "appointments.check_in"
+export interface PermissionGrant { permission: Permission; scope: Scope; branchIds?: Id[] }   // branchIds when scope is "Branch"
+export interface RoleAssignment { role: Role; scope: "Organization" | "Branch"; branchIds?: Id[] }
+export type NotificationChannel = "Phone" | "Email" | "Both";  // Phone = WhatsApp, or SMS when it is on
+
+/** GET /api/v2/me */
+export interface Me {
+  id: Id;                        // the user's GUID
+  fullName: string;
+  phone: Phone;
+  email?: string;
+  preferredLanguage: Language;
+  notificationChannel: NotificationChannel;
+  roles: RoleAssignment[];
+  permissions: PermissionGrant[];   // what menus and actions are built from (ADR 0002)
+  phoneVerified: boolean;
+  emailConfirmed: boolean;
+  hasDoctorApplication: boolean;    // an applicant has no role but an application (02 §2)
+  mfaEnabled: boolean;              // two-step sign-in is required for this account (staff, FR-STF-07)
+  mfaEnrolled: boolean;             // an authenticator is set up
+  isMedicalDirector: boolean;
+}
+
+// ---- sessions ----
+export interface Session { accessToken: string; refreshToken: string; expiresAt: Instant; user: Me }
+export interface MfaChallenge { id: Id; identifier: string; roleLabel: Role }   // shown on the second step
+export type SignInResult =
+  | ({ status: "SignedIn" } & Session)
+  | { status: "MfaRequired"; challenge: MfaChallenge };
+export type OtpPurpose = "SignUp" | "PasswordReset" | "ChangePhone";
+export interface OtpTicket { phone: Phone; expiresAt: Instant; resendAt: Instant }  // resendAt: 60 s after sending
+export interface MfaEnrollment { secret: string; otpauthUri: string; recoveryCodes: string[] }
+export interface Invitation {
+  email: string; fullName: string; roles: RoleAssignment[]; invitedByName: string; expiresAt: Instant;
+}
+
+// ---- organization and catalog ----
+export interface Branch {
+  id: Id; code: string; nameEn: string; nameAr: string; addressEn: string; addressAr: string;
+  phone: Phone; timeZone: string; /* IANA */ isActive: boolean;
+}
+export interface Specialty { id: Id; nameEn: string; nameAr: string }
+export type ServiceCategory = "Consultation" | "FollowUp" | "Procedure" | "Package";
+export interface Service {
+  id: Id; code: string; nameEn: string; nameAr: string; category: ServiceCategory; specialtyId: Id;
+  defaultDurationMinutes: number;
+  optionalDepositAmount?: number;   // never required to book (FR-APT-08)
+}
+export interface BranchService extends Service { fromPrice: number; doctorCount: number }
+
+// ---- doctors (public) ----
+export interface Slot {
+  id: Id; doctorId: Id; branchId: Id; date: DateOnly; startTime: TimeOfDay; endTime: TimeOfDay;
+  startsAtUtc: Instant; available: boolean;
+}
+export interface WeeklyShift { branchId: Id; weekday: number; /* 0 = Sunday … 6 = Saturday */ startTime: TimeOfDay; endTime: TimeOfDay }
+export interface DoctorServiceOffer {
+  serviceId: Id; durationMinutes: number; prices: { branchId: Id; price: number }[]; depositAmount?: number;
+}
+export interface DoctorSummary {
+  id: Id; fullName: string; specialtyId: Id; branchIds: Id[];
+  languages: Language[]; yearsOfExperience: number; rating: number; reviewCount: number;
+  fromPrice: number | null;   // lowest consultation price; at the searched branch when one is given
+  nextSlots: Slot[];          // up to 3
+}
+export interface DoctorProfile extends DoctorSummary {
+  licenseNo: string; bioEn?: string; bioAr?: string;
+  services: DoctorServiceOffer[]; schedule: WeeklyShift[];
+  ratingCounts: { "1": number; "2": number; "3": number; "4": number; "5": number };
+}
+export interface Review { id: Id; authorName: string; /* "Tarek M." */ rating: number; comment?: string; createdAt: Instant }
+
+// ---- doctor applications ----
+export type ApplicationStatus = "Applied" | "Interview" | "Accepted" | "Rejected" | "Withdrawn";
+export interface StoredFileInfo { id: Id; fileName: string; sizeBytes: number; contentType: string }
+export interface InterviewDetails { at: Instant; branchId?: Id; location?: string; interviewerName: string; notes?: string }
+export interface AcceptanceDetails { startDate: DateOnly; branchId: Id; notes?: string }
+export interface StageChange {
+  id: Id; fromStatus: ApplicationStatus | null; toStatus: ApplicationStatus; changedAt: Instant;
+  interview?: InterviewDetails; acceptance?: AcceptanceDetails; message?: string; emailSent: boolean;
+}
+export interface DoctorApplication {
+  id: Id; reference: string; status: ApplicationStatus; applicantName: string; phone: Phone; email: string;
+  specialtyId: Id; licenseNo: string; yearsOfExperience: number; preferredBranchId?: Id; submittedAt: Instant;
+  cv: StoredFileInfo; coverLetter?: StoredFileInfo; coverLetterText?: string;
+  interview?: InterviewDetails; acceptance?: AcceptanceDetails;
+  history: StageChange[];        // newest first
+  canReapplyFrom?: DateOnly;     // after a rejection or withdrawal
+}
+
+// ---- appointments (the patient's view) ----
+export type AppointmentStatus =
+  | "Confirmed" | "CheckedIn" | "InProgress" | "Completed" | "Cancelled" | "Rescheduled" | "NoShow";
+  // "Pending" is never sent on /api/v2
+export type BookingSource = "Online" | "Phone" | "Desk" | "WalkIn";
+export type CancellationReasonCode = "ScheduleConflict" | "FeelingBetter" | "BookedElsewhere" | "CostOrInsurance" | "Other";
+export type QueueStage = "WaitingTriage" | "ReadyForDoctor" | "WithDoctor" | "Done";
+export interface QueueStatus {
+  ticketNo: string; stage: QueueStage; position: number; estimatedWaitMinutes: number;
+  roomName?: string; doctorDelayMinutes?: number; checkedInAt?: Instant; triagedAt?: Instant; updatedAt: Instant;
+}
+export interface Appointment {
+  id: Id; reference: string; /* "CF-26-08731" */ status: AppointmentStatus; source: BookingSource;
+  doctorId: Id; doctorName: string; specialtyId: Id; branchId: Id; serviceId: Id;
+  date: DateOnly; startTime: TimeOfDay; endTime: TimeOfDay; startsAtUtc: Instant;
+  price: number; depositAmount?: number; depositPaid: boolean; bookedAt: Instant;
+  changeableUntil: Instant;      // the patient may cancel or reschedule online until then (FR-ORG-05)
+  cancelledAt?: Instant; cancelledBy?: "Patient" | "Clinic"; cancellationReason?: CancellationReasonCode;
+  rescheduledToId?: Id; rescheduledFromId?: Id;
+  attendanceConfirmed: boolean; checkedInAt?: Instant; completedAt?: Instant;
+  visitId?: Id; hasReview: boolean; queue?: QueueStatus;
+}
+export interface BookRequest { doctorId: Id; branchId: Id; serviceId: Id; slotId: Id; acceptTerms: boolean }
+export interface CancelRequest { reason: CancellationReasonCode; note?: string }
+export interface ReminderView {
+  appointmentId: Id; reference: string; status: AppointmentStatus; attendanceConfirmed: boolean;
+  doctorName: string; specialtyId: Id; branchId: Id; serviceId: Id;
+  date: DateOnly; startTime: TimeOfDay; startsAtUtc: Instant; changeableUntil: Instant; price: number;
+}
+
+// ---- visits (patient-facing summary, FR-EMR-13) ----
+export interface Prescription { drug: string; strength?: string; genericName?: string; dosage: string; durationDays?: number; instructions?: string }
+export interface VisitOrder { name: string; detail?: string; status: "Pending" | "ResultReceived"; resultNote?: string }
+export interface FollowUp { from: DateOnly; to: DateOnly; serviceId?: Id }
+export interface VisitSummary {
+  id: Id; appointmentId: Id; appointmentReference: string; startsAtUtc: Instant;
+  doctorId: Id; doctorName: string; specialtyId: Id; branchId: Id;
+  diagnoses: string[]; findings?: string; prescriptions: Prescription[]; prescriptionCode?: string;
+  orders: VisitOrder[]; instructions: string[]; followUp?: FollowUp;
+}
+export interface VisitListItem {
+  id: Id; startsAtUtc: Instant; doctorId: Id; doctorName: string; specialtyId: Id; branchId: Id;
+  diagnoses: string[]; followUp?: FollowUp; prescriptionCount: number; orderCount: number;
+}
+
+// ---- billing (the patient's view) ----
+export type InvoiceStatus = "Issued" | "PartiallyPaid" | "Paid" | "Void";
+export type PaymentMethod = "Cash" | "Card" | "Online" | "Wallet" | "BankTransfer";
+export interface PatientInvoice {
+  id: Id; number: string; /* "<BRANCH>-<YYYY>-<000001>" */ branchId: Id; doctorName?: string; issuedAt: Instant;
+  status: InvoiceStatus; lines: { description: string; amount: number }[]; total: number;
+  deductions: { kind: "Deposit" | "Insurance" | "Discount"; label?: string; amount: number }[];
+  payments: { method: PaymentMethod; amount: number; paidAt: Instant }[];
+  balanceDue: number;
+}
+
+// ---- documents and insurance ----
+export interface PatientDocument {
+  id: Id; fileName: string; contentType: string; sizeBytes: number; uploadedAt: Instant; sharedWithDoctorName?: string;
+}
+export type PolicyStatus = "Verified" | "PendingVerification" | "Expired";
+export interface InsurancePolicy {
+  id: Id; payerName: string; planName?: string; memberNo: string; holderName: string;
+  coveragePercent?: number; validTo: DateOnly; isDefault: boolean; status: PolicyStatus;
+}
+export interface Payer { id: Id; name: string }
+
+// ---- profile and notifications ----
+export interface PatientProfile {
+  fullName: string; mrn: string; memberSince: DateOnly; phone: Phone; phoneVerified: boolean;
+  email?: string; emailConfirmed: boolean; notificationChannel: NotificationChannel; preferredLanguage: Language;
+  bloodType?: string; allergies: { name: string; severity?: "Mild" | "Moderate" | "Severe" }[]; conditions: string[];
+}
+export type NotificationType =
+  | "AppointmentConfirmed" | "AppointmentReminder" | "AppointmentRescheduled" | "AppointmentCancelled"
+  | "DepositReceived" | "InvoiceIssued" | "PaymentReceived" | "PrescriptionReady";
+  // staff notification types are added with the staff screens (additive)
+export type NotificationCategory = "Appointments" | "Billing" | "Prescriptions";
+export interface AppNotification {
+  id: Id; type: NotificationType; title: string; message: string;   // rendered in the recipient's language
+  createdAt: Instant; isRead: boolean;
+  link?: { kind: "Appointment" | "Invoice" | "Visit"; id: Id };
+}
+```
+
+Optional fields (`?`) are omitted from responses when they have no value.
+
+### 13.3 Auth and sessions
+
+Auth column: **—** anonymous; **Signed in** any valid token.
+
+| Method and path | Auth | Body | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `POST /api/v2/auth/register` | — | `{ firstName, lastName, phone, email?, password, preferredLanguage }` | 200 `OtpTicket`; a `SignUp` code is sent. The account can't sign in until it is verified | 400 validation; 409 `Auth.EmailAlreadyExists`; 429 `Otp.ResendTooSoon`, `Otp.TooManyAttempts`, `RateLimit.Exceeded`; 503 `Messaging.PhoneUnreachable` | P1 |
+| `POST /api/v2/auth/register/verify` | — | `{ phone, code }` | 200 `Session` | 400 `Otp.InvalidCode` (+`attemptsLeft`); 429 `Otp.TooManyAttempts` (+`retryAt`) | P1 |
+| `POST /api/v2/auth/otp/send` | — (`ChangePhone`: signed in) | `{ phone, purpose }` | 200 `OtpTicket` (a new code). **The same answer for a number with no account**, and then nothing is sent (08 §2) | 400 validation; 429 `Otp.ResendTooSoon`, `Otp.TooManyAttempts` (+`retryAt`); 503 `Messaging.PhoneUnreachable` | P1 |
+| `POST /api/v2/auth/login` | — | `{ identifier, password }`: a phone (either form of §13.1) or an email | 200 `SignInResult`. Staff with an authenticator get `MfaRequired`; everyone else `SignedIn` | 400 `Auth.InvalidCredentials` (also for an unknown account); 403 `Auth.AccountNotActive`, `Auth.PhoneNotVerified`; 429 `Auth.AccountLockedOut` (+`retryAt`), `RateLimit.Exceeded` | P1 |
+| `POST /api/v2/auth/mfa` | — | `{ challengeId, code }` or `{ challengeId, recoveryCode }` | 200 `Session`. A recovery code works once | 400 `Auth.InvalidMfaCode`, `Auth.MfaChallengeExpired` (a challenge lasts 5 min); 429 `Auth.AccountLockedOut` (+`retryAt`) | P1 |
+| `POST /api/v2/auth/mfa/enroll` | Signed in (staff) | — | 200 `MfaEnrollment`. The recovery codes become valid on confirmation | — | P1 |
+| `POST /api/v2/auth/mfa/confirm` | Signed in (staff) | `{ code }` | 200 `Me` (`mfaEnrolled: true`) | 400 `Auth.InvalidMfaCode` | P1 |
+| `POST /api/v2/auth/refresh-token` | — | `{ refreshToken }` | 200 `Session` | 401 `Auth.InvalidRefreshToken` | P1 |
+| `POST /api/v2/auth/logout` | — (token optional) | `{ refreshToken }` | 204 | 401 `Auth.InvalidRefreshToken` | P1 |
+| `POST /api/v2/auth/password/forgot` | — | `{ email }` | 204 whether or not the email has an account; the email links to `/#/reset-password` ([§13.9](#139-frontend-routes-the-backend-will-link-to)) | 429 `RateLimit.Exceeded` | P1 |
+| `POST /api/v2/auth/password/reset` | — | `{ userId, token, newPassword }` | 204; every session is revoked | 400 validation, `Auth.InvalidPasswordResetToken` (also for an unknown or deactivated user) | P1 |
+| `POST /api/v2/auth/password/check-code` | — | `{ phone, code }` | 204. Checks a `PasswordReset` code **without using it up**; a wrong try still counts | 400 `Otp.InvalidCode` (+`attemptsLeft`; also for a number with no account); 429 `Otp.TooManyAttempts` (+`retryAt`) | P1 |
+| `POST /api/v2/auth/password/reset-by-otp` | — | `{ phone, code, newPassword }` | 204; uses the code up and revokes every session | as `check-code`, plus 400 validation | P1 |
+| `POST /api/v2/auth/confirm-email` | — | `{ userId, token }` | 204 | 400 `Auth.InvalidEmailConfirmationToken` (also for an unknown user) | P1 |
+| `POST /api/v2/auth/invitations/preview` | — | `{ token }` | 200 `Invitation` | 404 `Invitation.NotFound` (unknown, used or revoked); 409 `Invitation.Expired` | P1 |
+| `POST /api/v2/auth/invitations/accept` | — | `{ token, fullName, phone, password }` | 200 `Session`; the staff member is active, and two-step setup comes next | as `preview`, plus 400 validation; 409 `Auth.PhoneAlreadyUsed` | P1 |
+
+**Staff before MFA.** A staff member who hasn't set up an authenticator signs in with `SignedIn` and `mfaEnrolled: false`. Until they confirm one, that token reaches only `GET /me`, `/auth/mfa/enroll`, `/auth/mfa/confirm` and `/auth/logout`; every other route, inherited ones included, returns 403 `Auth.MfaEnrollmentRequired`. In Development with demo data, `Auth:RequireStaffMfa=false` turns this off (P1 plan Q-B), and `mfaEnabled` is then `false`.
+
+### 13.4 Me and the patient's profile
+
+| Method and path | Auth | Body | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/me` | Signed in | — | 200 `Me` | — | P1 |
+| `PATCH /api/v2/me` | Signed in | `{ preferredLanguage?, notificationChannel? }` | 200 `Me` | 400 validation, `Profile.EmailRequired` (`Email` or `Both` without a confirmed email) | P1 |
+| `POST /api/v2/me/phone` | Signed in | `{ phone }` | 200 `OtpTicket`; a `ChangePhone` code goes to the new number | 400 validation; 409 `Auth.PhoneAlreadyUsed`; 429 `Otp.ResendTooSoon`, `Otp.TooManyAttempts` | P1 |
+| `POST /api/v2/me/phone/confirm` | Signed in | `{ phone, code }` | 200 `Me`; the new number replaces the old one | 400 `Otp.InvalidCode` (+`attemptsLeft`); 409 `Auth.PhoneAlreadyUsed`; 429 `Otp.TooManyAttempts` | P1 |
+| `POST /api/v2/me/email` | Signed in | `{ email }` | 204; a confirmation link is emailed, and the email is used once it is opened | 400 validation; 409 `Auth.EmailAlreadyExists` | P1 |
+| `POST /api/v2/me/password` | Signed in | `{ currentPassword, newPassword }` | 204; every other session is revoked | 400 validation, `Auth.InvalidCredentials` (wrong current password: **400**, not 401) | P1 |
+| `GET /api/v2/me/patient-profile` | Patient | — | 200 `PatientProfile` | 404 `Patient.ProfileNotFound` | P1 |
+
+### 13.5 Public reference data and the doctor directory
+
+All anonymous.
+
+| Method and path | Query | Success | Errors | Phase |
+|---|---|---|---|---|
+| `GET /api/v2/public/branches` | — | 200 `Branch[]`, *full*, active branches only | — | P1 |
+| `GET /api/v2/public/specialties` | — | 200 `Specialty[]`, *full*, active only | — | P1 |
+| `GET /api/v2/public/services` | — | 200 `Service[]`, *full*, active only | — | P1 |
+| `GET /api/v2/public/branches/{branchId}/services` | — | 200 `BranchService[]`, *full*: services at least one public doctor offers at the branch, with the lowest price there | 404 `Branch.NotFound` | P2 |
+| `GET /api/v2/public/doctors` | `text?` (name or specialty, either language), `branchId?`, `specialtyId?`, `serviceId?` (then `fromPrice` is that service's price), `availability?` (`Today`, `Tomorrow`, `Week`), `language?`, `sort?` (`Soonest`, `Rating`, `Price`; default `Soonest`), paging | 200 `DoctorSummary[]`, *paged* | 400 validation | P2 |
+| `GET /api/v2/public/doctors/{doctorId}` | — | 200 `DoctorProfile` | 404 `Doctor.NotFound` (also for a hidden doctor) | P2 |
+| `GET /api/v2/public/doctors/{doctorId}/slots` | `branchId` (required), `from?` (branch date; default today there), `days` (1–14) | 200 `Slot[]`, *full*, in time order | 400 validation; 404 `Doctor.NotFound`, `Branch.NotFound` | P2 |
+| `GET /api/v2/public/doctors/{doctorId}/reviews` | `rating?` (1–5), paging | 200 `Review[]`, *paged*, newest first | 404 `Doctor.NotFound` | P2 |
+| `GET /api/v2/public/payers` | — | 200 `Payer[]`, *full*, active payers | — | P5 |
+
+### 13.6 Doctor applications (the applicant's side)
+
+For a signed-in user without a staff role. Applying needs a verified phone and a confirmed email.
+
+| Method and path | Body | Success | Errors | Phase |
+|---|---|---|---|---|
+| `POST /api/v2/doctor-applications` | `multipart/form-data`: `specialtyId`, `licenseNo`, `yearsOfExperience`, `preferredBranchId?`, `cv` (file, required), `coverLetter?` (file) or `coverLetterText?`. Files: PDF or DOCX, at most 5 MB each, checked by content | 201 `DoctorApplication` | 400 validation, `DoctorApplication.CvRequired`, `File.TypeNotAllowed`, `File.TooLarge`; 403 `Auth.PhoneNotVerified`, `Auth.EmailNotConfirmed`; 409 `DoctorApplication.AlreadyOpen`, `DoctorApplication.ReapplyTooSoon` | P1 |
+| `GET /api/v2/doctor-applications/mine` | — | 200 `DoctorApplication` (the latest), or **204** when the user never applied | — | P1 |
+| `POST /api/v2/doctor-applications/mine/withdraw` | — | 200 `DoctorApplication` (`Withdrawn`) | 404 `DoctorApplication.NotFound`; 409 `DoctorApplication.InvalidStatusTransition` (not `Applied` or `Interview`) | P1 |
+| `GET /api/v2/doctor-applications/mine/files/{fileId}` | — | 200, the file (attachment) | 404 `File.NotFound` (also another applicant's file); 409 `File.NotScanned` | P1 |
+
+### 13.7 The patient's appointments, queue and reminders
+
+| Method and path | Auth | Body or query | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/me/appointments` | Patient | `status?`, paging | 200 `Appointment[]`, *paged*, newest `startsAtUtc` first | 400 validation | P2 |
+| `GET /api/v2/appointments/{appointmentId}` | Patient (own) | — | 200 `Appointment` | 403 `Appointment.Unauthorized`; 404 `Appointment.NotFound` | P2 |
+| `POST /api/v2/appointments` | Patient; `Idempotency-Key` | `BookRequest` | 201 `Appointment`, always `Confirmed`, deposit or not (FR-APT-02, FR-APT-08) | 400 validation, `Consent.Required` (`acceptTerms` not `true`), `Appointment.SlotInPast`, `Booking.ServiceNotOffered` (the doctor doesn't offer the service at that branch); 403 `Auth.PhoneNotVerified`; 404 `Appointment.SlotNotFound`; 409 `Slot.CapacityReached` (taken meanwhile), `Idempotency.KeyReused` | P2 |
+| `POST /api/v2/appointments/{appointmentId}/reschedule` | Patient (own) | `{ slotId }` | 200 the **new** `Appointment`; the old one becomes `Rescheduled` with `rescheduledToId` | 400 `Appointment.CancellationWindowExpired`, `Appointment.SlotInPast`; 403, 404 as above; 409 `Slot.CapacityReached`, `Appointment.InvalidStatusTransition` | P2 |
+| `POST /api/v2/appointments/{appointmentId}/cancel` | Patient (own) | `CancelRequest` | 200 `Appointment` (`Cancelled`) | 400 validation, `Appointment.CancellationWindowExpired`; 403, 404 as above; 409 `Appointment.InvalidStatusTransition` | P2 |
+| `POST /api/v2/appointments/{appointmentId}/review` | Patient (own) | `{ rating, comment? }` (1–5; comment ≤ 1000) | 204 | 400 validation, `Appointment.ReviewNotAllowed` (not `Completed`); 403, 404 as above; 409 `Appointment.ReviewAlreadyExists` | P2 |
+| `POST /api/v2/appointments/{appointmentId}/deposit` | Patient (own); `Idempotency-Key` | — | 200 `{ checkoutUrl }` (Paymob hosted checkout) | 403, 404 as above; 409 `Deposit.NotOffered`, `Deposit.AlreadyPaid`, `Appointment.InvalidStatusTransition`; 503 `Payment.GatewayUnavailable` (the booking is unaffected) | P3 |
+| `GET /api/v2/appointments/{appointmentId}/queue` | Patient (own) | — | 200 `QueueStatus`, or 204 when not checked in | 403, 404 as above | P2 |
+| `POST /api/v2/public/reminders/view` | — | `{ token }` | 200 `ReminderView` | 404 `Reminder.LinkInvalid` (unknown or expired) | P2 |
+| `POST /api/v2/public/reminders/confirm` | — | `{ token }` | 200 `ReminderView` (`attendanceConfirmed: true`) | 404 `Reminder.LinkInvalid`; 409 `Appointment.InvalidStatusTransition` | P2 |
+| `POST /api/v2/public/reminders/cancel` | — | `{ token }` | 200 `ReminderView` (`Cancelled`, reason `Other`) | 400 `Appointment.CancellationWindowExpired`; 404 `Reminder.LinkInvalid`; 409 `Appointment.InvalidStatusTransition` | P2 |
+
+**Live queue (P2).** SignalR hub `/hubs/queue`, with the access token as SignalR sends it (`access_token` query parameter on the WebSocket). The patient calls `WatchAppointment(appointmentId)` and receives `QueueStatusChanged(status: QueueStatus)` at once and on every change; `UnwatchAppointment(appointmentId)` stops it. Watching another patient's appointment fails with the hub error `Appointment.Unauthorized`. Staff use the same hub for the queue board (added with the front desk).
+
+### 13.8 Visits, invoices, documents, insurance and notifications
+
+| Method and path | Auth | Body or query | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/me/visits` | Patient | paging | 200 `VisitListItem[]`, *paged*, newest first; published summaries only | 400 validation | P4 |
+| `GET /api/v2/me/visits/{visitId}` | Patient (own) | — | 200 `VisitSummary` | 404 `Visit.NotFound` (also another patient's) | P4 |
+| `GET /api/v2/me/visits/{visitId}/prescription` | Patient (own) | — | 200 PDF (attachment) | 404 `Visit.NotFound`, `Visit.NoPrescription` | P4 |
+| `GET /api/v2/me/invoices` | Patient | `status?`, paging | 200 `PatientInvoice[]`, *paged*, newest first | 400 validation | P3 |
+| `GET /api/v2/me/invoices/{invoiceId}/pdf` | Patient (own) | — | 200 PDF (the invoice, or the receipt once paid). `Accept-Language` picks its language | 404 `Invoice.NotFound` | P3 |
+| `POST /api/v2/payments/online-checkout` | Patient (own); `Idempotency-Key` | `{ invoiceId }` | 200 `{ checkoutUrl }` for the balance due | 404 `Invoice.NotFound`; 409 `Invoice.NothingDue`, `Idempotency.KeyReused`; 503 `Payment.GatewayUnavailable` | P3 |
+| `GET /api/v2/me/documents` | Patient | paging | 200 `PatientDocument[]`, *paged*, newest first | 400 validation | P4 |
+| `POST /api/v2/me/documents` | Patient | `multipart/form-data`: `file` (PDF, JPEG or PNG, at most 20 MB, checked by content) | 201 `PatientDocument`. It is scanned in the background; until then a download is 409 `File.NotScanned` | 400 `File.TypeNotAllowed`, `File.TooLarge` | P4 |
+| `GET /api/v2/me/documents/{documentId}/content` | Patient (own) | — | 200, the file (attachment) | 404 `File.NotFound`; 409 `File.NotScanned` | P4 |
+| `DELETE /api/v2/me/documents/{documentId}` | Patient (own) | — | 204 | 404 `File.NotFound`; 409 `Document.SharedWithDoctor` (attached to a visit) | P4 |
+| `GET /api/v2/me/policies` | Patient | — | 200 `InsurancePolicy[]`, *full* | — | P5 |
+| `POST /api/v2/me/policies` | Patient | `multipart/form-data`: `payerId`, `memberNo`, `holderName`, `validTo`, `cardFront` (JPEG or PNG), `cardBack?` | 201 `InsurancePolicy` (`PendingVerification`; the desk verifies it) | 400 validation, `File.TypeNotAllowed`, `File.TooLarge`; 404 `Payer.NotFound` | P5 |
+| `GET /api/v2/notifications` | Signed in | `category?`, paging | 200 `AppNotification[]`, *paged*, newest first | 400 validation | P2 |
+| `GET /api/v2/notifications/unread-count` | Signed in | — | 200 `{ "count": number }` | — | P2 |
+| `POST /api/v2/notifications/{notificationId}/read` | Signed in (own) | — | 204 | 403 `Notification.Unauthorized`; 404 `Notification.NotFound` | P2 |
+| `POST /api/v2/notifications/read-all` | Signed in | — | 204 | — | P2 |
+
+Notifications still arrive about 2 s after the action that causes them ([§1](#1-general-conventions)); `/hubs/notifications` (P2) can replace polling later.
+
+### 13.9 Frontend routes the backend will link to
+
+Like [§8](#8-frontend-routes-the-backend-depends-on). The frontend reads the token from the link and sends it in a request body ([§13.1](#131-conventions-for-every-apiv2-route)).
+
+| Route | Sent in | Then |
+|---|---|---|
+| `/#/confirm-email?userId=…&token=…` | Email confirmation (sign-up with an email, `POST /me/email`) | `POST /api/v2/auth/confirm-email` |
+| `/#/reset-password?userId=…&token=…` | `POST /auth/password/forgot` | `POST /api/v2/auth/password/reset`. **`userId`, not the email**, as in §8, so no address sits in the URL |
+| `/#/invitation/{token}` | Staff invitation email | `POST /api/v2/auth/invitations/preview`, then `/accept` |
+| `/#/r/{token}` | Reminder message (WhatsApp, SMS or email) | `POST /api/v2/public/reminders/view`, `/confirm`, `/cancel` |
+
+### 13.10 Error codes
+
+New codes, and existing codes whose status differs on `/api/v2`. Codes not listed here keep §3.3's status, always as shape A.
+
+| Code | Status | Extensions | When |
+|---|---|---|---|
+| `Auth.InvalidCredentials` | **400** | — | Wrong identifier or password (also an unknown account); wrong current password on `POST /me/password` |
+| `Auth.AccountLockedOut` | **429** | `retryAt` | Locked after repeated failures |
+| `Auth.AccountNotActive` | **403** | — | Deactivated account |
+| `Auth.EmailNotConfirmed` | **403** | — | Applying without a confirmed email |
+| `Auth.PhoneNotVerified` | 403 | — | Signing in, booking or applying before the phone is verified |
+| `Auth.PhoneAlreadyUsed` | 409 | — | The number belongs to another account |
+| `Auth.EmailAlreadyExists` | 409 | — | The email belongs to another account |
+| `Auth.InvalidMfaCode` | **400** | — | Wrong authenticator or recovery code |
+| `Auth.MfaChallengeExpired` | 400 | — | The challenge is older than 5 minutes or already used; sign in again |
+| `Auth.MfaEnrollmentRequired` | 403 | — | A staff token without an authenticator, on any route except those named in §13.3 |
+| `Auth.InvalidPasswordResetToken`, `Auth.InvalidEmailConfirmationToken` | 400 | — | Invalid or expired link token, or an unknown user |
+| `Otp.InvalidCode` | 400 | `attemptsLeft` | Wrong or expired code (also for a number with no account) |
+| `Otp.TooManyAttempts` | 429 | `retryAt` | 5 wrong tries on a code, or a daily cap reached |
+| `Otp.ResendTooSoon` | 429 | `retryAt` | A new code within 60 s of the last one |
+| `Messaging.PhoneUnreachable` | 503 | — | No live phone channel can reach the number (no WhatsApp and SMS off) |
+| `Invitation.NotFound` | 404 | — | Unknown, used or revoked invitation |
+| `Invitation.Expired` | 409 | — | Older than 72 h |
+| `Profile.EmailRequired` | 400 | — | Choosing `Email` or `Both` without a confirmed email |
+| `Branch.NotFound` | 404 | — | Unknown or inactive branch |
+| `Doctor.NotFound` | 404 | — | Unknown or hidden doctor |
+| `DoctorApplication.NotFound` | 404 | — | The user has no application |
+| `DoctorApplication.AlreadyOpen` | 409 | — | An `Applied` or `Interview` application exists |
+| `DoctorApplication.ReapplyTooSoon` | 409 | `retryAt` | Within the cool-down after a rejection or withdrawal |
+| `DoctorApplication.CvRequired` | 400 | — | No CV attached |
+| `DoctorApplication.InvalidStatusTransition` | 409 | — | The stage move isn't allowed from the current status |
+| `File.TypeNotAllowed`, `File.TooLarge` | 400 | — | The upload fails the content-type or size check |
+| `File.NotFound` | 404 | — | Unknown file, or not the caller's |
+| `File.NotScanned` | 409 | — | The virus scan hasn't passed (yet) |
+| `Document.SharedWithDoctor` | 409 | — | Deleting a document attached to a visit |
+| `Consent.Required` | 400 | — | Booking without accepting the terms |
+| `Booking.ServiceNotOffered` | 400 | — | The doctor doesn't offer the service at that branch |
+| `Slot.CapacityReached` | 409 | — | The slot is full or no longer free (replaces `Appointment.SlotAlreadyBooked` and `Appointment.SlotNotAvailable` on `/api/v2`) |
+| `Deposit.NotOffered` | 409 | — | The service has no optional deposit |
+| `Deposit.AlreadyPaid` | 409 | — | The deposit is paid |
+| `Payment.GatewayUnavailable` | 503 | — | Paymob can't be reached |
+| `Invoice.NotFound` | 404 | — | Unknown invoice, or not the caller's |
+| `Invoice.NothingDue` | 409 | — | The invoice is paid, void or has no balance |
+| `Visit.NotFound` | 404 | — | Unknown or unpublished visit, or not the caller's |
+| `Visit.NoPrescription` | 404 | — | The visit has no prescription |
+| `Reminder.LinkInvalid` | 404 | — | Unknown or expired reminder token |
+| `Payer.NotFound` | 404 | — | Unknown or inactive payer |
+| `Idempotency.KeyReused` | 409 | — | The same `Idempotency-Key` with a different body |
+| `RateLimit.Exceeded` | 429 | `retryAt` | As in §2.7; `Retry-After` is still sent |
+
+### 13.11 Frontend changes this section implies
+
+Compared with the mock backend at `16a6dcb`. Screens keep working; most items are for the HTTP adapters.
+
+| # | Change | Where |
+|---|---|---|
+| 1 | `NotificationChannel` is `Phone`, not `Sms` (decided 2026-10-26: WhatsApp first, SMS as the fallback) | Already in progress on `feature/p2-ui-front-desk` |
+| 2 | The reset link carries `userId`, not `email`: `resetWithEmailToken(userId, token, newPassword)` | `PasswordResetService`, `use-account-access.ts`, the mock's link |
+| 3 | Login, MFA, sign-up verification, invitation acceptance and refresh return a `Session` with `user: Me`; the V1 `LoginResponse` fields (`email`, `fullName`, `role`) are gone. `saveSession` keeps the tokens and `expiresAt`, and the current user comes from `user` | `shared/api/http-client.ts`, the auth adapters |
+| 4 | `SignInResult.status` is `SignedIn` / `MfaRequired` (PascalCase like every enum); the adapter maps it to the interface's `signed-in` / `mfa-required` | Auth adapter |
+| 5 | The patient's appointments, visits, invoices and documents are *paged*. The adapters read `X-Total-Count` and fetch further pages (`pageSize=100`) until they have every item, or the screens move to paging | Those four adapters |
+| 6 | `PATCH /me` and `POST /me/phone/confirm` return `Me`, not `PatientProfile`; the adapter re-reads `GET /me/patient-profile` (or the hook invalidates both queries) | `ProfileService` adapter |
+| 7 | An invalid phone is a 400 validation error on the field (`errors.phone`), not the code `Validation.InvalidPhone`; the adapter maps it to that code, or the form shows the field error | Phone forms |
+| 8 | A document can be downloaded only after its scan: `File.NotScanned` (409) right after an upload needs a message ("still being checked") | Documents screen, `common:errors` |
+| 9 | Not signed in is a 401 without a code (shape E), not `Auth.Unauthorized`; the HTTP client already handles it | — |
+| 10 | `AppNotification.link.kind` is PascalCase (`Appointment`, `Invoice`, `Visit`); the adapter maps it to the interface's lower-case values. (`category` is only a query parameter, so its lower-case values work as they are) | Notifications adapter |
+| 11 | Translations for the codes the mocks never throw: `Auth.MfaEnrollmentRequired`, `Auth.EmailAlreadyExists`, `Messaging.PhoneUnreachable`, `Branch.NotFound`, `DoctorApplication.NotFound`, `Booking.ServiceNotOffered`, `Deposit.NotOffered`, `Deposit.AlreadyPaid`, `Document.SharedWithDoctor`, `Payment.GatewayUnavailable`, `Idempotency.KeyReused`, `RateLimit.Exceeded`, `File.TypeNotAllowed`, `File.TooLarge`, `File.NotScanned` | `common:errors` (en, ar) |
+| 12 | Suggested: a test per mock service that checks its error codes against §13.3–§13.8, so the mocks can't drift from this section before the HTTP adapters exist | `src/mocks` |
+
+### 13.12 Revisions of this section
+
+| Date | Change |
+|---|---|
+| 2026-10-27 | First version: auth and sessions, me and profile, public reference data and the doctor directory, doctor applications, the patient's appointments, queue and reminders, visits, invoices, documents, insurance and notifications. Settles P1 plan Q-A |
