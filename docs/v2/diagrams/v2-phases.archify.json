@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "When each module arrives",
+    "locale": "en",
+    "output": "docs/v2/diagrams/v2-phases.html",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "security": { "label": "Done (tag v2.0.0-p0)" },
+        "backend": { "label": "Planned phase" },
+        "cloud": { "label": "Proposed phase (ADR 0008, Q20)" }
+      }
+    }
+  },
+  "lanes": [
+    { "id": "core", "label": "Foundation and core" },
+    { "id": "money", "label": "Money and reports" },
+    { "id": "clinical", "label": "Clinical and patient" },
+    { "id": "platform", "label": "Selling to many clinics" }
+  ],
+  "mainPath": ["p0", "p1", "p2", "p3", "p5", "p6"],
+  "nodes": [
+    { "id": "p0", "lane": "core", "col": 0, "type": "security", "label": "P0 Foundation", "sublabel": "tenancy · outbox · audit", "tag": "done" },
+    { "id": "p1", "lane": "core", "col": 1, "type": "backend", "label": "P1 Clinic & people", "sublabel": "ORG · STF · ACC · SVC · REC" },
+    { "id": "p2", "lane": "core", "col": 2, "type": "backend", "label": "P2 Scheduling & desk", "sublabel": "SCH · APT · NTF · FD · PAT" },
+    { "id": "p3", "lane": "money", "col": 3, "type": "backend", "label": "P3 Billing", "sublabel": "BIL · Paymob deposits" },
+    { "id": "p5", "lane": "money", "col": 4, "type": "backend", "label": "P5 Insurance", "sublabel": "INS" },
+    { "id": "p6", "lane": "money", "col": 5, "type": "backend", "label": "P6 Reporting", "sublabel": "RPT · waitlist" },
+    { "id": "p4", "lane": "clinical", "col": 3, "type": "backend", "label": "P4 Clinical records", "sublabel": "EMR" },
+    { "id": "p7", "lane": "clinical", "col": 5, "type": "backend", "label": "P7 Chatbot", "sublabel": "BOT" },
+    { "id": "plt", "lane": "platform", "col": 4, "type": "cloud", "label": "Platform phase", "sublabel": "PLT · onboarding · plans" }
+  ],
+  "edges": [
+    { "id": "p0-p1", "from": "p0", "to": "p1", "variant": "emphasis" },
+    { "id": "p1-p2", "from": "p1", "to": "p2", "variant": "emphasis" },
+    { "id": "p2-p3", "from": "p2", "to": "p3", "variant": "emphasis" },
+    { "id": "p2-p4", "from": "p2", "to": "p4" },
+    { "id": "p3-p5", "from": "p3", "to": "p5", "variant": "emphasis" },
+    { "id": "p4-p5", "from": "p4", "to": "p5", "label": "diagnoses", "variant": "dashed" },
+    { "id": "p5-p6", "from": "p5", "to": "p6", "variant": "emphasis" },
+    { "id": "p6-p7", "from": "p6", "to": "p7" },
+    { "id": "p3-plt", "from": "p3", "to": "plt", "label": "proposed", "variant": "dashed" }
+  ]
+}
