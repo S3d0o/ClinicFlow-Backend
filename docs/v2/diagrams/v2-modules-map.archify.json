@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "ClinicFlow V2 modules: core and add-ons",
+    "locale": "en",
+    "output": "docs/v2/diagrams/v2-modules-map.html",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "backend": { "label": "Core module: every clinic gets it" },
+        "frontend": { "label": "Add-on module: sold by plan" },
+        "cloud": { "label": "Platform module (proposed, ADR 0008)" },
+        "external": { "label": "Outside service" }
+      }
+    },
+    "views": [
+      { "id": "core-view", "label": "Core: every clinic", "focus": ["org", "stf", "svc", "acc", "sch", "apt", "ntf", "aud"], "note": "Without these eight modules the product is not a clinic system, so every plan includes them." },
+      { "id": "visit-view", "label": "Add-ons around the visit", "focus": ["apt", "fd", "emr", "bil", "ins", "rpt", "paymob"], "note": "Front desk, records, billing and insurance hang off the appointment; insurance needs billing." },
+      { "id": "patient-view", "label": "Patient-facing", "focus": ["acc", "pat", "bot", "llm", "ntf", "phone"], "note": "Patients sign up by phone, book in the portal, chat with the bot and get WhatsApp messages." }
+    ]
+  },
+  "components": [
+    { "id": "org", "type": "backend", "label": "Organization", "sublabel": "branches · rooms · settings", "tag": "ORG · P1", "pos": [280, 40], "size": [160, 64] },
+    { "id": "stf", "type": "backend", "label": "Staff & access", "sublabel": "roles · branches · MFA", "tag": "STF · P1", "pos": [40, 170], "size": [160, 64] },
+    { "id": "rec", "type": "frontend", "label": "Recruitment", "sublabel": "apply · interview · hire", "tag": "REC · P1", "pos": [40, 300], "size": [160, 64] },
+    { "id": "svc", "type": "backend", "label": "Services & prices", "sublabel": "catalog · price list", "tag": "SVC · P1", "pos": [40, 430], "size": [160, 64] },
+    { "id": "sch", "type": "backend", "label": "Scheduling", "sublabel": "shifts · slots · leave", "tag": "SCH · P2", "pos": [280, 170], "size": [160, 64] },
+    { "id": "acc", "type": "backend", "label": "Accounts & sign-in", "sublabel": "phone sign-up · codes", "tag": "ACC · P1", "pos": [280, 300], "size": [160, 64] },
+    { "id": "pat", "type": "frontend", "label": "Patient portal", "sublabel": "book · pay · records", "tag": "PAT · P2–P6", "pos": [520, 40], "size": [160, 64] },
+    { "id": "apt", "type": "backend", "label": "Appointments", "sublabel": "book · reschedule · cancel", "tag": "APT · P0–P2", "pos": [520, 170], "size": [160, 324] },
+    { "id": "ntf", "type": "backend", "label": "Notifications", "sublabel": "in-app · email · phone", "tag": "NTF · P1–P2", "pos": [520, 560], "size": [160, 64] },
+    { "id": "phone", "type": "external", "label": "WhatsApp / SMS", "sublabel": "WhatsApp first · SMS off", "pos": [520, 690], "size": [160, 64] },
+    { "id": "bot", "type": "frontend", "label": "Chatbot", "sublabel": "Arabic/English assistant", "tag": "BOT · P7", "pos": [780, 40], "size": [160, 64] },
+    { "id": "fd", "type": "frontend", "label": "Front desk & queue", "sublabel": "check-in · queue board", "tag": "FD · P2", "pos": [780, 170], "size": [160, 64] },
+    { "id": "emr", "type": "frontend", "label": "Clinical records", "sublabel": "encounters · prescriptions", "tag": "EMR · P4", "pos": [780, 300], "size": [160, 64] },
+    { "id": "bil", "type": "frontend", "label": "Billing & payments", "sublabel": "invoices · desk · cash", "tag": "BIL · P3", "pos": [780, 430], "size": [160, 64] },
+    { "id": "paymob", "type": "external", "label": "Paymob", "sublabel": "optional online deposits", "pos": [780, 560], "size": [160, 64] },
+    { "id": "llm", "type": "external", "label": "LLM provider", "sublabel": "chosen in P7 (Q16)", "pos": [1040, 40], "size": [160, 64] },
+    { "id": "rpt", "type": "frontend", "label": "Reports", "sublabel": "beyond the dashboard", "tag": "RPT · P2–P6", "pos": [1040, 170], "size": [160, 64] },
+    { "id": "ins", "type": "frontend", "label": "Insurance", "sublabel": "policies · claims", "tag": "INS · P5", "pos": [1040, 430], "size": [160, 64] },
+    { "id": "plt", "type": "cloud", "label": "Platform & plans", "sublabel": "switches add-ons per clinic", "tag": "PLT · proposed", "pos": [40, 560], "size": [160, 64] },
+    { "id": "aud", "type": "backend", "label": "Audit", "sublabel": "who did what, when", "tag": "AUD · P0–P4", "pos": [280, 560], "size": [160, 64] }
+  ],
+  "connections": [
+    { "id": "org-to-sch", "from": "org", "to": "sch", "label": "hours" },
+    { "id": "org-to-stf", "from": "org", "to": "stf", "label": "branches", "fromSide": "left", "toSide": "top" },
+    { "id": "rec-to-stf", "from": "rec", "to": "stf", "label": "hires" },
+    { "id": "stf-to-sch", "from": "stf", "to": "sch", "label": "doctors" },
+    { "id": "sch-to-apt", "from": "sch", "to": "apt", "label": "slots", "variant": "emphasis" },
+    { "id": "acc-to-apt", "from": "acc", "to": "apt", "label": "patients", "variant": "emphasis" },
+    { "id": "svc-to-apt", "from": "svc", "to": "apt", "label": "services" },
+    { "id": "pat-to-apt", "from": "pat", "to": "apt", "label": "online booking" },
+    { "id": "pat-to-bot", "from": "pat", "to": "bot", "label": "chat" },
+    { "id": "bot-to-llm", "from": "bot", "to": "llm", "label": "LLM API", "variant": "dashed" },
+    { "id": "apt-to-fd", "from": "apt", "to": "fd", "label": "check-in" },
+    { "id": "apt-to-emr", "from": "apt", "to": "emr", "label": "encounter" },
+    { "id": "apt-to-bil", "from": "apt", "to": "bil", "label": "invoice" },
+    { "id": "apt-to-ntf", "from": "apt", "to": "ntf", "label": "events", "variant": "dashed" },
+    { "id": "ntf-to-phone", "from": "ntf", "to": "phone", "label": "messages" },
+    { "id": "fd-to-rpt", "from": "fd", "to": "rpt", "label": "waits" },
+    { "id": "emr-to-ins", "from": "emr", "to": "ins", "label": "diagnoses", "variant": "dashed", "fromSide": "right", "toSide": "top" },
+    { "id": "bil-to-ins", "from": "bil", "to": "ins", "label": "payer split" },
+    { "id": "bil-to-paymob", "from": "bil", "to": "paymob", "label": "deposits", "variant": "dashed" }
+  ]
+}
