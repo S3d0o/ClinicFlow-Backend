@@ -114,7 +114,7 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
   - **`v2` is V2.** It has its own database, `ClinicFlowV2`; never point V2 at V1's database or run V2 migrations against it.
   - **Separation is enforced** (P0 PR 0): `v2` has its own `UserSecretsId`, and startup refuses any database but `ClinicFlowV2` (`Database:ExpectedName`). Never weaken that check or point `ExpectedName` at V1's database.
   - **V1 fixes:** when one lands on `master`, check whether it applies to `v2` and cherry-pick it.
-- **Every new V2 feature gets its own branch off `v2`.** Create the branch before writing any code: `git switch v2 && git pull && git switch -c feature/p<phase>-<kebab-case-name>`. Merge it back into `v2`. Never build a feature on `v2`, `master` or another feature's branch.
+- **Every new V2 feature gets its own branch off `v2`.** Create the branch before writing any code: `git switch v2 && git pull && git switch -c feature/r<release>-<kebab-case-name>` (since 2026-10-29 V2 ships as releases, `docs/v2/plans/R1.md`; P0's branches used `feature/p<phase>-…`). Merge it back into `v2`. Never build a feature on `v2`, `master` or another feature's branch.
 - **V1 fixes**, only when asked: branch off `master` as `fix/<name>`.
 - **Uncommitted changes:** if the working tree has them when a feature starts, stop and ask whether to commit, stash or carry them over. Don't switch branches over them.
 - **Other branch prefixes:** `fix/`, `docs/`, `test/` and `chore/` follow the same rule for other kinds of work (e.g. `docs/review-and-claude-md`). They branch off `v2` for V2 work and off `master` for V1 work.
@@ -130,6 +130,7 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
 - **Logging:** structured Serilog templates with named placeholders (`"... {AppointmentId}"`), never string interpolation. Log a warning before returning an expected failure.
 
 ### Design (V2 and enhancements)
+- **Delivery by release.** V2 ships as releases R1–R4 (`docs/v2/10_ROADMAP.md` §1). The current one is **R1 "Clinic day"** (`docs/v2/plans/R1.md`): the core modules with plans and modules (ADR 0008, accepted), front desk, triage, billing at the desk and online booking. Work outside the current release (EMR, recruitment, MFA, files, Paymob, insurance, reports exports, the chatbot) waits for its release unless the owner says otherwise.
 - **SOLID and clean code.** Follow `docs/v2/06_TECHNICAL_DESIGN.md` §2.1 and `docs/v2/adr/0006-clean-architecture-modular-monolith.md`. Write small use-case services, keep status rules in entity methods, use small interfaces, and keep controllers thin.
 - **CQRS-lite.** Inside a module, keep command services separate from query services:
   - **Command services** load tracked entities through `IUnitOfWork`, call entity methods, then save.

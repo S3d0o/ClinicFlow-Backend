@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Agreed; being built. P0 (foundation) done 2026-10-24, tag `v2.0.0-p0`; P1 next |
-| **Last updated** | 2026-10-22 |
+| **Status** | Agreed; being built. P0 (foundation) done 2026-10-24, tag `v2.0.0-p0`. Since 2026-10-29 V2 ships as releases; R1 "Clinic day" is next ([plans/R1.md](plans/R1.md)) |
+| **Last updated** | 2026-10-29 |
 | **Applies to** | ClinicFlow backend and frontend, `v2` branch, contract version 4.0.0 (V1 is 3.x on `master`/`main`) |
 | **Builds on** | V1 docs: [PROJECT_OVERVIEW.md](../PROJECT_OVERVIEW.md), [API_CONTRACT.md](../API_CONTRACT.md), [REVIEW.md](../REVIEW.md) |
 
@@ -30,7 +30,7 @@ Read them in this order:
 | 9 | [09_MIGRATION_FROM_V1.md](09_MIGRATION_FROM_V1.md) | Moving data, API and frontend from V1 to V2; where each open REVIEW item gets fixed |
 | 10 | [10_ROADMAP.md](10_ROADMAP.md) | Phases, exit criteria, risks, open questions |
 | — | [adr/](adr/) | Architecture decision records for the big choices |
-| — | [plans/](plans/) | Implementation plan per phase: [P0](plans/P0.md) (done), [P1](plans/P1.md) (draft) |
+| — | [plans/](plans/) | Implementation plans: [R1](plans/R1.md) (the first release, agreed), [P0](plans/P0.md) (done), [P1](plans/P1.md) (re-scoped into R1) |
 
 ### Architecture decision records
 
@@ -43,7 +43,7 @@ Read them in this order:
 | [0005](adr/0005-api-v2-versioning.md) | V2 endpoints live under `/api/v2`, contract 4.x (its V1-coexistence parts are superseded by 0007) |
 | [0006](adr/0006-clean-architecture-modular-monolith.md) | Keep Clean Architecture as a modular monolith with CQRS-lite (no MediatR); patterns on merit; SOLID rules enforced by architecture tests |
 | [0007](adr/0007-v2-separate-product-line.md) | V2 is a separate product line: `v2` branch, its own database; V1 stays untouched; the owner decides when to switch |
-| [0008](adr/0008-multi-clinic-platform-module-entitlements.md) | *Proposed:* one multi-tenant platform for many clinics; each clinic's subscription switches modules and limits on (amends 0001) |
+| [0008](adr/0008-multi-clinic-platform-module-entitlements.md) | One multi-tenant platform for many clinics; each clinic's subscription switches modules and limits on (amends 0001) |
 
 ## Canonical names
 

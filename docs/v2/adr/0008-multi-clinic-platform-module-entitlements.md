@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted 2026-10-29: the owner chose plan-gated modules for the first release ([plans/R1.md](../plans/R1.md)). Q18–Q23 stay open |
 | **Date** | 2026-10-26 |
 | **Deciders** | Owner and only developer |
 | **Amends** | [ADR 0001](0001-single-organization-tenant-ready.md) decisions 1 and 8 (exactly one organization; no onboarding, platform operator or tenant resolution in V2) |
