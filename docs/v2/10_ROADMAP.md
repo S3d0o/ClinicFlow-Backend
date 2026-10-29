@@ -2,16 +2,25 @@
 
 ## 1. Phases at a glance
 
-| Phase | Goal | Relative size | Depends on |
-|---|---|---|---|
-| P0 Foundation | Fix what V2 builds on; cross-cutting pieces | M | — |
-| P1 Organization, staff, catalog, recruitment, sign-up | The clinic, its people and prices exist; doctors apply; patients sign up by mobile | L | P0 |
-| P2 Scheduling 2.0 and front desk | One calendar and a live waiting room; WhatsApp/email reminders; the admin dashboard | L | P1 |
-| P3 Billing and payments | The receptionist takes the money; optional Paymob deposits | L | P2 |
-| P4 Clinical records (EMR) | Every visit has a structured, signed record | L | P2 |
-| P5 Insurance | Insurance visits are split and claims get paid | M | P3, P4 |
-| P6 Reporting | Reports and exports beyond the dashboard; V3 groundwork | S | P3, P5 |
-| P7 Chatbot | A bilingual patient assistant | S | P6 |
+**V2 ships as releases (2026-10-29, [plans/R1.md](plans/R1.md)).** The phases below remain the catalog of work, but delivery is by release. Each release is a working product, backend and frontend, that a clinic can use:
+
+| Release | Modules | Taken from |
+|---|---|---|
+| **R1 Clinic day** | Core (ORG, STF, ACC, SVC, SCH, APT, NTF, AUD, the dashboard, plans and modules) plus FD, triage, BIL at the desk (cash and card) and PAT booking | P1 without PRs 8, 11, 13, 14, 16, 17; P2; P3 without Paymob |
+| R2 Clinical | EMR, REC, staff MFA, file storage, Paymob deposits | P1 PRs 8, 11, 13, 14; P3 Paymob; P4 |
+| R3 Insurance and reports | INS, RPT exports, finance screens, editable role permissions | P5, P6, P1 PR 16 |
+| R4 Platform and bot | Operator console, subscription billing, BOT | Platform phase (ADR 0008), P7 |
+
+| Phase | Goal | Relative size | Depends on | Ships in |
+|---|---|---|---|---|
+| P0 Foundation | Fix what V2 builds on; cross-cutting pieces | M | — | Done |
+| P1 Organization, staff, catalog, recruitment, sign-up | The clinic, its people and prices exist; doctors apply; patients sign up by mobile | L | P0 | R1 (recruitment, MFA, files: R2; role editing: R3) |
+| P2 Scheduling 2.0 and front desk | One calendar and a live waiting room; WhatsApp/email reminders; the admin dashboard | L | P1 | R1 |
+| P3 Billing and payments | The receptionist takes the money; optional Paymob deposits | L | P2 | R1 (Paymob: R2) |
+| P4 Clinical records (EMR) | Every visit has a structured, signed record | L | P2 | R2 |
+| P5 Insurance | Insurance visits are split and claims get paid | M | P3, P4 | R3 |
+| P6 Reporting | Reports and exports beyond the dashboard; V3 groundwork | S | P3, P5 | R3 |
+| P7 Chatbot | A bilingual patient assistant | S | P6 | R4 |
 
 **Sizes, not dates.** V2 is built by **one developer working with Claude** on both repos (backend and frontend). Sizes are relative (S < M < L) and only for sequencing; each phase is estimated in weeks at its kickoff, and the estimate is recorded in the decisions log (§6). A phase can start its backend while the frontend of the previous one finishes, as long as the previous phase's exit criteria are met first.
 
@@ -22,7 +31,7 @@
 
 **Order changed on 2026-10-22:** billing (now P3) comes **before** EMR (now P4). Taking money at the desk is part of every visit in the clinic, while EMR needs legal sign-off first (R2). The two phases share only the appointment and the patient record.
 
-Each phase ends with a **phase review**: exit criteria met, docs updated (`API_CONTRACT.md` 4.x, `PROJECT_OVERVIEW.md`, REVIEW entries), pilot feedback recorded (if piloted), next phase re-planned and estimated. Each finished phase is tagged `v2.0.0-p<n>` on the `v2` branch of both repos; `v2.0.0` is tagged at V2 general availability.
+Each phase ends with a **phase review**: exit criteria met, docs updated (`API_CONTRACT.md` 4.x, `PROJECT_OVERVIEW.md`, REVIEW entries), pilot feedback recorded (if piloted), next phase re-planned and estimated. Since 2026-10-29 a finished **release** is tagged `v2.0.0-r<n>` on the `v2` branch of both repos (P0 kept its `v2.0.0-p0`); `v2.0.0` is tagged at V2 general availability.
 
 ## 2. Phases
 
@@ -228,3 +237,4 @@ Each needs an owner and a decision date at the phase where it's needed.
 | 2026-10-26 | **WhatsApp is the intended primary phone channel; SMS stays built but switched off.** Every channel is a setting, both phone channels are off until their provider is ready, a log channel stands in for them in Development and tests, and Production refuses to start without a live phone channel. Codes and patient messages go by WhatsApp first, by SMS when WhatsApp can't reach the number and SMS is on. The patient's channel preference becomes `Phone`, `Email` or `Both`. WhatsApp isn't free (Meta charges per template message, about $0.0036 in Egypt), but it reaches patients where they are | [06 §9.2](06_TECHNICAL_DESIGN.md#92-whatsapp-and-sms-phone-channels), FR-NTF-01, FR-ACC-02 |
 | 2026-10-27 | **P1 build paused; the `/api/v2` contract is agreed first.** The frontend runs on its mock backend, so the endpoints it already uses are written into the contract now ([API_CONTRACT.md §13](../API_CONTRACT.md#13-planned-apiv2-endpoints-agreed-not-built)), and the backend builds them to match. This settles P1 plan Q-A: the frontend's shapes where richer. Rules fixed with it: ids are JSON strings; every coded error is ProblemDetails with `title` = the code, at any status; 401 only for token problems (wrong passwords and codes are 400, lockouts and cooldowns 429 with `retryAt`); tokens from links go in request bodies; times are `HH:mm` | [API_CONTRACT.md §13](../API_CONTRACT.md#13-planned-apiv2-endpoints-agreed-not-built), [plans/P1.md](plans/P1.md) |
 | 2026-10-27 | **Front desk and nurse station added to the agreed contract; triage moves to P2.** [API_CONTRACT.md §13.13–§13.21](../API_CONTRACT.md#1313-front-desk-and-nurse-station-conventions) holds the desk, queue, triage, checkout and cash-session endpoints the frontend built. Triage is keyed by appointment, not encounter, and built with P2's queue, so a visit can move past `WaitingTriage` before the EMR exists; P4 attaches the vitals to the encounter without changing the routes. Five 07 routes are replaced (queue order, amount-due, desk `POST /payments`, invoice lines before issue, encounter vitals) | [API_CONTRACT.md §13.13](../API_CONTRACT.md#1313-front-desk-and-nurse-station-conventions) |
+| 2026-10-29 | **V2 ships as releases R1–R4; R1 is "Clinic day".** It holds the core modules with plans and modules (ADR 0008 accepted), the front desk, triage, cash and card billing at the desk, and online booking. Recruitment, MFA, files, EMR and Paymob move to R2, insurance and reports to R3, the platform console and chatbot to R4. Add-ons outside a release show as "not in your plan" in the live app, and the frontend's mock build is published separately as a "V2 preview". R1 is hosted on a small VPS with HTTPS. Releases are tagged `v2.0.0-r<n>` | [plans/R1.md](plans/R1.md) |
