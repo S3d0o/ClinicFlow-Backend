@@ -19,6 +19,30 @@ namespace ClinicFlow.Tests.Authorization
         }
 
         [Fact]
+        public void ModuleOfEachPermission_MatchesTheDocument()
+        {
+            // ADR 0008 decision 3: the Module column of 02 §5 is authoritative, and every permission has exactly one
+            var differences = TableRows("## 5. Permission catalog")
+                .Select(cells => (Permission: Code(cells[1]), Documented: cells[2]))
+                .Where(row => !Modules.OfPermissions.TryGetValue(row.Permission, out var coded) || coded != row.Documented)
+                .Select(row => $"{row.Permission}: document \"{row.Documented}\", code {Modules.OfPermissions.GetValueOrDefault(row.Permission) ?? "none"}")
+                .ToList();
+
+            Assert.True(differences.Count == 0, string.Join(Environment.NewLine, differences));
+        }
+
+        [Fact]
+        public void EveryPermission_BelongsToAKnownModule()
+        {
+            Assert.Equal(Permissions.All.Order(), Modules.OfPermissions.Keys.Order());
+            Assert.All(Modules.OfPermissions.Values, module => Assert.Contains(module, Modules.All));
+        }
+
+        [Fact]
+        public void ModuleOf_AnUnknownPermission_Throws()
+            => Assert.Throws<InvalidOperationException>(() => Modules.Of("appointments.chek_in"));
+
+        [Fact]
         public void Matrix_MatchesTheDocument_CellByCell()
         {
             var rows = TableRows("## 6. Role × permission matrix").ToList();

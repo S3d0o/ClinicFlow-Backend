@@ -1,6 +1,7 @@
 using Domain.Entities.AppModule;
 using Domain.Entities.Auditing;
 using Domain.Entities.IdentityModule;
+using Domain.Entities.Subscriptions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -24,7 +25,7 @@ namespace ClinicFlow.Tests.Persistence
             => Audited<T>()!.ModeOf(Model.FindEntityType(typeof(T))!.FindProperty(property)!);
 
         [Fact]
-        public void AuditedTypes_AreAppointmentsDoctorsUsersAndRoles()
+        public void AuditedTypes_AreAppointmentsDoctorsUsersRolesAndSubscriptions()
         {
             var audited = Model.GetEntityTypes()
                 .Select(t => (t.ClrType, Audited: AuditedType.Of(t)))
@@ -37,7 +38,33 @@ namespace ClinicFlow.Tests.Persistence
                 [typeof(DoctorProfile)] = "DoctorProfile",
                 [typeof(ApplicationUser)] = "User",
                 [typeof(IdentityUserRole<Guid>)] = "UserRole",
+                [typeof(OrganizationSubscription)] = "OrganizationSubscription",     // docs/v2/adr/0008 decision 6
+                [typeof(OrganizationModuleOverride)] = "OrganizationModuleOverride",
             }, audited);
+        }
+
+        [Theory]
+        [InlineData(nameof(OrganizationSubscription.PlanId), AuditMode.Recorded)]
+        [InlineData(nameof(OrganizationSubscription.Status), AuditMode.Recorded)]
+        [InlineData(nameof(OrganizationSubscription.CurrentPeriodEnd), AuditMode.Recorded)]
+        [InlineData(nameof(OrganizationSubscription.OrganizationId), AuditMode.Ignored)] // the entry's id and its own
+        public void OrganizationSubscription_RecordsThePlanAndStatus(string property, AuditMode expected)
+            => Assert.Equal(expected, ModeOf<OrganizationSubscription>(property));
+
+        [Theory]
+        [InlineData(nameof(OrganizationModuleOverride.ModuleCode), AuditMode.Recorded)]
+        [InlineData(nameof(OrganizationModuleOverride.Enabled), AuditMode.Recorded)]
+        public void OrganizationModuleOverride_RecordsTheModuleAndSwitch(string property, AuditMode expected)
+            => Assert.Equal(expected, ModeOf<OrganizationModuleOverride>(property));
+
+        [Fact]
+        public void Plans_AreNotAudited()
+        {
+            // Platform data, changed only by migrations until the operator console (R4); an audit entry belongs to an
+            // organization, so the console's plan changes need a platform audit trail of their own
+            Assert.Null(Audited<Plan>());
+            Assert.Null(Audited<PlanModule>());
+            Assert.Null(Audited<PlanLimit>());
         }
 
         [Fact]

@@ -123,6 +123,10 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
 
             // Every test class starts with no recorded emails and sending switched back on
             Emails.Clear();
+
+            // The database is back to its migrated subscription (the Full plan), which this process's cache of
+            // entitlements can't see: dropping and migrating saves nothing through a context
+            Services.GetRequiredService<IEntitlementCache>().InvalidateAll();
         }
 
         // The OutboxDispatcher job doesn't run in tests: call this after the request under test to deliver the

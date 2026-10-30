@@ -16,6 +16,7 @@ namespace Domain.Interfaces
         IAdminRepo Admins { get; }
         IBranchRepo Branches { get; }
         IMessageDeliveryRepo MessageDeliveries { get; }
+        ISubscriptionRepo Subscriptions { get; }
 
         // Events no entity raises; entity events are added to the outbox when the entity is saved (docs/v2/06 §5)
         IOutbox Outbox { get; }

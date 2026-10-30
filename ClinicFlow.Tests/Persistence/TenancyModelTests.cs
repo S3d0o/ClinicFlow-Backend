@@ -2,6 +2,7 @@ using Domain.Entities.AppModule;
 using Domain.Entities.Auditing;
 using Domain.Entities.IdentityModule;
 using Domain.Entities.Messaging;
+using Domain.Entities.Subscriptions;
 using Domain.Entities.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -21,7 +22,8 @@ namespace ClinicFlow.Tests.Persistence
         private static readonly Type[] ExpectedOrganizationOwned =
             [typeof(Branch), typeof(DoctorProfile), typeof(DoctorSchedule), typeof(AppointmentSlot), typeof(Appointment), typeof(Review), typeof(Notification),
              typeof(OutboxMessage), typeof(MessageDelivery), // an event belongs to the organization whose change raised it
-             typeof(AuditEntry)];
+             typeof(AuditEntry),
+             typeof(OrganizationSubscription), typeof(OrganizationModuleOverride)]; // an organization's plan and add-ons (docs/v2/adr/0008)
 
         private static readonly Type[] ExpectedBranchOwned =
             [typeof(DoctorSchedule), typeof(AppointmentSlot), typeof(Appointment)];
@@ -86,6 +88,9 @@ namespace ClinicFlow.Tests.Persistence
         [InlineData(typeof(PatientProfile))]
         [InlineData(typeof(Specialty))]
         [InlineData(typeof(RefreshToken))]
+        [InlineData(typeof(Plan))]       // plans are platform data, sold to every organization (docs/v2/adr/0008 decision 6)
+        [InlineData(typeof(PlanModule))]
+        [InlineData(typeof(PlanLimit))]
         public void GlobalTypes_AreNotFiltered(Type type)
             // People, identity and reference data are shared across organizations (docs/v2/adr/0001 §3)
             => Assert.Empty(Model.FindEntityType(type)!.GetDeclaredQueryFilters());

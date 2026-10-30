@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Contract version** | 4.0.0-p0 (pre-release, `v2` branch). V1's contract stays 3.1.2 on `master` ([docs/v2/adr/0007](v2/adr/0007-v2-separate-product-line.md)) |
-| **Last updated** | 2026-10-30 (P1 PR 0: camelCase validation keys on every route; the `/api/v2` conventions are built, no `/api/v2` endpoint yet) |
+| **Last updated** | 2026-10-30 (P1 PR 0: camelCase validation keys on every route and the `/api/v2` conventions; then the first `/api/v2` routes, plans and modules, §5.10) |
 | **Applies to** | ClinicFlow backend (`ClinicFlow.Backend`) and the ClinicFlow frontend (React) |
 | **Canonical copy** | `ClinicFlow.Backend/docs/API_CONTRACT.md`. The frontend repo keeps an identical copy at `docs/API_CONTRACT.md` |
 | **Machine-readable companion** | [`openapi.json`](openapi.json) (OpenAPI 3.1, generated from the running API) |
@@ -230,6 +230,12 @@ Only codes the API can actually return are listed.
 | `Specialty.HasAssignedDoctors` | 409 | Deleting a specialty that doctors use |
 | `Admin.DoctorAlreadyApproved` | 409 | Approving an approved doctor |
 | `Admin.DoctorAlreadySuspended` | 409 | Suspending a suspended doctor |
+| `Subscription.ModuleNotEnabled` | 403 | A role grants the permission, but its module isn't in the organization's plan (§5.10). Any `/api/v2` permission route |
+| `Subscription.NotFound` | 404 | The organization has no subscription (#46, #49, #50) |
+| `Subscription.PlanNotFound` | 404 | Unknown plan code (#49) |
+| `Subscription.NotAnAddOn` | 400 | A core or unknown module in #50 |
+| `Subscription.ModuleRequired` | 409 | Switching off an add-on that another enabled add-on needs (#50) |
+| `Subscription.SwitchingDisabled` | 403 | #49 or #50 on a deployment where `Platform:AllowPlanSwitching` is off (the default outside Development) |
 | `RateLimit.Exceeded` | 429 | Too many requests from one client to the rate-limited auth endpoints ([§2.7](#27-rate-limiting)). A `Retry-After` header gives the seconds to wait |
 
 Booking can also fail with a 500 whose `title` is `"An error occurred while booking the appointment."` (an unexpected database failure).
@@ -296,6 +302,12 @@ Auth column: **—** means anonymous; **Any** means any logged-in user.
 | 43 | DELETE | `/api/admin/specialties/{id}` | Admin | 204 |
 | 44 | GET | `/api/admin/stats/overview` | Admin | 200 `OverviewStatsResponse` |
 | 45 | GET | `/api/admin/stats/appointments` | Admin | 200 `AppointmentStatsResponse` |
+| | **Plans and modules (`/api/v2`, §5.10)** | | | |
+| 46 | GET | `/api/v2/organization/entitlements` | `org.settings.manage` | 200 `EntitlementsResponse` |
+| 47 | GET | `/api/v2/organization/modules` | — | 200 `Module[]` |
+| 48 | GET | `/api/v2/plans` | `org.settings.manage` | 200 `PlanResponse[]` |
+| 49 | PUT | `/api/v2/platform/subscription/plan` | `org.settings.manage`, where switching is on | 204 |
+| 50 | PUT | `/api/v2/platform/subscription/modules` | `org.settings.manage`, where switching is on | 204 |
 
 `/api/Specialty` is case-insensitive (`/api/specialty` also works).
 
@@ -699,6 +711,34 @@ Each entry lists the request, the success response, and the errors that endpoint
 **45. `GET /api/admin/stats/appointments`**
 - **200:** `AppointmentStatsResponse`
 
+### 5.10 Plans and modules (`/api/v2`)
+
+The first built `/api/v2` routes ([docs/v2/adr/0008](v2/adr/0008-multi-clinic-platform-module-entitlements.md), R1 M1). §13.1 applies: coded errors are shape A at any status. Module codes are the `Module` enum ([§7](#7-enums)); core modules (`ORG`, `STF`, `ACC`, `SVC`, `SCH`, `APT`, `NTF`, `AUD`) are always on.
+
+**Module check on every permission route.** When one of the user's roles grants an endpoint's permission but the permission's module isn't enabled for the organization, the answer is **403 `Subscription.ModuleNotEnabled`** (shape A) instead of 403 shape E, so the frontend can show "not in your plan" rather than "forbidden". The module of each permission is in [02 §5](v2/02_ROLES_AND_PERMISSIONS.md). It applies to every `[HasPermission]` route and to `[RequiresModule]` controllers; the inherited role-based routes (#1–#45) aren't affected.
+
+**46. `GET /api/v2/organization/entitlements`** (`org.settings.manage`)
+- **200:** `EntitlementsResponse`. `modules` lists every enabled module, core included, in catalog order (`ORG`, `STF`, `ACC`, `SVC`, `SCH`, `APT`, `NTF`, `AUD`, `FD`, `BIL`, `EMR`, `INS`, `RPT`, `PAT`, `REC`, `BOT`), after the plan, the overrides and module dependencies. `usage` has one entry per limit, in the order `branches`, `doctors`, `phoneMessagesPerMonth`; `used` counts active branches and active approved doctors, and is 0 for phone messages until P1 PR 9.
+- **Errors:** 404 `Subscription.NotFound`
+
+**47. `GET /api/v2/organization/modules`** (anonymous)
+- **200:** `Module[]`: the enabled modules, as in #46. For the public site and the patient app to hide what the plan doesn't include before anyone signs in.
+
+**48. `GET /api/v2/plans`** (`org.settings.manage`)
+- **200:** `PlanResponse[]`: the public plans in the platform's order (`Starter`, `Clinic`, `Full`). `modules` lists the add-ons only. A limit of `null` means the plan sets none. No prices yet (ADR 0008 Q19).
+
+**49. `PUT /api/v2/platform/subscription/plan`** (`org.settings.manage`, and only where `Platform:AllowPlanSwitching` is on: Development by default)
+- **Body:** `ChangePlanRequest`
+- **204.** Overrides the new plan makes redundant are dropped. Takes effect on the next request.
+- **Errors:** 400 validation (`planCode`); 403 `Subscription.SwitchingDisabled`; 404 `Subscription.PlanNotFound`, `Subscription.NotFound`
+
+**50. `PUT /api/v2/platform/subscription/modules`** (as #49)
+- **Body:** `SetModuleRequest`: switch an add-on on beyond the plan, or off within it. An override equal to the plan is removed.
+- **204**
+- **Errors:** 400 validation (`module`) and `Subscription.NotAnAddOn` (a core or unknown module); 403 `Subscription.SwitchingDisabled`; 404 `Subscription.NotFound`; 409 `Subscription.ModuleRequired` (switching off an add-on another enabled add-on needs)
+
+#49 and #50 are a stand-in for the operator console (R4), which will move them to a platform-operator role.
+
 ## 6. Data types
 
 Types use TypeScript-style notation. `?` means the field may be omitted in a request; `| null` means the value may be null.
@@ -723,6 +763,8 @@ Types use TypeScript-style notation. `?` means the field may be omitted in a req
 | `SubmitReviewRequest` | `appointmentId: number`, `rating: number`, `comment?: string \| null` |
 | `UpdatePatientProfileRequest` | `bloodType?`, `allergies?`, `chronicConditions?`, `emergencyContactName?`, `emergencyContactPhone?` (all nullable) |
 | `UpdateUserProfileRequest` | `firstName?`, `lastName?`, `phoneNumber?`, `profilePictureUrl?`, `gender?: Gender`, `dateOfBirth?: DateOnly` (all nullable) |
+| `ChangePlanRequest` | `planCode: string` (`Starter`, `Clinic`, `Full`) |
+| `SetModuleRequest` | `module: Module` (an add-on), `enabled: boolean` |
 | `SpecialtyRequest` | `name: string`, `description?: string \| null`, `iconUrl?: string \| null`, `isActive?: boolean \| null` |
 
 ### Responses
@@ -743,6 +785,8 @@ Types use TypeScript-style notation. `?` means the field may be omitted in a req
 | `SpecialtyResponse` | `id`, `name`, `description: string \| null`, `iconUrl: string \| null`, `isActive: boolean` |
 | `OverviewStatsResponse` | `totalDoctors`, `totalPatients`, `totalAppointments`, `totalSpecialties`, `pendingApprovals`, `totalReviews` (numbers) |
 | `AppointmentStatsResponse` | `pending`, `confirmed`, `completed`, `cancelled`, `noShow` (numbers) |
+| `EntitlementsResponse` | `planCode: string`, `status: SubscriptionStatus`, `trialEndsAt: Timestamp \| null` (set while `Trial`), `currentPeriodEnd: Timestamp \| null` (null until subscription billing, R4), `modules: Module[]`, `overrides: { module: Module, enabled: boolean }[]`, `usage: { key: string, included: number \| null, used: number }[]` |
+| `PlanResponse` | `code: string`, `name: string`, `modules: Module[]` (add-ons only), `limits: { branches: number \| null, doctors: number \| null, phoneMessagesPerMonth: number \| null }` |
 
 `Timestamp` is a UTC date-time string ending in `Z` ([§1](#1-general-conventions)).
 
@@ -759,6 +803,8 @@ Types use TypeScript-style notation. `?` means the field may be omitted in a req
 | `BloodType` | `APositive`, `ANegative`, `BPositive`, `BNegative`, `OPositive`, `ONegative`, `ABPositive`, `ABNegative` |
 | `DoctorSortBy` | `Rating`, `Fee`, `Experience` |
 | `DayOfWeek` | `Sunday`, `Monday`, `Tuesday`, `Wednesday`, `Thursday`, `Friday`, `Saturday` |
+| `Module` | Core: `ORG`, `STF`, `ACC`, `SVC`, `SCH`, `APT`, `NTF`, `AUD`. Add-ons: `FD`, `BIL`, `EMR`, `INS`, `RPT`, `PAT`, `REC`, `BOT` ([ADR 0008](v2/adr/0008-multi-clinic-platform-module-entitlements.md)) |
+| `SubscriptionStatus` | `Trial`, `Active`, `PastDue`, `Cancelled` |
 
 ## 8. Frontend routes the backend depends on
 
@@ -796,6 +842,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) and planned changes whose fix **
 | 3.1.2 | 2026-10-18 | Bug fix: CORS now exposes the `Retry-After` header, so a frontend on another origin can read the wait time of a 429 `RateLimit.Exceeded` (§2.7). Before, the browser hid it, and only same-origin deployments (e.g. behind the compose nginx proxy) could read it. No other change |
 | 4.0.0-p0 | 2026-10-23 | **Pre-release on the `v2` branch (V2 line)**; the V2 frontend is its only client. Bug fix: `profilePictureUrl` (#31) and `iconUrl` (#41, #42) must be absolute `http` or `https` URLs. Before, the rule accepted any absolute URI, including `javascript:` and `file:`, and on Linux (the Docker image) a path such as `/images/me.png`, which .NET reads as a `file://` URI. Those values now return 400 with a validation error on the field; the message is "... must be an absolute http or https URL." **Breaking (format): every timestamp ends in `Z`** (P0 PR 4, REVIEW.md §4.1). Timestamps read from the database (`bookedAt`, `cancelledAt`, `createdAt`, …) used to be sent without it; only `LoginResponse.expiresAt` had it. The values are unchanged and still UTC. A client that appends a missing `Z` before parsing, like §12's `parseTimestamp`, needs no change; one that parsed the bare value as local time now gets the correct instant. The date-of-birth rules (#1, #2, #31) now compare with the clinic's date (`Clinic:TimeZoneId`) instead of the UTC date, which differs only for a few hours around midnight **Breaking (enum): `AppointmentStatus` gains `CheckedIn`, `InProgress` and `Rescheduled`** (P0 PR 7, [docs/v2/adr/0004](v2/adr/0004-appointment-state-machine.md)). No route produces them yet; the status filter of #19 and #20 accepts them. A client with an exhaustive switch over the statuses needs a default case. New code `Appointment.InvalidStatusTransition` (409) for a status change the rules don't allow when no older code applies; the only appointments the API creates are `Confirmed`, so in P0 it can only come from a `Pending` row (completing or marking one as a no-show used to succeed). Every other route, status code and error code is unchanged. **Bug fix:** `hasReview` is correct in `GET /api/appointments/{id}` (#21) and the doctor's list (#20); both always sent `false` before, because the review wasn't loaded **Behaviour: notifications and emails are asynchronous** (P0 PR 9, [06 §5](v2/06_TECHNICAL_DESIGN.md#5-domain-events-and-the-outbox)). They are written to an outbox with the change and sent by a background job about 2 s later, instead of inside the request; every response, status code and error code is unchanged. A client that reads `/api/notifications/my` right after an action may not see the new notification yet (§1). Bug fix (REVIEW.md NL24): `POST /api/auth/forgot-password` (#7) now takes about as long for a registered email as for an unknown one, because the request no longer waits for SMTP; a failed confirmation or reset email is retried instead of being lost. **New (operations): health probes** (P0 PR 11, §1). `GET /health/live` and `GET /health/ready` join `GET /health`, which is unchanged and now an alias of `/health/live`. They are for orchestrators and load balancers; no frontend route uses them |
 | 4.0.0-p0 | 2026-10-30 | Still the pre-release on `v2` (P1 PR 0, "V2 API conventions"); no `/api/v2` endpoint exists yet, so the version is unchanged. **Breaking (format, P1 plan Q-F): validation keys are camelCase on every route** (§3.1 B, §9). A 400 from FluentValidation keys each message by the property path in the JSON naming policy, as the client sent it: `email`, `slotId`, `reasonForVisit`, `lines[0].unitPrice`. Before, inherited routes sent the C# names (`Email`, `SlotId`); 3.1.1's `Notes` key for #24 is `notes` again. Shape C (business-rule codes as keys) and shape D (`$.email`, parameter names) are unchanged, and so is every status code. **Groundwork for `/api/v2` (§13.1), active only on `/api/v2` routes and so not observable yet:** ids written and read as JSON strings; `startTime` / `endTime` as `"HH:mm"`; every coded error as shape A at any status (no shape C); `Auth.InvalidCredentials`-type errors are 400, so 401 means only a token problem; a 429 error type with `retryAt`; error extensions `retryAt` and `attemptsLeft` at the top level of the ProblemDetails; paging with defaults 1 / 20 and `pageSize` at most 100; `rowVersion` checks that return 409 `Concurrency.Conflict`; `RateLimit.Exceeded` gains `retryAt` on `/api/v2`. Inherited routes keep §1–§3 apart from the validation keys. `openapi.json` is unchanged (validation keys aren't in the document) |
+| 4.0.0-p0 | 2026-10-30 | Additive: **the first `/api/v2` routes, plans and modules** (§5.10, #46–#50; ADR 0008, R1 M1): the organization's entitlements, its enabled modules (anonymous), the plans, and two switches for the plan and add-ons that work only where `Platform:AllowPlanSwitching` is on (Development by default). New 403 `Subscription.ModuleNotEnabled` when a role grants a permission whose module isn't in the plan; inherited routes are unaffected. New codes `Subscription.NotFound`, `PlanNotFound`, `NotAnAddOn`, `ModuleRequired`, `SwitchingDisabled` (§3.3). New types `EntitlementsResponse`, `PlanResponse`, `ChangePlanRequest`, `SetModuleRequest`, enums `Module` and `SubscriptionStatus`. `openapi.json` regenerated |
 
 ## 11. How to change this contract
 
@@ -954,6 +1001,25 @@ export interface OverviewStatsResponse {
 export interface AppointmentStatsResponse {
   pending: number; confirmed: number; completed: number; cancelled: number; noShow: number;
 }
+
+// ---- plans and modules (/api/v2, §5.10) ----
+export type Module =
+  | "ORG" | "STF" | "ACC" | "SVC" | "SCH" | "APT" | "NTF" | "AUD"
+  | "FD" | "BIL" | "EMR" | "INS" | "RPT" | "PAT" | "REC" | "BOT";
+export type SubscriptionStatus = "Trial" | "Active" | "PastDue" | "Cancelled";
+export interface EntitlementsResponse {
+  planCode: string; status: SubscriptionStatus;
+  trialEndsAt: Timestamp | null; currentPeriodEnd: Timestamp | null;
+  modules: Module[];
+  overrides: { module: Module; enabled: boolean }[];
+  usage: { key: string; included: number | null; used: number }[];
+}
+export interface PlanResponse {
+  code: string; name: string; modules: Module[];
+  limits: { branches: number | null; doctors: number | null; phoneMessagesPerMonth: number | null };
+}
+export interface ChangePlanRequest { planCode: string; }
+export interface SetModuleRequest { module: Module; enabled: boolean; }
 
 // ---- helpers ----
 /** Total number of matching items on paged lists (#32, #38); null when the header is absent. */

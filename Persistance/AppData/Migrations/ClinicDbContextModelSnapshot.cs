@@ -739,6 +739,264 @@ namespace Persistence.AppData.Migrations
                     b.ToTable("OutboxMessages", (string)null);
                 });
 
+            modelBuilder.Entity("Domain.Entities.Subscriptions.OrganizationModuleOverride", b =>
+                {
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ModuleCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("bit");
+
+                    b.HasKey("OrganizationId", "ModuleCode");
+
+                    b.ToTable("OrganizationModuleOverrides", (string)null);
+
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "OrganizationModuleOverride");
+
+                    b.HasData(
+                        new
+                        {
+                            OrganizationId = 1,
+                            ModuleCode = "REC",
+                            Enabled = true
+                        });
+                });
+
+            modelBuilder.Entity("Domain.Entities.Subscriptions.OrganizationSubscription", b =>
+                {
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CurrentPeriodEnd")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("PlanId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("TrialEndsAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("OrganizationId");
+
+                    b.HasIndex("PlanId");
+
+                    b.ToTable("OrganizationSubscriptions", (string)null);
+
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "OrganizationSubscription");
+
+                    b.HasData(
+                        new
+                        {
+                            OrganizationId = 1,
+                            PlanId = 3,
+                            Status = "Active"
+                        });
+                });
+
+            modelBuilder.Entity("Domain.Entities.Subscriptions.Plan", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<bool>("IsPublic")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Plans", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Code = "Starter",
+                            IsPublic = true,
+                            Name = "Starter"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Code = "Clinic",
+                            IsPublic = true,
+                            Name = "Clinic"
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Code = "Full",
+                            IsPublic = true,
+                            Name = "Full"
+                        });
+                });
+
+            modelBuilder.Entity("Domain.Entities.Subscriptions.PlanLimit", b =>
+                {
+                    b.Property<int>("PlanId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("LimitKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("Value")
+                        .HasColumnType("int");
+
+                    b.HasKey("PlanId", "LimitKey");
+
+                    b.ToTable("PlanLimits", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            PlanId = 1,
+                            LimitKey = "branches",
+                            Value = 1
+                        },
+                        new
+                        {
+                            PlanId = 1,
+                            LimitKey = "doctors",
+                            Value = 2
+                        },
+                        new
+                        {
+                            PlanId = 1,
+                            LimitKey = "phoneMessagesPerMonth",
+                            Value = 300
+                        },
+                        new
+                        {
+                            PlanId = 2,
+                            LimitKey = "branches",
+                            Value = 1
+                        },
+                        new
+                        {
+                            PlanId = 2,
+                            LimitKey = "doctors",
+                            Value = 5
+                        },
+                        new
+                        {
+                            PlanId = 2,
+                            LimitKey = "phoneMessagesPerMonth",
+                            Value = 1000
+                        },
+                        new
+                        {
+                            PlanId = 3,
+                            LimitKey = "branches",
+                            Value = 3
+                        },
+                        new
+                        {
+                            PlanId = 3,
+                            LimitKey = "doctors",
+                            Value = 15
+                        },
+                        new
+                        {
+                            PlanId = 3,
+                            LimitKey = "phoneMessagesPerMonth",
+                            Value = 2500
+                        });
+                });
+
+            modelBuilder.Entity("Domain.Entities.Subscriptions.PlanModule", b =>
+                {
+                    b.Property<int>("PlanId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ModuleCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.HasKey("PlanId", "ModuleCode");
+
+                    b.ToTable("PlanModules", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            PlanId = 2,
+                            ModuleCode = "FD"
+                        },
+                        new
+                        {
+                            PlanId = 2,
+                            ModuleCode = "BIL"
+                        },
+                        new
+                        {
+                            PlanId = 2,
+                            ModuleCode = "PAT"
+                        },
+                        new
+                        {
+                            PlanId = 2,
+                            ModuleCode = "RPT"
+                        },
+                        new
+                        {
+                            PlanId = 3,
+                            ModuleCode = "FD"
+                        },
+                        new
+                        {
+                            PlanId = 3,
+                            ModuleCode = "BIL"
+                        },
+                        new
+                        {
+                            PlanId = 3,
+                            ModuleCode = "PAT"
+                        },
+                        new
+                        {
+                            PlanId = 3,
+                            ModuleCode = "RPT"
+                        },
+                        new
+                        {
+                            PlanId = 3,
+                            ModuleCode = "EMR"
+                        },
+                        new
+                        {
+                            PlanId = 3,
+                            ModuleCode = "INS"
+                        });
+                });
+
             modelBuilder.Entity("Domain.Entities.Tenancy.Branch", b =>
                 {
                     b.Property<int>("Id")
@@ -1229,6 +1487,50 @@ namespace Persistence.AppData.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Domain.Entities.Subscriptions.OrganizationModuleOverride", b =>
+                {
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Domain.Entities.Subscriptions.OrganizationSubscription", b =>
+                {
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Entities.Subscriptions.Plan", "Plan")
+                        .WithMany()
+                        .HasForeignKey("PlanId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Plan");
+                });
+
+            modelBuilder.Entity("Domain.Entities.Subscriptions.PlanLimit", b =>
+                {
+                    b.HasOne("Domain.Entities.Subscriptions.Plan", null)
+                        .WithMany("Limits")
+                        .HasForeignKey("PlanId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Domain.Entities.Subscriptions.PlanModule", b =>
+                {
+                    b.HasOne("Domain.Entities.Subscriptions.Plan", null)
+                        .WithMany("Modules")
+                        .HasForeignKey("PlanId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Domain.Entities.Tenancy.Branch", b =>
                 {
                     b.HasOne("Domain.Entities.Tenancy.Organization", null)
@@ -1343,6 +1645,13 @@ namespace Persistence.AppData.Migrations
             modelBuilder.Entity("Domain.Entities.Messaging.OutboxMessage", b =>
                 {
                     b.Navigation("Deliveries");
+                });
+
+            modelBuilder.Entity("Domain.Entities.Subscriptions.Plan", b =>
+                {
+                    b.Navigation("Limits");
+
+                    b.Navigation("Modules");
                 });
 #pragma warning restore 612, 618
         }

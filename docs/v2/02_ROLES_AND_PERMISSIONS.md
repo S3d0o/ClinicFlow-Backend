@@ -110,67 +110,69 @@ A **doctor applicant** is a user with a doctor application and **no role**. They
 
 ## 5. Permission catalog
 
-| Module | Permission | Description |
-|---|---|---|
-| Organization | `org.settings.manage` | Organization profile, branding, global settings |
-| | `branches.manage` | Create/edit branches, working hours, holidays |
-| | `rooms.manage` | Create/edit rooms |
-| Staff | `staff.view` | See staff list and assignments |
-| | `staff.invite` | Invite staff, assign roles and branches |
-| | `staff.deactivate` | Deactivate staff, revoke sessions |
-| | `roles.manage` | Edit which permissions a role grants (Admin only; changes are audited) |
-| Recruitment | `recruitment.view` | See doctor applications and download CVs and cover letters |
-| | `recruitment.manage` | Move applications between stages (interview, accept, reject) and send the stage emails |
-| Catalog | `specialties.manage` | Specialty catalog (V1 feature) |
-| | `services.manage` | Service catalog |
-| | `prices.manage` | Price lists |
-| Scheduling | `schedules.view` | See doctor schedules |
-| | `schedules.manage` | Create/edit/deactivate schedules for doctors |
-| | `schedules.manage_own` | A doctor editing their own schedule (an organization setting decides whether doctors may edit directly or only request changes) |
-| | `leave.request` | Request leave for oneself |
-| | `leave.approve` | Approve leave and trigger rescheduling |
-| | `slots.block` | Block or unblock individual slots |
-| | `slots.overbook` | Book beyond capacity (double-book a slot) |
-| Patients | `patients.view` | Search and view patient demographics |
-| | `patients.register` | Create patient records at the desk |
-| | `patients.edit` | Edit demographics, contacts, consent flags |
-| | `patients.merge` | Merge duplicate patient records |
-| Appointments | `appointments.view` | See appointments and the calendar |
-| | `appointments.book_on_behalf` | Book for a patient (phone, desk) |
-| | `appointments.reschedule` | Move an appointment |
-| | `appointments.cancel` | Cancel (any time; patient self-cancel keeps the 2-hour rule) |
-| | `appointments.check_in` | Check in, register walk-ins |
-| | `appointments.mark_no_show` | Mark no-show |
-| | `queue.view` | See the branch queue |
-| | `queue.manage` | Reorder the queue, call patients, assign rooms |
-| Clinical | `encounters.view` | Read encounters and history |
-| | `encounters.write` | Write notes, diagnoses, orders |
-| | `encounters.sign` | Sign (lock) an encounter |
-| | `encounters.addend` | Add an addendum to a signed encounter |
-| | `encounters.void` | Void an encounter entered in error (needs approval) |
-| | `vitals.write` | Record triage and vital signs |
-| | `prescriptions.write` | Create and sign prescriptions |
-| | `attachments.upload` | Upload clinical documents and results |
-| | `records.break_glass` | Emergency access outside normal scope |
-| Billing | `invoices.view` | See invoices |
-| | `invoices.create` | Create and issue invoices, add lines |
-| | `invoices.discount` | Apply a discount up to the role's limit |
-| | `invoices.void` | Void an issued invoice (needs approval) |
-| | `payments.collect` | Record cash/card/online payments |
-| | `refunds.request` | Request a refund |
-| | `refunds.approve` | Approve refunds (threshold rules in §7) |
-| | `cash_sessions.operate` | Open/close one's own cash session |
-| | `cash_sessions.reconcile` | Review and approve other users' session closes |
-| Insurance | `payers.manage` | Payers, plans, coverage rules |
-| | `policies.manage` | Patient insurance policies, eligibility checks |
-| | `preauth.manage` | Request and record pre-authorizations |
-| | `claims.manage` | Build, submit and track claims; record remittances |
-| Reporting | `reports.operational` | Utilisation, queue, no-shows |
-| | `reports.clinical` | Diagnoses, record completeness (aggregate, no identities) |
-| | `reports.financial` | Revenue, collections, claims, cash |
-| System | `audit.view` | Read the audit log |
-| | `integrations.manage` | Messaging (WhatsApp, SMS, email) and payment gateway settings |
-| | `notifications.templates` | Edit WhatsApp/SMS/email templates |
+**Module** is the code of the module the permission belongs to ([04 §3](04_FUNCTIONAL_REQUIREMENTS.md#3-module-index)). It is authoritative ([ADR 0008](adr/0008-multi-clinic-platform-module-entitlements.md) decision 3): a grant counts only while that module is enabled for the organization, and `PermissionMatrixTests` compares this column with `Shared/Authorization/Modules.cs`. **Area** only groups the rows: the queue and triage (`queue.*`, `vitals.write`) are the front desk add-on (FD), while booking on behalf and check-in stay in core APT, so a clinic without the front desk still runs a calendar. The operational dashboard (`reports.operational`) is core APT and `reports.financial` comes with billing (BIL).
+
+| Area | Permission | Module | Description |
+|---|---|---|---|
+| Organization | `org.settings.manage` | ORG | Organization profile, branding, global settings |
+| | `branches.manage` | ORG | Create/edit branches, working hours, holidays |
+| | `rooms.manage` | ORG | Create/edit rooms |
+| Staff | `staff.view` | STF | See staff list and assignments |
+| | `staff.invite` | STF | Invite staff, assign roles and branches |
+| | `staff.deactivate` | STF | Deactivate staff, revoke sessions |
+| | `roles.manage` | STF | Edit which permissions a role grants (Admin only; changes are audited) |
+| Recruitment | `recruitment.view` | REC | See doctor applications and download CVs and cover letters |
+| | `recruitment.manage` | REC | Move applications between stages (interview, accept, reject) and send the stage emails |
+| Catalog | `specialties.manage` | SVC | Specialty catalog (V1 feature) |
+| | `services.manage` | SVC | Service catalog |
+| | `prices.manage` | SVC | Price lists |
+| Scheduling | `schedules.view` | SCH | See doctor schedules |
+| | `schedules.manage` | SCH | Create/edit/deactivate schedules for doctors |
+| | `schedules.manage_own` | SCH | A doctor editing their own schedule (an organization setting decides whether doctors may edit directly or only request changes) |
+| | `leave.request` | SCH | Request leave for oneself |
+| | `leave.approve` | SCH | Approve leave and trigger rescheduling |
+| | `slots.block` | SCH | Block or unblock individual slots |
+| | `slots.overbook` | SCH | Book beyond capacity (double-book a slot) |
+| Patients | `patients.view` | APT | Search and view patient demographics |
+| | `patients.register` | APT | Create patient records at the desk |
+| | `patients.edit` | APT | Edit demographics, contacts, consent flags |
+| | `patients.merge` | APT | Merge duplicate patient records |
+| Appointments | `appointments.view` | APT | See appointments and the calendar |
+| | `appointments.book_on_behalf` | APT | Book for a patient (phone, desk) |
+| | `appointments.reschedule` | APT | Move an appointment |
+| | `appointments.cancel` | APT | Cancel (any time; patient self-cancel keeps the 2-hour rule) |
+| | `appointments.check_in` | APT | Check in, register walk-ins |
+| | `appointments.mark_no_show` | APT | Mark no-show |
+| | `queue.view` | FD | See the branch queue |
+| | `queue.manage` | FD | Reorder the queue, call patients, assign rooms |
+| Clinical | `encounters.view` | EMR | Read encounters and history |
+| | `encounters.write` | EMR | Write notes, diagnoses, orders |
+| | `encounters.sign` | EMR | Sign (lock) an encounter |
+| | `encounters.addend` | EMR | Add an addendum to a signed encounter |
+| | `encounters.void` | EMR | Void an encounter entered in error (needs approval) |
+| | `vitals.write` | FD | Record triage and vital signs |
+| | `prescriptions.write` | EMR | Create and sign prescriptions |
+| | `attachments.upload` | EMR | Upload clinical documents and results |
+| | `records.break_glass` | EMR | Emergency access outside normal scope |
+| Billing | `invoices.view` | BIL | See invoices |
+| | `invoices.create` | BIL | Create and issue invoices, add lines |
+| | `invoices.discount` | BIL | Apply a discount up to the role's limit |
+| | `invoices.void` | BIL | Void an issued invoice (needs approval) |
+| | `payments.collect` | BIL | Record cash/card/online payments |
+| | `refunds.request` | BIL | Request a refund |
+| | `refunds.approve` | BIL | Approve refunds (threshold rules in §7) |
+| | `cash_sessions.operate` | BIL | Open/close one's own cash session |
+| | `cash_sessions.reconcile` | BIL | Review and approve other users' session closes |
+| Insurance | `payers.manage` | INS | Payers, plans, coverage rules |
+| | `policies.manage` | INS | Patient insurance policies, eligibility checks |
+| | `preauth.manage` | INS | Request and record pre-authorizations |
+| | `claims.manage` | INS | Build, submit and track claims; record remittances |
+| Reporting | `reports.operational` | APT | Utilisation, queue, no-shows |
+| | `reports.clinical` | RPT | Diagnoses, record completeness (aggregate, no identities) |
+| | `reports.financial` | BIL | Revenue, collections, claims, cash |
+| System | `audit.view` | AUD | Read the audit log |
+| | `integrations.manage` | NTF | Messaging (WhatsApp, SMS, email) and payment gateway settings |
+| | `notifications.templates` | NTF | Edit WhatsApp/SMS/email templates |
 
 ## 6. Role × permission matrix
 
