@@ -1005,7 +1005,11 @@ namespace Persistence.AppData.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("Address")
+                    b.Property<string>("AddressAr")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("AddressEn")
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
@@ -1056,6 +1060,10 @@ namespace Persistence.AppData.Migrations
 
                     b.ToTable("Branches", (string)null);
 
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "Branch");
+
                     b.HasData(
                         new
                         {
@@ -1077,7 +1085,12 @@ namespace Persistence.AppData.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("BrandName")
+                    b.Property<string>("BrandNameAr")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("BrandNameEn")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
@@ -1091,6 +1104,10 @@ namespace Persistence.AppData.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -1103,6 +1120,10 @@ namespace Persistence.AppData.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<string>("Phone")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
                     b.Property<string>("TaxRegistrationNo")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
@@ -1111,15 +1132,69 @@ namespace Persistence.AppData.Migrations
 
                     b.ToTable("Organizations", (string)null);
 
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "Organization");
+
                     b.HasData(
                         new
                         {
                             Id = 1,
-                            BrandName = "ClinicFlow",
+                            BrandNameAr = "كلينك فلو",
+                            BrandNameEn = "ClinicFlow",
                             DefaultTimeZoneId = "Africa/Cairo",
                             IsActive = true,
                             LegalName = "ClinicFlow"
                         });
+                });
+
+            modelBuilder.Entity("Domain.Entities.Tenancy.Room", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BranchId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("BranchId", "NameAr")
+                        .IsUnique();
+
+                    b.HasIndex("BranchId", "NameEn")
+                        .IsUnique();
+
+                    b.ToTable("Rooms", (string)null);
+
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "Room");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", b =>
@@ -1533,6 +1608,21 @@ namespace Persistence.AppData.Migrations
 
             modelBuilder.Entity("Domain.Entities.Tenancy.Branch", b =>
                 {
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Domain.Entities.Tenancy.Room", b =>
+                {
+                    b.HasOne("Domain.Entities.Tenancy.Branch", null)
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Domain.Entities.Tenancy.Organization", null)
                         .WithMany()
                         .HasForeignKey("OrganizationId")

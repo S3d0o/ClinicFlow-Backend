@@ -23,6 +23,8 @@ namespace Persistence
         private IPatientRepo? _patients;
         private IAdminRepo? _admins;
         private IBranchRepo? _branches;
+        private IRoomRepo? _rooms;
+        private IOrganizationRepo? _organizations;
         private IMessageDeliveryRepo? _messageDeliveries;
         private ISubscriptionRepo? _subscriptions;
         private IOutbox? _outbox;
@@ -50,6 +52,10 @@ namespace Persistence
 
         public IAdminRepo Admins => _admins ??= new AdminRepo(_context);
         public IBranchRepo Branches => _branches ??= new BranchRepo(_context);
+
+        public IRoomRepo Rooms => _rooms ??= new RoomRepo(_context);
+
+        public IOrganizationRepo Organizations => _organizations ??= new OrganizationRepo(_context);
 
         public IMessageDeliveryRepo MessageDeliveries => _messageDeliveries ??= new MessageDeliveryRepo(_context);
 

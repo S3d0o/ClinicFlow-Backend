@@ -96,6 +96,31 @@ namespace ClinicFlow.Tests.Services.AppointmentBookingServiceTests
                       .SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
         }
 
+        [Fact]
+        public async Task BookAppointmentAsync_WhenSlotIsAtADeactivatedBranch_ReturnsSlotNotAvailableError()
+        {
+            // Arrange
+            _uow.Patients
+                .GetPatientByUserIdAsync(_patientUserId, _ct)
+                .Returns(new PatientProfile());
+
+            _uow.Slots.GetByIdAsync(SlotId, _ct).Returns(new AppointmentSlot
+            {
+                DoctorProfile = ApprovedDoctor(),
+                BranchId = 2,
+                Status = SlotStatus.Available
+            });
+            _uow.Branches.IsActiveAsync(2, _ct).Returns(false);
+
+            // Act
+            var result = await _sut.BookAppointmentAsync(_patientUserId, _request, _ct);
+
+            // Assert
+            Assert.Contains(AppointmentErrors.SlotNotAvailable, result.Errors);
+            await _uow.Slots.DidNotReceive()
+                      .SetStatusFromAvailableToBookedAsync(Arg.Any<int>(), Arg.Any<CancellationToken>());
+        }
+
         [Theory]
         [InlineData(SlotStatus.Booked)]
         [InlineData(SlotStatus.Blocked)]

@@ -18,6 +18,8 @@ namespace Services.Extensions
             
 
             services.AddScoped<ISpecialtyService, SpecialtyService>();
+            services.AddScoped<IBranchService, BranchService>();
+            services.AddScoped<IOrganizationService, OrganizationService>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<ITokenService, TokenService>();
             services.AddScoped<IDoctorService, DoctorService>();

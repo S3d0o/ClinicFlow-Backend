@@ -26,6 +26,8 @@ namespace ClinicFlow.Tests.Services.AppointmentBookingServiceTests
             _logger = Substitute.For<ILogger<AppointmentBookingService>>();
             _clock = Substitute.For<IClock>();
             _clock.UtcNow.Returns(UtcNow);
+            // Slots are at an active branch unless a test says otherwise
+            _uow.Branches.IsActiveAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(true);
 
             _sut = new AppointmentBookingService(
                 _uow,

@@ -91,6 +91,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
         [InlineData("/api/Specialty")]
         [InlineData("/api/reviews/doctor/1")]
         [InlineData("/api/v2/organization/modules")]
+        [InlineData("/api/v2/public/branches")]
         [InlineData("/health")]
         [InlineData("/health/live")]
         [InlineData("/health/ready")]
@@ -170,6 +171,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
             "GET api/Specialty",
             "GET api/Specialty/{id}",
             "GET api/v2/organization/modules", // menus and pages follow the plan for visitors too (docs/v2/adr/0008)
+            "GET api/v2/public/branches",      // the public site and booking (contract §13.5)
             "ANY health",
             "ANY health/live",
             "ANY health/ready",
