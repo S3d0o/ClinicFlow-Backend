@@ -7,8 +7,8 @@ namespace Presentation.Controllers.V2
 {
     // What the organization's subscription includes (docs/v2/adr/0008 decision 12). The backend enforces it on every
     // [HasPermission] endpoint; the frontend uses these reads to hide what the plan doesn't include
-    [Route("api/v2")]
-    public class EntitlementsController(ISubscriptionQueries queries) : ApiController
+    [Route(RoutePrefix)]
+    public class EntitlementsController(ISubscriptionQueries queries) : V2ApiController
     {
         [HttpGet("organization/entitlements")]
         [HasPermission(Permissions.Organization.SettingsManage)]

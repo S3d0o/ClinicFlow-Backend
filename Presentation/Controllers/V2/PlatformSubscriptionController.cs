@@ -7,8 +7,8 @@ namespace Presentation.Controllers.V2
     // The platform operator's switches for the organization's subscription (plans/R1.md M1), so a demo can show what
     // each plan unlocks. Until the operator role and console arrive (R4), the clinic's admin holds them, and only on a
     // deployment with Platform:AllowPlanSwitching on (Development by default)
-    [Route("api/v2/platform/subscription")]
-    public class PlatformSubscriptionController(ISubscriptionService service) : ApiController
+    [Route(RoutePrefix + "/platform/subscription")]
+    public class PlatformSubscriptionController(ISubscriptionService service) : V2ApiController
     {
         [HttpPut("plan")]
         [HasPermission(Permissions.Organization.SettingsManage)]
