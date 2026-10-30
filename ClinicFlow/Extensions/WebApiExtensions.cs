@@ -1,11 +1,15 @@
-﻿using FluentValidation;
+﻿using Domain.ResultPattern;
+using FluentValidation;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Presentation;
+using Presentation.Extensions;
 using Presentation.Filters;
+using Presentation.Serialization;
+using Services.Abstraction.Contracts;
 using Shared.Settings;
 using System.Globalization;
-using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 
 namespace ClinicFlow.Extensions
@@ -21,11 +25,10 @@ namespace ClinicFlow.Extensions
                 options.Filters.AddService<ValidationFilter>();
             })
                 .AddApplicationPart(typeof(Presentation.Controllers.ApiController).Assembly)
-                .AddJsonOptions(options =>
-                {
-                    options.JsonSerializerOptions.Converters.Add(
-                        new JsonStringEnumConverter());
-                });
+                // Every JSON setting lives in ApiJson.Configure, which the /api/v2 options start from too
+                .AddJsonOptions(options => ApiJson.Configure(options.JsonSerializerOptions));
+            // /api/v2 actions get their own JSON formatters: ids as strings, "HH:mm" times (contract §13.1)
+            services.AddTransient<IConfigureOptions<MvcOptions>, V2JsonMvcOptionsSetup>();
             services.AddEndpointsApiExplorer();
 
             // Every error response is ProblemDetails with a traceId: unhandled exceptions (UseExceptionHandler),
@@ -74,19 +77,29 @@ namespace ClinicFlow.Extensions
                 options.OnRejected = async (context, ct) =>
                 {
                     var response = context.HttpContext.Response;
-                    if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+                    var hasRetryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter);
+                    if (hasRetryAfter)
                         response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
+
+                    var problem = new ProblemDetails
+                    {
+                        Status = StatusCodes.Status429TooManyRequests,
+                        Title = "RateLimit.Exceeded",
+                        Detail = "Too many requests. Wait a moment and try again."
+                    };
+
+                    // /api/v2 also gives the instant as retryAt (contract §13.1 "Rate limits", §13.10)
+                    if (hasRetryAfter && context.HttpContext.IsApiV2())
+                    {
+                        var clock = context.HttpContext.RequestServices.GetRequiredService<IClock>();
+                        problem.Extensions[ErrorMetadata.RetryAt] = clock.UtcNow.Add(retryAfter);
+                    }
 
                     var problemDetails = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsService>();
                     await problemDetails.WriteAsync(new ProblemDetailsContext
                     {
                         HttpContext = context.HttpContext,
-                        ProblemDetails =
-                        {
-                            Status = StatusCodes.Status429TooManyRequests,
-                            Title = "RateLimit.Exceeded",
-                            Detail = "Too many requests. Wait a moment and try again."
-                        }
+                        ProblemDetails = problem
                     });
                 };
             });

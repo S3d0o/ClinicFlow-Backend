@@ -1,3 +1,5 @@
+using Shared.Concurrency;
+
 namespace Presentation.Validators
 {
     // Rules shared by several requests, so registration, profile updates and password reset agree (REVIEW.md M13)
@@ -16,6 +18,13 @@ namespace Presentation.Validators
                 .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var uri)
                     && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp))
                 .WithMessage($"{label} must be an absolute http or https URL.");
+
+        // The rowVersion an update sends back (docs/v2/07_API_DESIGN.md §3): required, and the base64 of 8 bytes as the
+        // last read returned it. A well-formed but stale one passes here and is a 409 Concurrency.Conflict from the service
+        public static IRuleBuilderOptions<T, string?> ValidRowVersion<T>(this IRuleBuilder<T, string?> rule)
+            => rule
+                .Must(value => RowVersions.TryDecode(value, out _))
+                .WithMessage("rowVersion is required and must be the value the last read returned.");
 
         public static IRuleBuilderOptions<T, string> StrongPassword<T>(this IRuleBuilder<T, string> rule)
             => rule

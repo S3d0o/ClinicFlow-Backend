@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Presentation.Authorization;
+using Presentation.Controllers.V2;
 using Shared.Authorization;
 using Shared.DTOs.Specialty;
 using System.Net;
@@ -122,8 +123,34 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
                 .Should().BeEmpty();
         }
 
-        // Every endpoint anyone can call without logging in (docs/v2/adr/0002 decision 4). A new public endpoint
-        // fails this test until it is added here on purpose; a removed one fails it until it is taken out
+        [Fact]
+        public async Task UnknownV2Route_Anonymous_Returns401()
+        {
+            // /api/v2 is under the same fallback policy (contract §13.1 "401": no token is a 401 without a code)
+            var response = await _client.GetAsync("/api/v2/does-not-exist");
+
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        [Fact]
+        public void V2Routes_AreExactlyTheV2Controllers()
+        {
+            // An action under api/v2/ must come from a V2ApiController, so it gets the §13.1 conventions (ids as strings,
+            // shape A errors, ...); a V2ApiController action must stay under the prefix. V2ConventionsTests runs the same
+            // check on a host that has a V2 controller
+            var actions = _factory.Services.GetRequiredService<EndpointDataSource>().Endpoints
+                .OfType<RouteEndpoint>()
+                .Where(e => e.Metadata.GetMetadata<ControllerActionDescriptor>() is not null)
+                .ToList();
+
+            actions.Where(e => e.RoutePattern.RawText!.StartsWith(V2ApiController.RoutePrefix + "/") != (e.Metadata.GetMetadata<ApiV2Attribute>() is not null))
+                .Select(e => e.DisplayName)
+                .Should().BeEmpty();
+        }
+
+        // Every endpoint anyone can call without logging in (docs/v2/adr/0002 decision 4), /api/v2 included: a public V2
+        // endpoint goes here by its full route ("POST api/v2/auth/login"). A new public endpoint fails this test until it
+        // is added here on purpose; a removed one fails it until it is taken out
         private static readonly string[] AnonymousAllowlist =
         [
             "POST api/auth/register/patient",

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Contract version** | 4.0.0-p0 (pre-release, `v2` branch). V1's contract stays 3.1.2 on `master` ([docs/v2/adr/0007](v2/adr/0007-v2-separate-product-line.md)) |
-| **Last updated** | 2026-10-27 (§13 added; no API change) |
+| **Last updated** | 2026-10-30 (P1 PR 0: camelCase validation keys on every route; the `/api/v2` conventions are built, no `/api/v2` endpoint yet) |
 | **Applies to** | ClinicFlow backend (`ClinicFlow.Backend`) and the ClinicFlow frontend (React) |
 | **Canonical copy** | `ClinicFlow.Backend/docs/API_CONTRACT.md`. The frontend repo keeps an identical copy at `docs/API_CONTRACT.md` |
 | **Machine-readable companion** | [`openapi.json`](openapi.json) (OpenAPI 3.1, generated from the running API) |
@@ -123,15 +123,15 @@ Every non-2xx response is one of these shapes. Branch on the **error code** wher
 }
 ```
 
-**B. Request validation (FluentValidation).** Status 400. Keys are the request property names in **PascalCase**; map them to your camelCase form fields.
+**B. Request validation (FluentValidation).** Status 400. Keys are the request's property paths in **camelCase**, the JSON names you sent (`email`, `slotId`, `lines[0].unitPrice`), so they map straight to form fields. Since 4.0.0-p0 (2026-10-30, P1 PR 0); before, they were PascalCase (`Email`).
 ```json
 {
   "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
   "title": "One or more validation errors occurred.",
   "status": 400,
   "errors": {
-    "Email": ["Email must be a valid email address."],
-    "Password": ["Password must be at least 8 characters long.", "Password must contain at least one digit."]
+    "email": ["Email must be a valid email address."],
+    "password": ["Password must be at least 8 characters long.", "Password must contain at least one digit."]
   },
   "traceId": "00-…-00"
 }
@@ -773,12 +773,14 @@ If the frontend changes its routing (e.g. stops using hash routing), this table 
 
 ## 9. Pending contract changes
 
-These are known issues ([REVIEW.md](REVIEW.md)) whose fix **will change the contract**. None of them is active yet. Each one moves into the changelog when it ships, and the frontend should be ready for it:
+These are known issues ([REVIEW.md](REVIEW.md)) and planned changes whose fix **will change the contract**. None of them is active yet, except rows marked **Shipped**: those went out on the `v2` pre-release and stay here until the frontend has adopted them. Each one moves into the changelog when it ships, and the frontend should be ready for it:
 
 | Review | Change | Frontend impact |
 |---|---|---|
 | — | Removal of the deprecated `/api/Specialty` write routes (#37) | Use `/api/admin/specialties` |
 | — | Removal of `GET /api/doctors/{id}/reviews` (#12), a duplicate of #26 kept for compatibility. #26 differs only by returning 404 for an unknown doctor | Use #26 |
+| P1 Q-F | **Shipped 2026-10-30 (4.0.0-p0, P1 PR 0; §10).** **Breaking:** request-validation keys (§3.1 B) are camelCase property paths on every route, inherited ones included: `Email` → `email`, `SlotId` → `slotId`, `ConsultationFee` → `consultationFee`, a list item `Lines[0].UnitPrice` → `lines[0].unitPrice`. Business-rule keys (shape C, the error code) and binding keys (shape D, `$.email`) are unchanged | Map `errors` keys straight to the form fields; drop any PascalCase-to-camelCase mapping, and any lookup of a PascalCase key |
+| — | Removal of the inherited routes that `/api/v2` replaces, in P1 PR 18 once the V2 frontend uses the replacements ([P1 plan](v2/plans/P1.md)): register patient (#1), register doctor (#2), login (#3), pending doctors (#38), approve (#39) and suspend (#39b) | Move to the `/api/v2` routes of §13 (sign-up and sessions §13.3, doctor applications §13.6) before then |
 
 ## 10. Changelog
 
@@ -793,6 +795,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) whose fix **will change the cont
 | 3.1.1 | 2026-10-18 | Bug fix: a 400 from `PUT /api/appointments/{id}/notes` (#24) keys the validation error as `Notes`, like every other validation error (§3.1 B: PascalCase property names). It was `notes`. The request body is unchanged (`{ "notes": … }`). Internal cleanup with no other observable change (REVIEW.md group B). §9 now also lists the removal of #12, which duplicates #26 |
 | 3.1.2 | 2026-10-18 | Bug fix: CORS now exposes the `Retry-After` header, so a frontend on another origin can read the wait time of a 429 `RateLimit.Exceeded` (§2.7). Before, the browser hid it, and only same-origin deployments (e.g. behind the compose nginx proxy) could read it. No other change |
 | 4.0.0-p0 | 2026-10-23 | **Pre-release on the `v2` branch (V2 line)**; the V2 frontend is its only client. Bug fix: `profilePictureUrl` (#31) and `iconUrl` (#41, #42) must be absolute `http` or `https` URLs. Before, the rule accepted any absolute URI, including `javascript:` and `file:`, and on Linux (the Docker image) a path such as `/images/me.png`, which .NET reads as a `file://` URI. Those values now return 400 with a validation error on the field; the message is "... must be an absolute http or https URL." **Breaking (format): every timestamp ends in `Z`** (P0 PR 4, REVIEW.md §4.1). Timestamps read from the database (`bookedAt`, `cancelledAt`, `createdAt`, …) used to be sent without it; only `LoginResponse.expiresAt` had it. The values are unchanged and still UTC. A client that appends a missing `Z` before parsing, like §12's `parseTimestamp`, needs no change; one that parsed the bare value as local time now gets the correct instant. The date-of-birth rules (#1, #2, #31) now compare with the clinic's date (`Clinic:TimeZoneId`) instead of the UTC date, which differs only for a few hours around midnight **Breaking (enum): `AppointmentStatus` gains `CheckedIn`, `InProgress` and `Rescheduled`** (P0 PR 7, [docs/v2/adr/0004](v2/adr/0004-appointment-state-machine.md)). No route produces them yet; the status filter of #19 and #20 accepts them. A client with an exhaustive switch over the statuses needs a default case. New code `Appointment.InvalidStatusTransition` (409) for a status change the rules don't allow when no older code applies; the only appointments the API creates are `Confirmed`, so in P0 it can only come from a `Pending` row (completing or marking one as a no-show used to succeed). Every other route, status code and error code is unchanged. **Bug fix:** `hasReview` is correct in `GET /api/appointments/{id}` (#21) and the doctor's list (#20); both always sent `false` before, because the review wasn't loaded **Behaviour: notifications and emails are asynchronous** (P0 PR 9, [06 §5](v2/06_TECHNICAL_DESIGN.md#5-domain-events-and-the-outbox)). They are written to an outbox with the change and sent by a background job about 2 s later, instead of inside the request; every response, status code and error code is unchanged. A client that reads `/api/notifications/my` right after an action may not see the new notification yet (§1). Bug fix (REVIEW.md NL24): `POST /api/auth/forgot-password` (#7) now takes about as long for a registered email as for an unknown one, because the request no longer waits for SMTP; a failed confirmation or reset email is retried instead of being lost. **New (operations): health probes** (P0 PR 11, §1). `GET /health/live` and `GET /health/ready` join `GET /health`, which is unchanged and now an alias of `/health/live`. They are for orchestrators and load balancers; no frontend route uses them |
+| 4.0.0-p0 | 2026-10-30 | Still the pre-release on `v2` (P1 PR 0, "V2 API conventions"); no `/api/v2` endpoint exists yet, so the version is unchanged. **Breaking (format, P1 plan Q-F): validation keys are camelCase on every route** (§3.1 B, §9). A 400 from FluentValidation keys each message by the property path in the JSON naming policy, as the client sent it: `email`, `slotId`, `reasonForVisit`, `lines[0].unitPrice`. Before, inherited routes sent the C# names (`Email`, `SlotId`); 3.1.1's `Notes` key for #24 is `notes` again. Shape C (business-rule codes as keys) and shape D (`$.email`, parameter names) are unchanged, and so is every status code. **Groundwork for `/api/v2` (§13.1), active only on `/api/v2` routes and so not observable yet:** ids written and read as JSON strings; `startTime` / `endTime` as `"HH:mm"`; every coded error as shape A at any status (no shape C); `Auth.InvalidCredentials`-type errors are 400, so 401 means only a token problem; a 429 error type with `retryAt`; error extensions `retryAt` and `attemptsLeft` at the top level of the ProblemDetails; paging with defaults 1 / 20 and `pageSize` at most 100; `rowVersion` checks that return 409 `Concurrency.Conflict`; `RateLimit.Exceeded` gains `retryAt` on `/api/v2`. Inherited routes keep §1–§3 apart from the validation keys. `openapi.json` is unchanged (validation keys aren't in the document) |
 
 ## 11. How to change this contract
 
@@ -838,7 +841,7 @@ export interface ProblemDetails {
   status: number;
   detail?: string;
   traceId?: string;
-  errors?: Record<string, string[]>; // validation: PascalCase field names or error codes
+  errors?: Record<string, string[]>; // validation: camelCase field paths (e.g. "lines[0].unitPrice") or error codes
 }
 
 // ---- auth ----
@@ -976,7 +979,7 @@ export const parseTimestamp = (value: Timestamp): Date =>
 
 ### 13.1 Conventions for every `/api/v2` route
 
-These replace the matching rules of §1–§3 for `/api/v2` routes only. The inherited unversioned routes keep §1–§3.
+These replace the matching rules of §1–§3 for `/api/v2` routes only. The inherited unversioned routes keep §1–§3, except the camelCase validation keys, which apply to every route since 2026-10-30. Since P1 PR 0 (2026-10-30) the backend applies the ids, times, lists, error, validation, error-extension, 401 and rate-limit rules to every `/api/v2` controller; the rules tied to particular data (phone numbers, bilingual names, `Idempotency-Key` with P2's booking, files, sessions) arrive with the endpoints that need them.
 
 | Topic | Rule |
 |---|---|

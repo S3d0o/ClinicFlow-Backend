@@ -1,3 +1,4 @@
+using Presentation.Controllers.V2;
 using System.Security.Claims;
 
 namespace Presentation.Extensions
@@ -8,6 +9,10 @@ namespace Presentation.Extensions
         // trusted proxies. Reading the header directly here would let any client spoof its IP.
         public static string GetClientIpAddress(this HttpContext context)
             => context.Connection.RemoteIpAddress?.ToString() ?? "0.0.0.0";
+
+        // True when the request was routed to an /api/v2 action (a V2ApiController), whose conventions differ (contract §13.1)
+        public static bool IsApiV2(this HttpContext context)
+            => context.GetEndpoint()?.Metadata.GetMetadata<ApiV2Attribute>() is not null;
     }
 
     public static class ClaimsPrincipalExtensions

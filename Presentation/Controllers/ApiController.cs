@@ -57,29 +57,11 @@ namespace Presentation.Controllers
             return Ok(result.Value.Items);
         }
 
-        // Central error dispatcher
-        private ActionResult HandleProblem(IReadOnlyList<Error> errors)
-        {
-            if (errors.Count == 0)
-                return Problem(
-                    title: "An unexpected error occurred",
-                    statusCode: StatusCodes.Status500InternalServerError);
+        // Inherited routes send business-rule validation errors as shape C (the code as a key of "errors",
+        // contract §3.1); /api/v2 sends every coded error as shape A (V2ApiController, contract §13.1)
+        protected virtual bool CodedValidationErrorsAsProblemDetails => false;
 
-            if (errors.All(e => e.Type == ErrorType.Validation))
-                return HandleValidationProblem(errors);
-
-            return HandleSingleErrorProblem(errors[0]);
-        }
-
-        private ActionResult HandleSingleErrorProblem(Error error)
-        {
-            return Problem(
-                title: error.Code,
-                detail: error.Description,
-                statusCode: GetStatusCode(error.Type));
-        }
-
-        private static int GetStatusCode(ErrorType errorType) => errorType switch
+        protected virtual int StatusCodeFor(ErrorType errorType) => errorType switch
         {
             ErrorType.Validation => StatusCodes.Status400BadRequest,
             ErrorType.NotFound => StatusCodes.Status404NotFound,
@@ -88,8 +70,45 @@ namespace Presentation.Controllers
             ErrorType.InvalidCredentials => StatusCodes.Status401Unauthorized,
             ErrorType.Failure => StatusCodes.Status500InternalServerError,
             ErrorType.Conflict => StatusCodes.Status409Conflict,
+            ErrorType.TooManyRequests => StatusCodes.Status429TooManyRequests,
             _ => StatusCodes.Status500InternalServerError
         };
+
+        // Central error dispatcher
+        private ActionResult HandleProblem(IReadOnlyList<Error> errors)
+        {
+            if (errors.Count == 0)
+                return Problem(
+                    title: "An unexpected error occurred",
+                    statusCode: StatusCodes.Status500InternalServerError);
+
+            if (!CodedValidationErrorsAsProblemDetails && errors.All(e => e.Type == ErrorType.Validation))
+                return HandleValidationProblem(errors);
+
+            return HandleCodedProblem(errors);
+        }
+
+        // Shape A: title is the code of the first error, and its metadata (retryAt, attemptsLeft, ...) become top-level
+        // members of the ProblemDetails. Several validation errors (/api/v2 only) share the status, so their messages are
+        // joined into the detail
+        private ActionResult HandleCodedProblem(IReadOnlyList<Error> errors)
+        {
+            var error = errors[0];
+            var detail = errors.Count > 1 && errors.All(e => e.Type == ErrorType.Validation)
+                ? string.Join(" ", errors.Select(e => e.Description).Distinct())
+                : error.Description;
+
+            var problem = ProblemDetailsFactory.CreateProblemDetails(
+                HttpContext,
+                statusCode: StatusCodeFor(error.Type),
+                title: error.Code,
+                detail: detail);
+
+            foreach (var (key, value) in error.Metadata)
+                problem.Extensions[key] = value;
+
+            return new ObjectResult(problem) { StatusCode = problem.Status };
+        }
 
         private ActionResult HandleValidationProblem(IReadOnlyList<Error> errors)
         {
