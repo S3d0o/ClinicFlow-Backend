@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Contract version** | 4.0.0-p0 (pre-release, `v2` branch). V1's contract stays 3.1.2 on `master` ([docs/v2/adr/0007](v2/adr/0007-v2-separate-product-line.md)) |
-| **Last updated** | 2026-10-30 (P1 PR 0: camelCase validation keys on every route and the `/api/v2` conventions; then the first `/api/v2` routes, plans and modules, §5.10) |
+| **Last updated** | 2026-10-30 (P1 PR 0: camelCase validation keys on every route and the `/api/v2` conventions; then the first `/api/v2` routes, plans and modules, §5.10; clinic setup planned in §13.22–§13.31) |
 | **Applies to** | ClinicFlow backend (`ClinicFlow.Backend`) and the ClinicFlow frontend (React) |
 | **Canonical copy** | `ClinicFlow.Backend/docs/API_CONTRACT.md`. The frontend repo keeps an identical copy at `docs/API_CONTRACT.md` |
 | **Machine-readable companion** | [`openapi.json`](openapi.json) (OpenAPI 3.1, generated from the running API) |
@@ -1450,6 +1450,7 @@ Compared with the mock backend at `16a6dcb`. Screens keep working; most items ar
 |---|---|
 | 2026-10-27 | First version: auth and sessions, me and profile, public reference data and the doctor directory, doctor applications, the patient's appointments, queue and reminders, visits, invoices, documents, insurance and notifications. Settles P1 plan Q-A |
 | 2026-10-27 | Front desk and nurse station added (§13.13–§13.21), from the frontend's interfaces at `22b7f00`: patient search, duplicates and registration; the desk's day, check-in, no-show, booking on behalf and walk-ins; the queue board, waiting-room screen and `WatchBranch` on `/hubs/queue`; triage keyed by appointment (built in P2); checkout lines, desk payments, receipts and cash sessions. Replaces five 07 routes (§13.13). `Idempotency-Key` also on booking on behalf, walk-ins and desk payments |
+| 2026-10-30 | Clinic setup added (§13.22–§13.31) for R1 M1, from the frontend's interfaces at `6c42840`: the organization profile and settings, branches with working hours, holidays and rooms, staff with invitations, roles, deactivation and the doctor profile, the read-only roles matrix, services, the price list and specialties, message templates and the audit log. Templates, the price list and the audit log are provisional until their screens exist. `/me` and invitation acceptance stay in §13.3–§13.4. Deviations from 07 are listed in §13.22 |
 
 ### 13.13 Front desk and nurse station: conventions
 
@@ -1675,3 +1676,262 @@ Compared with the mock backend at `22b7f00`.
 | 3 | Messages for the codes the mocks don't throw yet: `Appointment.DoctorNotAvailable`, `Invoice.LineNotFound`, `Invoice.BookedLineNotRemovable`, `CashSession.NotFound` (`CashDrawer.NotFound` and `Payment.NotFound` too, if missing) | `common:errors` (en, ar), `mocks/contract-errors.test.ts` |
 | 4 | The waiting-room screen will sign in with a display device token instead of a staff login, once the branch settings screens issue them; nothing to do yet | — |
 | 5 | Later: read the check-in window, no-show grace, walk-in cap and variance threshold from `GET /api/v2/organization/settings` instead of `desk/model/policy.ts` and `cash-session.ts` | When the settings endpoint exists (P1) |
+
+### 13.22 Clinic setup: conventions
+
+Added on 2026-10-30 for release R1 milestone M1 ([docs/v2/plans/R1.md](v2/plans/R1.md) §4), from the frontend's interfaces at `6c42840` (`src/features/{org,staff,catalog}/api/*.service.ts` and their models). Built by [P1](v2/plans/P1.md) PRs 1–7, 12 and 15. §13.1 applies; in addition:
+
+- **Provisional sections.** Message templates (§13.28), the price list (part of §13.27) and the audit log (§13.29) have no frontend screen yet. Their shapes come from P1 and the requirements (FR-NTF-02, FR-SVC-02, FR-AUD-03) and are **provisional until the screen is built**; a change is logged in §13.12 as usual.
+- **Scope.** Permissions are checked against the record's branch where it has one (ADR 0002): a branch's hours, holidays and rooms, a staff member's branch assignments. Lists are filtered to the branches the caller's scope covers. Outside it: 403 `Access.OutOfScope`. Organization-wide records (the profile, settings, services, specialties, templates, holidays that close every branch) need the permission at organization scope.
+- **Concurrency.** Setup edits are last write wins: no `rowVersion` in this milestone. Every change is audited (FR-AUD-01), so the audit log shows who overwrote what.
+- **Deviations from [07 §4](v2/07_API_DESIGN.md)**, following the screens: a branch also has `POST .../activate`; holidays are deleted by their own id (`/api/v2/holidays/{holidayId}`), since one can close every branch; rooms are edited by their own id; invitations are resent and revoked through the staff member (`/staff/{staffId}/invitation`); settings are saved with `PATCH` (only the keys sent); `GET /api/v2/roles` reads the whole matrix.
+- **Plans.** Every route here belongs to a core module (`ORG`, `STF`, `SVC`, `NTF`, `AUD`), so `Subscription.ModuleNotEnabled` never applies (§5.10).
+
+### 13.23 Clinic setup: types
+
+```ts
+// ---- organization (FR-ORG-01, 05) ----
+export interface OrganizationProfile {   // shown on invoices, receipts and prescriptions
+  legalName: string; brandNameEn: string; brandNameAr: string;
+  taxNumber: string; commercialRegistration: string; phone: string; email: string;
+}
+export interface OrganizationSettings {   // money in EGP; every key has a server-side default
+  cancellationWindowHours: number;        // 0–72, default 2
+  rescheduleWindowHours: number;          // 0–72, default 2
+  noShowGraceMinutes: number;             // 5–120, default 15
+  walkInCap: number;                      // 0–50, default 5: unslotted walk-ins per doctor a day
+  noShowFee: number;                      // 0–10000, default 0
+  depositEnabled: boolean;                // default false
+  depositAmount: number;                  // 0–10000, default 100
+  receptionistDiscountCapPercent: number; // 0–100, default 10
+  accountantDiscountCapPercent: number;   // 0–100, default 20
+  refundApprovalThreshold: number;        // 0–1000000, default 1000
+  cashVarianceThreshold: number;          // 0–100000, default 50
+  shareRecordsWithinBranch: boolean;      // default true
+  applicationFileRetentionMonths: number; // 1–60, default 6
+  reapplyCooldownDays: number;            // 0–365, default 90
+}
+
+// ---- branches (FR-ORG-02, 03, 04); Branch is in §13.2 ----
+export interface BranchInput {
+  code: string;                           // 2–4 capital letters, unique; goes into invoice numbers
+  nameEn: string; nameAr: string;         // at most 80
+  addressEn: string; addressAr: string;   // at most 200
+  phone: Phone; timeZone: string;         // IANA
+}
+export interface TimeRange { from: TimeOfDay; to: TimeOfDay }   // from < to
+export interface DayHours { weekday: number; /* 0 = Sunday … 6 = Saturday */ ranges: TimeRange[] }   // no ranges: closed
+export interface Holiday {
+  id: Id; branchId: Id | null;            // null: closes every branch
+  nameEn: string; nameAr: string;
+  from: DateOnly; to: DateOnly;           // inclusive
+  recursYearly: boolean;                  // the same days every year; a range may wrap New Year
+}
+export type HolidayInput = Omit<Holiday, "id">;
+export type RoomKind = "Consultation" | "Procedure" | "Triage";
+export interface Room { id: Id; branchId: Id; nameEn: string; nameAr: string; kind: RoomKind; isActive: boolean }
+export interface RoomInput { nameEn: string; nameAr: string; kind: RoomKind; isActive?: boolean }   // isActive on PUT only
+
+// ---- staff (FR-STF-01, 03, 04, 05, 08) ----
+export type StaffRole = Exclude<Role, "Patient">;
+export type StaffStatus = "Active" | "Invited" | "Leaving" | "Deactivated";   // Leaving: deactivation set for a future date
+export interface StaffMember {
+  id: Id;                                 // the staff member's id, the same before and after the invitation is accepted
+  fullName: string; email?: string; phone?: Phone;
+  roles: RoleAssignment[];
+  status: StaffStatus;
+  accessEndsAt?: Instant;                 // Leaving: when access ends; Deactivated: when it ended
+  invitationExpiresAt?: Instant;          // Invited only
+  mfaEnrolled: boolean;
+  licenseNo?: string;                     // doctors
+  upcomingAppointments: number;           // a doctor's booked visits still to come (reassign before they leave)
+}
+export interface InviteStaffRequest {
+  fullName: string;                       // at most 100
+  email: string;
+  roles: RoleAssignment[];                // at least one; a Branch assignment lists at least one branch
+  doctor?: { specialtyId: Id; serviceIds?: Id[] };   // when roles include Doctor
+}
+export interface DoctorProfileUpdate {    // provisional (P1 PR 7)
+  licenseNo?: string; bioEn?: string; bioAr?: string; languages: Language[]; isPublic: boolean;
+}
+export type GrantCode = "O" | "A" | "S" | "OO";   // 02 §6: organization-wide, as assigned, own records, only when held organization-wide
+export interface RolePermissions { role: Role; grants: Partial<Record<Permission, GrantCode>> }
+
+// ---- services and prices (FR-SVC-01, 02); Service and Specialty are in §13.2 ----
+export interface ServiceAdmin extends Service { isActive: boolean }
+export interface ServiceInput {
+  code: string;                           // unique
+  nameEn: string; nameAr: string; category: ServiceCategory; specialtyId: Id;
+  defaultDurationMinutes: number;         // 5–240
+  optionalDepositAmount?: number;
+  isActive?: boolean;                     // PUT only
+}
+export interface PriceListItem {          // provisional
+  id: Id; serviceId: Id;
+  branchId?: Id; doctorId?: Id;           // neither: the organization's price
+  price: number;
+  validFrom: DateOnly; validTo?: DateOnly;   // inclusive; open-ended without validTo
+}
+export type PriceInput = Omit<PriceListItem, "id">;
+export interface SpecialtyAdmin extends Specialty { isActive: boolean }
+
+// ---- message templates (FR-NTF-02); provisional ----
+export type TemplateChannel = "Email" | "WhatsApp" | "Sms";
+export interface MessageTemplate {
+  id: Id;
+  key: string;                            // the message, e.g. "AppointmentConfirmed", "StaffInvitation"
+  channel: TemplateChannel; language: Language;
+  subject?: string;                       // Email only
+  body: string;                           // placeholders as {{name}}
+  placeholders: string[];                 // the ones this key offers
+  requiredPlaceholders: string[];         // the ones the body must keep (a link, a code)
+  editable: boolean;                      // false for WhatsApp: Meta approves those texts
+  isDefault: boolean;                     // never edited, or reset
+  updatedAt: Instant;
+}
+export interface TemplatePreview { subject?: string; body: string; smsSegments?: number }   // segments: 70 UCS-2 characters each
+
+// ---- audit (FR-AUD-03); provisional ----
+export type AuditAction = "Create" | "Update" | "Delete" | "Read" | "Export";
+export type AuditChange = { old?: unknown; new?: unknown } | { changed: true };   // { changed: true }: redacted clinical text
+export interface AuditEntryView {
+  id: Id; occurredAt: Instant;
+  userId?: Id; userName?: string;         // none for background jobs and sign-up
+  action: AuditAction;
+  entityType: string;                     // e.g. "Appointment", "OrganizationSetting"
+  entityId: string;
+  changes: Record<string, AuditChange>;   // by property name; empty for Read and Export
+  ipAddress?: string;
+  correlationId: string;                  // the same for every entry of one request
+}
+```
+
+### 13.24 Organization profile and settings
+
+| Method and path | Permission | Body or query | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/organization` | `org.settings.manage` | — | 200 `OrganizationProfile` | — | P1 PR 1 |
+| `PUT /api/v2/organization` | `org.settings.manage` | `OrganizationProfile` | 200 `OrganizationProfile` | 400 validation (`legalName` at most 150, brand names 80, tax number and registration 30, `phone` 20, `email`) | P1 PR 1 |
+| `GET /api/v2/organization/settings` | Any staff | — | 200 `OrganizationSettings`, every key, defaults filled in | — | P1 PR 3 |
+| `PATCH /api/v2/organization/settings` | `org.settings.manage` | `Partial<OrganizationSettings>`: only the keys to change | 200 `OrganizationSettings`. Each changed key is audited with its old and new value | 400 validation: a value outside the bounds in §13.23 (key = the setting); an unknown key | P1 PR 3 |
+
+The appointment rules read the settings from then on: a new cancellation window or no-show grace applies to existing appointments too.
+
+### 13.25 Branches, working hours, holidays and rooms
+
+| Method and path | Permission | Body or query | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/branches` | Any staff | — | 200 `Branch[]`, *full*, deactivated ones included (`isActive`) | — | P1 PR 1 |
+| `POST /api/v2/branches` | `branches.manage` (organization) | `BranchInput` | 201 `Branch`, active | 400 validation (`code`, `phone`, `timeZone` not an IANA zone); 409 `Branch.CodeTaken` | P1 PR 1 |
+| `PUT /api/v2/branches/{branchId}` | `branches.manage` | `BranchInput` | 200 `Branch` | as `POST`, plus 404 `Branch.NotFound` | P1 PR 1 |
+| `POST /api/v2/branches/{branchId}/deactivate` | `branches.manage` (organization) | — | 200 `Branch`. It takes no new bookings, online or at the desk; its records stay readable and booked visits stay (FR-ORG-02) | 404 `Branch.NotFound`; 409 `Branch.LastActive` | P1 PR 1 |
+| `POST /api/v2/branches/{branchId}/activate` | `branches.manage` (organization) | — | 200 `Branch` | 404 `Branch.NotFound` | P1 PR 1 |
+| `GET /api/v2/branches/{branchId}/working-hours` | Any staff | — | 200 `DayHours[]`: seven entries, Sunday first | 404 `Branch.NotFound` | P1 PR 2 |
+| `PUT /api/v2/branches/{branchId}/working-hours` | `branches.manage` | `DayHours[]`: a missing weekday is closed | 200 `DayHours[]` as `GET`. Existing slots outside the new hours stay; new ones follow them | 400 `Branch.InvalidHours` (a range with `from` ≥ `to`, or overlapping ranges on a day); 404 `Branch.NotFound` | P1 PR 2 |
+| `GET /api/v2/branches/{branchId}/holidays` | Any staff | `year?` (default: this year and later) | 200 `Holiday[]`, *full*: the branch's and those that close every branch, by `from` | 404 `Branch.NotFound` | P1 PR 2 |
+| `POST /api/v2/holidays` | `branches.manage` (organization when `branchId` is null) | `HolidayInput` | 201 `{ holiday: Holiday, affectedAppointments: number }`: the booked visits that fall on it and need moving (the J5 worklist, P2). No slots are made on it from then on | 400 validation (`to` before `from`); 404 `Branch.NotFound` | P1 PR 2 |
+| `DELETE /api/v2/holidays/{holidayId}` | as `POST` | — | 204. Slot generation fills the days again on its next run | 404 `Holiday.NotFound` | P1 PR 2 |
+| `GET /api/v2/branches/{branchId}/rooms` | Any staff | — | 200 `Room[]`, *full*, inactive included | 404 `Branch.NotFound` | P1 PR 1 |
+| `POST /api/v2/branches/{branchId}/rooms` | `rooms.manage` | `RoomInput` | 201 `Room`, active | 400 validation (names at most 60); 404 `Branch.NotFound`; 409 `Room.NameTaken` (same name at the branch) | P1 PR 1 |
+| `PUT /api/v2/rooms/{roomId}` | `rooms.manage` | `RoomInput` with `isActive` | 200 `Room` | as `POST`, plus 404 `Room.NotFound` | P1 PR 1 |
+
+### 13.26 Staff, invitations and roles
+
+| Method and path | Permission | Body or query | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/staff` | `staff.view` | `text?` (name, email or phone), `role?`, `branchId?`, `status?`, paging | 200 `StaffMember[]`, *paged*, by name: only members with an assignment in a branch the caller's scope covers (FR-STF-08); an organization-scope viewer sees everyone | 400 validation | P1 PR 7 |
+| `GET /api/v2/staff/{staffId}` | `staff.view` | — | 200 `StaffMember` | 404 `Staff.NotFound` (also outside the caller's scope) | P1 PR 7 |
+| `POST /api/v2/staff/invitations` | `staff.invite` | `InviteStaffRequest` | 201 `StaffMember` with status `Invited`. A 72-hour, single-use link goes by email through the outbox; accepting it is §13.3's `/auth/invitations/accept` | 400 validation (`roles`: none, or a Branch assignment without branches; `doctor` missing for a doctor); 403 `Staff.RoleNotGrantable` (a Manager granting `Admin` or `Manager`), `Access.OutOfScope` (a branch outside the caller's scope); 404 `Specialty.NotFound`; 409 `Auth.EmailAlreadyExists` | P1 PR 6 |
+| `POST /api/v2/staff/{staffId}/invitation/resend` | `staff.invite` | — | 200 `StaffMember` with a new `invitationExpiresAt`; the old link stops working | 404 `Staff.NotFound`, `Invitation.NotFound` (not `Invited`) | P1 PR 6 |
+| `DELETE /api/v2/staff/{staffId}/invitation` | `staff.invite` | — | 204; the invited member is removed | as `resend` | P1 PR 6 |
+| `PUT /api/v2/staff/{staffId}/roles` | `staff.invite` | `{ roles: RoleAssignment[] }` | 200 `StaffMember`. Applies at the member's next token refresh (FR-STF-03); audited before and after | 400 validation (`roles` as for invitations); 403 `Staff.RoleNotGrantable`, `Staff.CannotChangeOwnAccess`, `Access.OutOfScope`; 404 `Staff.NotFound` | P1 PR 7 |
+| `POST /api/v2/staff/{staffId}/deactivate` | `staff.deactivate` | `{ endDate?: DateOnly }`: none means now; a date is the last working day in the branch's calendar | 200 `StaffMember`, `Deactivated` now or `Leaving` until the date. Then they can't sign in, their refresh tokens are revoked, and their records keep them as author (FR-STF-04). `upcomingAppointments` lists what to reassign | 400 `Staff.EndDateInPast`; 403 `Staff.CannotChangeOwnAccess`; 404 `Staff.NotFound`; 409 `Staff.AlreadyDeactivated` | P1 PR 7 |
+| `PUT /api/v2/staff/{staffId}/doctor-profile` | `staff.invite`, or the doctor for their own bio | `DoctorProfileUpdate` (provisional) | 200 `StaffMember` | 400 validation; 404 `Staff.NotFound`, `Doctor.NotFound` (not a doctor) | P1 PR 7 |
+| `POST /api/v2/staff/{staffId}/reset-mfa` | `staff.deactivate` | — | 200 `StaffMember` with `mfaEnrolled: false`; they enrol again at the next sign-in. Audited | 404 `Staff.NotFound` | **R2** (MFA moved there) |
+| `GET /api/v2/roles` | `roles.manage` | — | 200 `RolePermissions[]`, *full*: the matrix of 02 §6, read-only in R1 (editing it is FR-STF-06, R3) | — | P1 PR 7 |
+
+### 13.27 Services, prices and specialties
+
+| Method and path | Permission | Body or query | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/services` | `services.manage` | `specialtyId?`, `includeInactive?` (default true) | 200 `ServiceAdmin[]`, *full* | — | P1 PR 12 |
+| `POST /api/v2/services` | `services.manage` | `ServiceInput` | 201 `ServiceAdmin` | 400 validation; 404 `Specialty.NotFound`; 409 `Service.CodeTaken` | P1 PR 12 |
+| `PUT /api/v2/services/{serviceId}` | `services.manage` | `ServiceInput` | 200 `ServiceAdmin`. A deactivated service can't be booked; booked visits keep it | as `POST`, plus 404 `Service.NotFound` | P1 PR 12 |
+| `GET /api/v2/price-list` | `prices.manage` | `serviceId?`, `branchId?`, `doctorId?`, `activeOn?` (a date: only prices valid then), paging | 200 `PriceListItem[]`, *paged*, newest `validFrom` first; history included unless `activeOn` is given (provisional) | 400 validation | P1 PR 12 |
+| `POST /api/v2/price-list` | `prices.manage` | `PriceInput` | 201 `PriceListItem`. An open-ended price for the same service and target that is already valid ends the day before `validFrom`, so history is kept (FR-SVC-02) (provisional) | 400 validation (`price` ≥ 0, `validTo` before `validFrom`); 404 `Service.NotFound`, `Branch.NotFound`, `Doctor.NotFound`; 409 `PriceListItem.Overlaps` (another price for the target covers part of the range and can't be ended) | P1 PR 12 |
+| `PUT /api/v2/price-list/{priceId}` | `prices.manage` | `{ price, validTo? }` | 200 `PriceListItem`. Only before `validFrom`; after that, add a new price (provisional) | 400 validation; 404 `PriceListItem.NotFound`; 409 `PriceListItem.AlreadyEffective` | P1 PR 12 |
+| `GET /api/v2/specialties` | `specialties.manage` | — | 200 `SpecialtyAdmin[]`, *full*, inactive included | — | P1 PR 12 |
+| `POST /api/v2/specialties` | `specialties.manage` | `{ nameEn, nameAr }` | 201 `SpecialtyAdmin` | 400 validation; 409 `Specialty.NameTaken` (either name, case-insensitive) | P1 PR 12 |
+| `PUT /api/v2/specialties/{specialtyId}` | `specialties.manage` | `{ nameEn, nameAr, isActive? }` | 200 `SpecialtyAdmin` | as `POST`, plus 404 `Specialty.NotFound` | P1 PR 12 |
+
+The price a visit costs is resolved doctor at the branch, then doctor, then branch, then organization, valid on the visit's date (FR-SVC-03). The inherited `/api/Specialty` write routes (#37) are removed by P1 PR 12 (listed in §9 first).
+
+### 13.28 Message templates (provisional)
+
+| Method and path | Permission | Body or query | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/message-templates` | `notifications.templates` | `key?`, `channel?`, `language?` | 200 `MessageTemplate[]`, *full*, by key, channel and language | — | P1 PR 5 |
+| `PUT /api/v2/message-templates/{templateId}` | `notifications.templates` | `{ subject?, body }` | 200 `MessageTemplate`; messages sent from then on use it | 400 validation, `Template.UnknownPlaceholder` (a `{{name}}` the key doesn't offer), `Template.RequiredPlaceholderMissing`; 404 `Template.NotFound`; 409 `Template.NotEditable` (WhatsApp) | P1 PR 5 |
+| `POST /api/v2/message-templates/{templateId}/preview` | `notifications.templates` | `{ subject?, body }`: the unsaved text | 200 `TemplatePreview` with sample values; saves nothing | as `PUT` | P1 PR 5 |
+| `POST /api/v2/message-templates/{templateId}/reset` | `notifications.templates` | — | 200 `MessageTemplate`, the default text again | 404 `Template.NotFound` | P1 PR 5 |
+
+Each message is seeded in Arabic and English for each channel; Arabic emails are sent `dir="rtl"`. Integrations (the WhatsApp and SMS provider settings) aren't edited through the API in R1: they are deployment configuration (P1 PR 9).
+
+### 13.29 Audit log (provisional)
+
+| Method and path | Permission | Body or query | Success | Errors | Phase |
+|---|---|---|---|---|---|
+| `GET /api/v2/audit` | `audit.view` (a Manager: only at organization scope) | `userId?`, `entityType?`, `entityId?`, `action?`, `from?`, `to?` (instants), paging | 200 `AuditEntryView[]`, *paged*, newest first | 400 validation (`to` before `from`) | P1 PR 15 |
+| `GET /api/v2/audit/export` | `audit.view` | the same filters | 200 `text/csv` as an attachment, newest first. The export writes its own `Export` entry with the filters | 400 validation, `Audit.ExportTooLarge` (more than 50,000 rows: narrow the filters) | P1 PR 15 |
+
+`Read` entries come with the file downloads (R2); until then the log has `Create`, `Update`, `Delete` and `Export`.
+
+### 13.30 Clinic setup: error codes
+
+In addition to [§13.10](#1310-error-codes) and [§13.20](#1320-front-desk-and-nurse-station-error-codes).
+
+| Code | Status | When |
+|---|---|---|
+| `Branch.CodeTaken` | 409 | Another branch has the code |
+| `Branch.LastActive` | 409 | Deactivating the only active branch |
+| `Branch.InvalidHours` | 400 | A day's ranges are out of order or overlap |
+| `Holiday.NotFound` | 404 | Unknown holiday |
+| `Room.NotFound` | 404 | Unknown room, or at a branch outside the caller's scope |
+| `Room.NameTaken` | 409 | Another room at the branch has the name |
+| `Staff.NotFound` | 404 | Unknown staff member, or outside the caller's scope |
+| `Staff.RoleNotGrantable` | 403 | A Manager granting `Admin` or `Manager` (FR-STF-01) |
+| `Staff.CannotChangeOwnAccess` | 403 | Changing one's own roles or deactivating oneself |
+| `Staff.AlreadyDeactivated` | 409 | The member is deactivated already |
+| `Staff.EndDateInPast` | 400 | A deactivation date before today in the branch's calendar |
+| `Service.NotFound` | 404 | Unknown service |
+| `Service.CodeTaken` | 409 | Another service has the code |
+| `Specialty.NameTaken` | 409 | Another specialty has the name in either language |
+| `PriceListItem.NotFound` | 404 | Unknown price |
+| `PriceListItem.Overlaps` | 409 | The range overlaps a price for the same target that can't be ended |
+| `PriceListItem.AlreadyEffective` | 409 | Editing a price whose `validFrom` has passed |
+| `Template.NotFound` | 404 | Unknown template |
+| `Template.NotEditable` | 409 | A WhatsApp template (Meta approves its text) |
+| `Template.UnknownPlaceholder` | 400 | A placeholder the message doesn't offer |
+| `Template.RequiredPlaceholderMissing` | 400 | The body drops a placeholder the message needs (a link or a code) |
+| `Audit.ExportTooLarge` | 400 | An export of more than 50,000 rows |
+
+`Access.OutOfScope`, `Specialty.NotFound`, `Doctor.NotFound`, `Invitation.NotFound` and `Auth.EmailAlreadyExists` keep the meaning they have elsewhere.
+
+### 13.31 Clinic setup: frontend changes
+
+Compared with the mock backend at `6c42840`.
+
+| # | Change | Where |
+|---|---|---|
+| 1 | Paging sends `pageNumber`, not `page` (§13.1); the adapter maps `PageRequest` | `StaffService.list` adapter |
+| 2 | Rooms need `rooms.manage`, not `branches.manage` (02 §5); the screen's room actions follow it | `org-admin.mock.ts`, the branches screen |
+| 3 | `setActive(branchId, active)` maps to `POST .../deactivate` or `.../activate` | `BranchAdminService` adapter |
+| 4 | Holidays are added at `POST /api/v2/holidays` and deleted at `/api/v2/holidays/{holidayId}`; rooms are edited at `/api/v2/rooms/{roomId}` | `BranchAdminService` adapter |
+| 5 | A staff member's `id` is the staff member's, not the invitation's, and stays the same after acceptance; resend and revoke go through `/staff/{staffId}/invitation` | `staff.mock.ts`, `StaffService` adapter |
+| 6 | `invite` may send `doctor: { specialtyId, serviceIds }` when the roles include Doctor; the form gains those fields | Invite dialog |
+| 7 | `resetMfa` waits for R2 (MFA moved there): hide the action while the backend has no route | Staff member page |
+| 8 | `updateSettings` sends only the changed keys, as it does; it becomes a `PATCH` | `OrganizationService` adapter |
+| 9 | The roles matrix reads `GET /api/v2/roles` | `RolesService` adapter |
+| 10 | Messages (en, ar) for the codes the mocks don't throw yet: `Room.NameTaken`, `Service.CodeTaken`, `Service.NotFound`, `PriceListItem.*`, `Template.*`, `Audit.ExportTooLarge` | `common:errors`, `mocks/contract-errors.test.ts` |
+| 11 | Build the message templates, price list and audit log screens on §13.27–§13.29; any shape they need differently changes §13 first | M1 screens |
