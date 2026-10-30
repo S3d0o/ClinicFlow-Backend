@@ -15,6 +15,8 @@ namespace Domain.Interfaces
         IPatientRepo Patients { get; }
         IAdminRepo Admins { get; }
         IBranchRepo Branches { get; }
+        IRoomRepo Rooms { get; }
+        IOrganizationRepo Organizations { get; }
         IMessageDeliveryRepo MessageDeliveries { get; }
         ISubscriptionRepo Subscriptions { get; }
 

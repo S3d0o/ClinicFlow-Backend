@@ -158,6 +158,7 @@ Files often need several of these usings. `IReviewRepo` is declared in namespace
 
 ### Endpoints
 - Controllers live in `Presentation/Controllers`, inherit `ApiController` (not `ControllerBase`), take the service through a primary constructor, and set an explicit route: `[Route("api/appointments")]`. The base `api/[controller]` route is only used by `SpecialtyController`.
+- **New endpoints are V2:** controllers in `Presentation/Controllers/V2` inherit `V2ApiController` and route under its prefix (`[Route(RoutePrefix + "/branches")]`), which gives them contract §13.1's conventions (ids as strings, `HH:mm`, coded errors as shape A). For the contract's "Any staff" reads, use `[Authorize(Roles = Roles.AnyStaff)]`.
 - Every action has:
   - `[EndpointSummary]`, `[EndpointDescription]`, and `[ProducesResponseType]` per status code (`ProblemDetails` / `ValidationProblemDetails` for errors)
   - `CancellationToken ct` as the last parameter

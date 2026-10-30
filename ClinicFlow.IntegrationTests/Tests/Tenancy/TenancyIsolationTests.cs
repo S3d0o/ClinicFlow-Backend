@@ -57,7 +57,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Tenancy
                 (_patientUserId, _, _, _ownAppointmentId) = await SeedDataHelper.SeedBaseAppointmentAsync(db);
 
                 // Organization is global, so the app's context may create the second one
-                var other = new Organization { LegalName = "Other Clinic", BrandName = "Other", DefaultTimeZoneId = "Africa/Cairo" };
+                var other = new Organization { LegalName = "Other Clinic", BrandNameEn = "Other", DefaultTimeZoneId = "Africa/Cairo" };
                 db.Organizations.Add(other);
                 await db.SaveChangesAsync();
                 _otherOrganizationId = other.Id;

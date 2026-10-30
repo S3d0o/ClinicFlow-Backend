@@ -1,6 +1,8 @@
 namespace Domain.Entities.Tenancy
 {
-    // One branch (MAIN) until P1 adds branch management. Its time zone governs slot times from P0 PR 6 (docs/v2/adr/0003)
+    // One physical location (FR-ORG-02). MAIN is created by the AddOrganizationAndBranches migration; P1 PR 1 adds the
+    // rest through BranchService. Its time zone governs slot times (docs/v2/adr/0003). A deactivated branch takes no
+    // new bookings, and its records stay readable
     public class Branch : BaseEntity<int>, IOrganizationOwned
     {
         public const int MainId = 1;
@@ -10,7 +12,8 @@ namespace Domain.Entities.Tenancy
         public string Code { get; set; } = string.Empty; // unique per organization; appears in invoice numbers
         public string NameAr { get; set; } = string.Empty;
         public string NameEn { get; set; } = string.Empty;
-        public string? Address { get; set; }
+        public string? AddressEn { get; set; }
+        public string? AddressAr { get; set; }
         public string? City { get; set; }
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }

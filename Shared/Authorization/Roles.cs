@@ -12,5 +12,9 @@ namespace Shared.Authorization
         public const string Patient = "Patient";
 
         public static readonly IReadOnlyList<string> All = [Admin, Manager, Receptionist, Nurse, Doctor, Accountant, Patient];
+
+        // For [Authorize(Roles = AnyStaff)] on reads every staff member may use (the contract's "Any staff"), such as
+        // the branch list and the organization's settings: every role but Patient
+        public const string AnyStaff = Admin + "," + Manager + "," + Receptionist + "," + Nurse + "," + Doctor + "," + Accountant;
     }
 }

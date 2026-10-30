@@ -1,3 +1,4 @@
+using Domain.Entities.Tenancy;
 using Domain.Entities.AppModule;
 using Domain.Entities.Auditing;
 using Domain.Entities.IdentityModule;
@@ -25,7 +26,7 @@ namespace ClinicFlow.Tests.Persistence
             => Audited<T>()!.ModeOf(Model.FindEntityType(typeof(T))!.FindProperty(property)!);
 
         [Fact]
-        public void AuditedTypes_AreAppointmentsDoctorsUsersRolesAndSubscriptions()
+        public void AuditedTypes_AreAppointmentsDoctorsUsersRolesSubscriptionsAndTheOrganizationsSetup()
         {
             var audited = Model.GetEntityTypes()
                 .Select(t => (t.ClrType, Audited: AuditedType.Of(t)))
@@ -40,6 +41,9 @@ namespace ClinicFlow.Tests.Persistence
                 [typeof(IdentityUserRole<Guid>)] = "UserRole",
                 [typeof(OrganizationSubscription)] = "OrganizationSubscription",     // docs/v2/adr/0008 decision 6
                 [typeof(OrganizationModuleOverride)] = "OrganizationModuleOverride",
+                [typeof(Organization)] = "Organization",                             // FR-ORG-01, P1 PR 1
+                [typeof(Branch)] = "Branch",
+                [typeof(Room)] = "Room",
             }, audited);
         }
 

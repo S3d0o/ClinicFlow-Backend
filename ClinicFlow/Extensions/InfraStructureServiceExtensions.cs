@@ -114,6 +114,7 @@ namespace ClinicFlow.Extensions
             services.AddScoped<IAppointmentQueries, AppointmentQueries>();
             services.AddScoped<IEntitlementQueries, EntitlementQueries>(); // read only by IEntitlements (docs/v2/adr/0008)
             services.AddScoped<ISubscriptionQueries, SubscriptionQueries>();
+            services.AddScoped<IOrganizationQueries, OrganizationQueries>();
 
 
             return services;

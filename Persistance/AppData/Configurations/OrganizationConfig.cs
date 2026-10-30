@@ -5,8 +5,12 @@ namespace Persistence.AppData.Configurations
         public void Configure(EntityTypeBuilder<Organization> builder)
         {
             builder.ToTable("Organizations");
+            builder.IsAudited("Organization"); // FR-AUD-01: the profile printed on invoices
             builder.Property(o => o.LegalName).HasMaxLength(200);
-            builder.Property(o => o.BrandName).HasMaxLength(200);
+            builder.Property(o => o.BrandNameEn).HasMaxLength(200);
+            builder.Property(o => o.BrandNameAr).HasMaxLength(200);
+            builder.Property(o => o.Phone).HasMaxLength(20);
+            builder.Property(o => o.Email).HasMaxLength(256);
             builder.Property(o => o.LogoUrl).HasMaxLength(500);
             builder.Property(o => o.TaxRegistrationNo).HasMaxLength(50);
             builder.Property(o => o.CommercialRegistrationNo).HasMaxLength(50);
@@ -18,7 +22,8 @@ namespace Persistence.AppData.Configurations
             {
                 Id = Organization.DefaultId,
                 LegalName = "ClinicFlow",
-                BrandName = "ClinicFlow",
+                BrandNameEn = "ClinicFlow",
+                BrandNameAr = "كلينك فلو",
                 DefaultTimeZoneId = "Africa/Cairo",
                 IsActive = true,
             });

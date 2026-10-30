@@ -30,6 +30,12 @@ namespace Services.Implementations
                 logger.LogWarning("Slot {SlotId} belongs to doctor {DoctorId}, who is not approved or not active", request.SlotId, slot.DoctorProfileId);
                 return AppointmentErrors.SlotNotFound(request.SlotId);
             }
+            // A deactivated branch takes no new bookings (FR-ORG-02); its slots stay for the visits already booked
+            if (!await uow.Branches.IsActiveAsync(slot.BranchId, ct))
+            {
+                logger.LogWarning("Slot {SlotId} is at branch {BranchId}, which is deactivated", request.SlotId, slot.BranchId);
+                return AppointmentErrors.SlotNotAvailable;
+            }
             if (slot.Status == SlotStatus.Blocked || slot.Status == SlotStatus.Booked)
             {
                 logger.LogWarning("Appointment slot is not available for booking. Slot ID: {SlotId}, Status: {Status}", request.SlotId, slot.Status);

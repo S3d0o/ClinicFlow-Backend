@@ -236,6 +236,12 @@ Only codes the API can actually return are listed.
 | `Subscription.NotAnAddOn` | 400 | A core or unknown module in #50 |
 | `Subscription.ModuleRequired` | 409 | Switching off an add-on that another enabled add-on needs (#50) |
 | `Subscription.SwitchingDisabled` | 403 | #49 or #50 on a deployment where `Platform:AllowPlanSwitching` is off (the default outside Development) |
+| `Access.OutOfScope` | 403 | The user holds the permission, but not in a scope that covers the record (#54–#57, #59) |
+| `Branch.NotFound` | 404 | Unknown branch (#55–#59) |
+| `Branch.CodeTaken` | 409 | Another branch has the code (#54, #55) |
+| `Branch.LastActive` | 409 | Deactivating the only active branch (#56) |
+| `Room.NotFound` | 404 | Unknown room, or outside the caller's scope (#60) |
+| `Room.NameTaken` | 409 | Another room at the branch has either name (#59, #60) |
 | `RateLimit.Exceeded` | 429 | Too many requests from one client to the rate-limited auth endpoints ([§2.7](#27-rate-limiting)). A `Retry-After` header gives the seconds to wait |
 
 Booking can also fail with a 500 whose `title` is `"An error occurred while booking the appointment."` (an unexpected database failure).
@@ -308,6 +314,18 @@ Auth column: **—** means anonymous; **Any** means any logged-in user.
 | 48 | GET | `/api/v2/plans` | `org.settings.manage` | 200 `PlanResponse[]` |
 | 49 | PUT | `/api/v2/platform/subscription/plan` | `org.settings.manage`, where switching is on | 204 |
 | 50 | PUT | `/api/v2/platform/subscription/modules` | `org.settings.manage`, where switching is on | 204 |
+| | **Organization, branches and rooms (`/api/v2`, §5.11)** | | | |
+| 51 | GET | `/api/v2/organization` | `org.settings.manage` | 200 `OrganizationProfile` |
+| 52 | PUT | `/api/v2/organization` | `org.settings.manage` | 200 `OrganizationProfile` |
+| 53 | GET | `/api/v2/branches` | Any staff | 200 `Branch[]` |
+| 54 | POST | `/api/v2/branches` | `branches.manage` (organization) | 201 `Branch` |
+| 55 | PUT | `/api/v2/branches/{branchId}` | `branches.manage` | 200 `Branch` |
+| 56 | POST | `/api/v2/branches/{branchId}/deactivate` | `branches.manage` (organization) | 200 `Branch` |
+| 57 | POST | `/api/v2/branches/{branchId}/activate` | `branches.manage` (organization) | 200 `Branch` |
+| 58 | GET | `/api/v2/branches/{branchId}/rooms` | Any staff | 200 `Room[]` |
+| 59 | POST | `/api/v2/branches/{branchId}/rooms` | `rooms.manage` | 201 `Room` |
+| 60 | PUT | `/api/v2/rooms/{roomId}` | `rooms.manage` | 200 `Room` |
+| 61 | GET | `/api/v2/public/branches` | — | 200 `Branch[]` |
 
 `/api/Specialty` is case-insensitive (`/api/specialty` also works).
 
@@ -477,7 +495,7 @@ Each entry lists the request, the success response, and the errors that endpoint
   - 400 (B)
   - 400 (C) `Appointment.SlotInPast` (the slot has started on the clinic's clock)
   - 404 `Patient.ProfileNotFound`, `Appointment.SlotNotFound` (also for a slot of an unapproved or suspended doctor)
-  - 409 `Appointment.SlotNotAvailable`, `Appointment.SlotAlreadyBooked`
+  - 409 `Appointment.SlotNotAvailable`, `Appointment.SlotAlreadyBooked` (`SlotNotAvailable` also when the slot's branch is deactivated, #56)
   - 500
 - **Frontend:** on 409, refresh the slot list.
 
@@ -739,6 +757,49 @@ The first built `/api/v2` routes ([docs/v2/adr/0008](v2/adr/0008-multi-clinic-pl
 
 #49 and #50 are a stand-in for the operator console (R4), which will move them to a platform-operator role.
 
+### 5.11 Organization, branches and rooms (`/api/v2`)
+
+Built by P1 PR 1 from §13.24 and §13.25 unchanged; the types are §13.2's `Branch` and §13.23's `OrganizationProfile`, `BranchInput`, `Room` and `RoomInput`. §13.1 and §13.22 apply. "Any staff" is every role but `Patient`. Until P1 PR 4 assigns staff to branches, a branch-scope grant covers every branch (as in P0), so `Access.OutOfScope` comes only from the organization-wide checks below.
+
+**51. `GET /api/v2/organization`** (`org.settings.manage`)
+- **200:** `OrganizationProfile`. Fields never set are `""`.
+
+**52. `PUT /api/v2/organization`** (`org.settings.manage`)
+- **Body:** `OrganizationProfile`. **200:** the saved profile. The change is audited.
+- **Errors:** 400 validation (`legalName` at most 150, `brandNameEn` / `brandNameAr` 80, `taxNumber` / `commercialRegistration` 30, `phone` 20, `email`)
+
+**53. `GET /api/v2/branches`** (any staff)
+- **200:** `Branch[]`, *full*, by `code`, deactivated ones included.
+
+**54. `POST /api/v2/branches`** (`branches.manage`, organization-wide)
+- **Body:** `BranchInput`. **201:** the `Branch`, active. Audited.
+- **Errors:** 400 validation (`code` 2–4 capital letters; names 80; addresses 200; `phone` an Egyptian mobile `01…` or an international number; `timeZone` an IANA zone); 403 `Access.OutOfScope` (the permission held for branches only, as a Manager holds it); 409 `Branch.CodeTaken`
+- `phone` is stored as sent until P1 PR 9's normaliser writes E.164.
+
+**55. `PUT /api/v2/branches/{branchId}`** (`branches.manage` for the branch)
+- **Body:** `BranchInput`. **200:** the `Branch`.
+- **Errors:** as #54, plus 404 `Branch.NotFound`
+
+**56. `POST /api/v2/branches/{branchId}/deactivate`** and **57. `POST /api/v2/branches/{branchId}/activate`** (`branches.manage`, organization-wide)
+- **200:** the `Branch`. Doing it twice changes nothing. A deactivated branch takes no new bookings: the inherited booking route (#18) answers 409 `Appointment.SlotNotAvailable` for its slots. Booked visits and records stay.
+- **Errors:** 403 `Access.OutOfScope`; 404 `Branch.NotFound`; 409 `Branch.LastActive` (#56 only: the only active branch)
+
+**58. `GET /api/v2/branches/{branchId}/rooms`** (any staff)
+- **200:** `Room[]`, *full*, by `nameEn`, inactive ones included.
+- **Errors:** 404 `Branch.NotFound`
+
+**59. `POST /api/v2/branches/{branchId}/rooms`** (`rooms.manage` for the branch)
+- **Body:** `RoomInput`. **201:** the `Room`, active. Audited.
+- **Errors:** 400 validation (names at most 60, `kind`); 403 `Access.OutOfScope`; 404 `Branch.NotFound`; 409 `Room.NameTaken` (either name, at the branch)
+- In the default matrix (02 §6) only the Manager holds `rooms.manage`; an Admin gets 403.
+
+**60. `PUT /api/v2/rooms/{roomId}`** (`rooms.manage` for the room's branch)
+- **Body:** `RoomInput` with `isActive` (omitted: unchanged). **200:** the `Room`.
+- **Errors:** as #59, but 404 `Room.NotFound` (also for a room outside the caller's scope)
+
+**61. `GET /api/v2/public/branches`** (anonymous)
+- **200:** `Branch[]`, *full*, active branches only, by `code`.
+
 ## 6. Data types
 
 Types use TypeScript-style notation. `?` means the field may be omitted in a request; `| null` means the value may be null.
@@ -843,6 +904,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) and planned changes whose fix **
 | 4.0.0-p0 | 2026-10-23 | **Pre-release on the `v2` branch (V2 line)**; the V2 frontend is its only client. Bug fix: `profilePictureUrl` (#31) and `iconUrl` (#41, #42) must be absolute `http` or `https` URLs. Before, the rule accepted any absolute URI, including `javascript:` and `file:`, and on Linux (the Docker image) a path such as `/images/me.png`, which .NET reads as a `file://` URI. Those values now return 400 with a validation error on the field; the message is "... must be an absolute http or https URL." **Breaking (format): every timestamp ends in `Z`** (P0 PR 4, REVIEW.md §4.1). Timestamps read from the database (`bookedAt`, `cancelledAt`, `createdAt`, …) used to be sent without it; only `LoginResponse.expiresAt` had it. The values are unchanged and still UTC. A client that appends a missing `Z` before parsing, like §12's `parseTimestamp`, needs no change; one that parsed the bare value as local time now gets the correct instant. The date-of-birth rules (#1, #2, #31) now compare with the clinic's date (`Clinic:TimeZoneId`) instead of the UTC date, which differs only for a few hours around midnight **Breaking (enum): `AppointmentStatus` gains `CheckedIn`, `InProgress` and `Rescheduled`** (P0 PR 7, [docs/v2/adr/0004](v2/adr/0004-appointment-state-machine.md)). No route produces them yet; the status filter of #19 and #20 accepts them. A client with an exhaustive switch over the statuses needs a default case. New code `Appointment.InvalidStatusTransition` (409) for a status change the rules don't allow when no older code applies; the only appointments the API creates are `Confirmed`, so in P0 it can only come from a `Pending` row (completing or marking one as a no-show used to succeed). Every other route, status code and error code is unchanged. **Bug fix:** `hasReview` is correct in `GET /api/appointments/{id}` (#21) and the doctor's list (#20); both always sent `false` before, because the review wasn't loaded **Behaviour: notifications and emails are asynchronous** (P0 PR 9, [06 §5](v2/06_TECHNICAL_DESIGN.md#5-domain-events-and-the-outbox)). They are written to an outbox with the change and sent by a background job about 2 s later, instead of inside the request; every response, status code and error code is unchanged. A client that reads `/api/notifications/my` right after an action may not see the new notification yet (§1). Bug fix (REVIEW.md NL24): `POST /api/auth/forgot-password` (#7) now takes about as long for a registered email as for an unknown one, because the request no longer waits for SMTP; a failed confirmation or reset email is retried instead of being lost. **New (operations): health probes** (P0 PR 11, §1). `GET /health/live` and `GET /health/ready` join `GET /health`, which is unchanged and now an alias of `/health/live`. They are for orchestrators and load balancers; no frontend route uses them |
 | 4.0.0-p0 | 2026-10-30 | Still the pre-release on `v2` (P1 PR 0, "V2 API conventions"); no `/api/v2` endpoint exists yet, so the version is unchanged. **Breaking (format, P1 plan Q-F): validation keys are camelCase on every route** (§3.1 B, §9). A 400 from FluentValidation keys each message by the property path in the JSON naming policy, as the client sent it: `email`, `slotId`, `reasonForVisit`, `lines[0].unitPrice`. Before, inherited routes sent the C# names (`Email`, `SlotId`); 3.1.1's `Notes` key for #24 is `notes` again. Shape C (business-rule codes as keys) and shape D (`$.email`, parameter names) are unchanged, and so is every status code. **Groundwork for `/api/v2` (§13.1), active only on `/api/v2` routes and so not observable yet:** ids written and read as JSON strings; `startTime` / `endTime` as `"HH:mm"`; every coded error as shape A at any status (no shape C); `Auth.InvalidCredentials`-type errors are 400, so 401 means only a token problem; a 429 error type with `retryAt`; error extensions `retryAt` and `attemptsLeft` at the top level of the ProblemDetails; paging with defaults 1 / 20 and `pageSize` at most 100; `rowVersion` checks that return 409 `Concurrency.Conflict`; `RateLimit.Exceeded` gains `retryAt` on `/api/v2`. Inherited routes keep §1–§3 apart from the validation keys. `openapi.json` is unchanged (validation keys aren't in the document) |
 | 4.0.0-p0 | 2026-10-30 | Additive: **the first `/api/v2` routes, plans and modules** (§5.10, #46–#50; ADR 0008, R1 M1): the organization's entitlements, its enabled modules (anonymous), the plans, and two switches for the plan and add-ons that work only where `Platform:AllowPlanSwitching` is on (Development by default). New 403 `Subscription.ModuleNotEnabled` when a role grants a permission whose module isn't in the plan; inherited routes are unaffected. New codes `Subscription.NotFound`, `PlanNotFound`, `NotAnAddOn`, `ModuleRequired`, `SwitchingDisabled` (§3.3). New types `EntitlementsResponse`, `PlanResponse`, `ChangePlanRequest`, `SetModuleRequest`, enums `Module` and `SubscriptionStatus`. `openapi.json` regenerated |
+| 4.0.0-p0 | 2026-10-30 | Additive (P1 PR 1): **organization, branches and rooms** (§5.11, #51–#61), built from §13.24–§13.25 unchanged: the organization profile, branches with activate and deactivate, rooms, and the public branch list. New codes `Access.OutOfScope`, `Branch.NotFound`, `Branch.CodeTaken`, `Branch.LastActive`, `Room.NotFound`, `Room.NameTaken` (§3.3). **Behaviour:** the inherited booking route (#18) answers 409 `Appointment.SlotNotAvailable` for a slot at a deactivated branch. `openapi.json` regenerated |
 
 ## 11. How to change this contract
 
@@ -1020,6 +1082,20 @@ export interface PlanResponse {
 }
 export interface ChangePlanRequest { planCode: string; }
 export interface SetModuleRequest { module: Module; enabled: boolean; }
+
+// ---- organization, branches and rooms (/api/v2, §5.11); ids are strings (§13.1) ----
+export interface OrganizationProfile {
+  legalName: string; brandNameEn: string; brandNameAr: string;
+  taxNumber: string; commercialRegistration: string; phone: string; email: string;
+}
+export interface Branch {
+  id: string; code: string; nameEn: string; nameAr: string; addressEn: string; addressAr: string;
+  phone: string; timeZone: string; isActive: boolean;
+}
+export type BranchInput = Omit<Branch, "id" | "isActive">;
+export type RoomKind = "Consultation" | "Procedure" | "Triage";
+export interface Room { id: string; branchId: string; nameEn: string; nameAr: string; kind: RoomKind; isActive: boolean }
+export interface RoomInput { nameEn: string; nameAr: string; kind: RoomKind; isActive?: boolean }
 
 // ---- helpers ----
 /** Total number of matching items on paged lists (#32, #38); null when the header is absent. */
@@ -1302,7 +1378,7 @@ All anonymous.
 
 | Method and path | Query | Success | Errors | Phase |
 |---|---|---|---|---|
-| `GET /api/v2/public/branches` | — | 200 `Branch[]`, *full*, active branches only | — | P1 |
+| `GET /api/v2/public/branches` | — | 200 `Branch[]`, *full*, active branches only | — | **Built** (§5.11 #61) |
 | `GET /api/v2/public/specialties` | — | 200 `Specialty[]`, *full*, active only | — | P1 |
 | `GET /api/v2/public/services` | — | 200 `Service[]`, *full*, active only | — | P1 |
 | `GET /api/v2/public/branches/{branchId}/services` | — | 200 `BranchService[]`, *full*: services at least one public doctor offers at the branch, with the lowest price there | 404 `Branch.NotFound` | P2 |
@@ -1811,8 +1887,8 @@ export interface AuditEntryView {
 
 | Method and path | Permission | Body or query | Success | Errors | Phase |
 |---|---|---|---|---|---|
-| `GET /api/v2/organization` | `org.settings.manage` | — | 200 `OrganizationProfile` | — | P1 PR 1 |
-| `PUT /api/v2/organization` | `org.settings.manage` | `OrganizationProfile` | 200 `OrganizationProfile` | 400 validation (`legalName` at most 150, brand names 80, tax number and registration 30, `phone` 20, `email`) | P1 PR 1 |
+| `GET /api/v2/organization` | `org.settings.manage` | — | 200 `OrganizationProfile` | — | **Built** (§5.11) |
+| `PUT /api/v2/organization` | `org.settings.manage` | `OrganizationProfile` | 200 `OrganizationProfile` | 400 validation (`legalName` at most 150, brand names 80, tax number and registration 30, `phone` 20, `email`) | **Built** (§5.11) |
 | `GET /api/v2/organization/settings` | Any staff | — | 200 `OrganizationSettings`, every key, defaults filled in | — | P1 PR 3 |
 | `PATCH /api/v2/organization/settings` | `org.settings.manage` | `Partial<OrganizationSettings>`: only the keys to change | 200 `OrganizationSettings`. Each changed key is audited with its old and new value | 400 validation: a value outside the bounds in §13.23 (key = the setting); an unknown key | P1 PR 3 |
 
@@ -1822,19 +1898,19 @@ The appointment rules read the settings from then on: a new cancellation window 
 
 | Method and path | Permission | Body or query | Success | Errors | Phase |
 |---|---|---|---|---|---|
-| `GET /api/v2/branches` | Any staff | — | 200 `Branch[]`, *full*, deactivated ones included (`isActive`) | — | P1 PR 1 |
-| `POST /api/v2/branches` | `branches.manage` (organization) | `BranchInput` | 201 `Branch`, active | 400 validation (`code`, `phone`, `timeZone` not an IANA zone); 409 `Branch.CodeTaken` | P1 PR 1 |
-| `PUT /api/v2/branches/{branchId}` | `branches.manage` | `BranchInput` | 200 `Branch` | as `POST`, plus 404 `Branch.NotFound` | P1 PR 1 |
-| `POST /api/v2/branches/{branchId}/deactivate` | `branches.manage` (organization) | — | 200 `Branch`. It takes no new bookings, online or at the desk; its records stay readable and booked visits stay (FR-ORG-02) | 404 `Branch.NotFound`; 409 `Branch.LastActive` | P1 PR 1 |
-| `POST /api/v2/branches/{branchId}/activate` | `branches.manage` (organization) | — | 200 `Branch` | 404 `Branch.NotFound` | P1 PR 1 |
+| `GET /api/v2/branches` | Any staff | — | 200 `Branch[]`, *full*, deactivated ones included (`isActive`) | — | **Built** (§5.11) |
+| `POST /api/v2/branches` | `branches.manage` (organization) | `BranchInput` | 201 `Branch`, active | 400 validation (`code`, `phone`, `timeZone` not an IANA zone); 409 `Branch.CodeTaken` | **Built** (§5.11) |
+| `PUT /api/v2/branches/{branchId}` | `branches.manage` | `BranchInput` | 200 `Branch` | as `POST`, plus 404 `Branch.NotFound` | **Built** (§5.11) |
+| `POST /api/v2/branches/{branchId}/deactivate` | `branches.manage` (organization) | — | 200 `Branch`. It takes no new bookings, online or at the desk; its records stay readable and booked visits stay (FR-ORG-02) | 404 `Branch.NotFound`; 409 `Branch.LastActive` | **Built** (§5.11) |
+| `POST /api/v2/branches/{branchId}/activate` | `branches.manage` (organization) | — | 200 `Branch` | 404 `Branch.NotFound` | **Built** (§5.11) |
 | `GET /api/v2/branches/{branchId}/working-hours` | Any staff | — | 200 `DayHours[]`: seven entries, Sunday first | 404 `Branch.NotFound` | P1 PR 2 |
 | `PUT /api/v2/branches/{branchId}/working-hours` | `branches.manage` | `DayHours[]`: a missing weekday is closed | 200 `DayHours[]` as `GET`. Existing slots outside the new hours stay; new ones follow them | 400 `Branch.InvalidHours` (a range with `from` ≥ `to`, or overlapping ranges on a day); 404 `Branch.NotFound` | P1 PR 2 |
 | `GET /api/v2/branches/{branchId}/holidays` | Any staff | `year?` (default: this year and later) | 200 `Holiday[]`, *full*: the branch's and those that close every branch, by `from` | 404 `Branch.NotFound` | P1 PR 2 |
 | `POST /api/v2/holidays` | `branches.manage` (organization when `branchId` is null) | `HolidayInput` | 201 `{ holiday: Holiday, affectedAppointments: number }`: the booked visits that fall on it and need moving (the J5 worklist, P2). No slots are made on it from then on | 400 validation (`to` before `from`); 404 `Branch.NotFound` | P1 PR 2 |
 | `DELETE /api/v2/holidays/{holidayId}` | as `POST` | — | 204. Slot generation fills the days again on its next run | 404 `Holiday.NotFound` | P1 PR 2 |
-| `GET /api/v2/branches/{branchId}/rooms` | Any staff | — | 200 `Room[]`, *full*, inactive included | 404 `Branch.NotFound` | P1 PR 1 |
-| `POST /api/v2/branches/{branchId}/rooms` | `rooms.manage` | `RoomInput` | 201 `Room`, active | 400 validation (names at most 60); 404 `Branch.NotFound`; 409 `Room.NameTaken` (same name at the branch) | P1 PR 1 |
-| `PUT /api/v2/rooms/{roomId}` | `rooms.manage` | `RoomInput` with `isActive` | 200 `Room` | as `POST`, plus 404 `Room.NotFound` | P1 PR 1 |
+| `GET /api/v2/branches/{branchId}/rooms` | Any staff | — | 200 `Room[]`, *full*, inactive included | 404 `Branch.NotFound` | **Built** (§5.11) |
+| `POST /api/v2/branches/{branchId}/rooms` | `rooms.manage` | `RoomInput` | 201 `Room`, active | 400 validation (names at most 60); 404 `Branch.NotFound`; 409 `Room.NameTaken` (same name at the branch) | **Built** (§5.11) |
+| `PUT /api/v2/rooms/{roomId}` | `rooms.manage` | `RoomInput` with `isActive` | 200 `Room` | as `POST`, plus 404 `Room.NotFound` | **Built** (§5.11) |
 
 ### 13.26 Staff, invitations and roles
 
