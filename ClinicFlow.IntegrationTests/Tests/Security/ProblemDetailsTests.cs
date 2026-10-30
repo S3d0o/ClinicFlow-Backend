@@ -73,7 +73,22 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
 
             var problem = await ReadProblemAsync(response, HttpStatusCode.BadRequest);
             problem.TryGetProperty("type", out _).Should().BeTrue();
-            problem.GetProperty("errors").TryGetProperty("Email", out _).Should().BeTrue();
+            // camelCase on every route since P1 PR 0 (plan Q-F, contract §3.1 B); PascalCase before
+            problem.GetProperty("errors").TryGetProperty("email", out _).Should().BeTrue();
+            problem.GetProperty("errors").TryGetProperty("password", out _).Should().BeTrue();
+            problem.GetProperty("errors").TryGetProperty("Email", out _).Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task ValidatorFailure_OnAnIdField_KeysItInCamelCase()
+        {
+            _client.DefaultRequestHeaders.Add(TestAuthHandler.UserIdHeader, Guid.NewGuid().ToString());
+            _client.DefaultRequestHeaders.Add(TestAuthHandler.UserRoleHeader, "Patient");
+
+            var response = await _client.PostAsJsonAsync("/api/appointments", new { slotId = 0 });
+
+            var problem = await ReadProblemAsync(response, HttpStatusCode.BadRequest);
+            problem.GetProperty("errors").TryGetProperty("slotId", out _).Should().BeTrue();
         }
 
         [Fact]

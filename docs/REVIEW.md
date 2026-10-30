@@ -43,10 +43,10 @@ After the review, a first fix pass was made on branch `docs/review-and-claude-md
 - Critical: 4 of 4 fixed.
 - High: 8 of 8 fixed.
 - Medium: 15 of 15 fixed.
-- .NET High/Medium: 6 fixed, 1 partly fixed (NM3: email still sent inline; V2 outbox).
+- .NET High/Medium: 7 of 7 fixed on `v2` (NM3 by the outbox, P0 PR 9). On V1 (`master`) NM3 stays partly fixed: email is still sent inline there.
 
 **Still open:**
-- **Larger work (V2 P0, [roadmap](v2/10_ROADMAP.md)):** NM3 (email outbox; also removes the NL24 timing difference), NL14 (retry on transient faults), §4 (state machine, domain events and the rest).
+- **Larger work (V2 P0, [roadmap](v2/10_ROADMAP.md)):** §4 (state machine, domain events and the rest). NM3 (email outbox, which also removed the NL24 timing difference) and NL14 (retry on transient faults) are fixed on `v2` (P0 PR 9 and PR 3) and stay open on V1 (`master`).
 - **Refactor or deliberate:** NL6, NL10, NL21; the project-structure renames under "Unclear naming" (folder name, `Global.cs.cs`, enum namespaces); the seeder's own slot generation; `AppointmentStatus.Pending` (kept for V2).
 - **Product decision:** whether admins hide reviews (`Review.IsVisible`) instead of deleting them (H2).
 - **Not a review item:** removing the deprecated `/api/Specialty` write routes and the duplicate review route #12 ([API_CONTRACT.md](API_CONTRACT.md) §9).
@@ -627,7 +627,7 @@ The `Microsoft.*` 10.0.x packages are pinned at three different patch levels: 10
 - **Fix risk:** Low. The change is mechanical and signature-only. NSubstitute setups in `ClinicFlow.Tests` need `Arg.Any<CancellationToken>()` added.
 
 #### NM3. Email is sent inside the request, with no timeout and a new SMTP connection per message
-- **Status:** 🟡 Partly fixed in `d3b6511`. Added a 30 s SMTP timeout and cancellation. Still open: sending is still inline (no background queue or outbox). **V2:** fixed in P0 PR 9. Every email and in-app notification goes through a transactional outbox (`OutboxMessages`, written in the same transaction as the change) and is sent by the `OutboxDispatcher` job about 2 s later, so no request waits for SMTP.
+- **Status:** ✅ **V2:** fixed in P0 PR 9 (marked fixed in P1 PR 0, 2026-10-30). 🟡 **V1 (`master`):** partly fixed in `d3b6511`: a 30 s SMTP timeout and cancellation, but sending is still inline (no background queue or outbox). **V2 fix:** every email and in-app notification goes through a transactional outbox (`OutboxMessages`, written in the same transaction as the change) and is sent by the `OutboxDispatcher` job about 2 s later, so no request waits for SMTP.
 - **Where:** `EmailService.cs:297-309` creates a new `SmtpClient`, then connects, authenticates, sends and disconnects for every email. MailKit's default timeout is 2 minutes **per operation**, and no `ct` is passed. The callers are:
   - booking (`AppointmentService.cs:89`)
   - registration (`AuthService.cs:88`, `:169`)
