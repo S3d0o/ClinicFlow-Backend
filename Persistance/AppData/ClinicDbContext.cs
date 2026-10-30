@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Persistence.AppData.Converters;
+using Domain.Entities.Subscriptions;
 using Persistence.Outbox;
+using Persistence.Subscriptions;
 using Persistence.Tenancy;
 using Services.Abstraction.Contracts;
 using System.Diagnostics;
@@ -18,12 +20,17 @@ namespace Persistence.AppData
         private readonly ICurrentUser? _currentUser;
         private string? _auditCorrelationId;
 
-        // currentUser is who audit entries name; without one (tools, model tests) they name nobody
-        public ClinicDbContext(DbContextOptions<ClinicDbContext> options, ITenantContext tenant, ICurrentUser? currentUser = null)
+        // currentUser is who audit entries name; without one (tools, model tests) they name nobody. entitlementCache is
+        // invalidated when a save changes subscriptions, overrides or plans; without one (tools, tests' own contexts)
+        // nothing is cached in this process to invalidate
+        public ClinicDbContext(
+            DbContextOptions<ClinicDbContext> options, ITenantContext tenant, ICurrentUser? currentUser = null,
+            IEntitlementCache? entitlementCache = null)
             : base(options)
         {
             _tenant = tenant;
             _currentUser = currentUser;
+            EntitlementCache = entitlementCache;
         }
 
         // The organization this context reads and writes. The query filters read it per context instance
@@ -47,13 +54,20 @@ namespace Persistence.AppData
         internal string AuditCorrelationId
             => _auditCorrelationId ??= Activity.Current?.TraceId.ToHexString() ?? Guid.NewGuid().ToString("N");
 
+        // The cache of effective entitlements (docs/v2/adr/0008 decision 7) and what the saves of this context have
+        // made stale in it, applied after each save and again on commit (EntitlementChanges)
+        internal IEntitlementCache? EntitlementCache { get; }
+        internal EntitlementChanges PendingEntitlementChanges { get; } = new();
+
         // Rows inserted by the save in progress whose audit entries wait for their database-generated keys
         internal List<EntityEntry> PendingAuditInserts { get; } = [];
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-            // Order matters: the outbox and the audit add their rows first, so the tenant interceptor stamps them too
+            // Order matters: the outbox and the audit add their rows first, so the tenant interceptor stamps them too.
+            // The entitlement interceptors run last: they only read what the save changed
             => optionsBuilder.AddInterceptors(
-                OutboxSaveChangesInterceptor.Instance, AuditSaveChangesInterceptor.Instance, TenantSaveChangesInterceptor.Instance);
+                OutboxSaveChangesInterceptor.Instance, AuditSaveChangesInterceptor.Instance, TenantSaveChangesInterceptor.Instance,
+                EntitlementSaveChangesInterceptor.Instance, EntitlementTransactionInterceptor.Instance);
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -126,6 +140,11 @@ namespace Persistence.AppData
         public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
         public DbSet<MessageDelivery> MessageDeliveries => Set<MessageDelivery>();
         public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+        public DbSet<Plan> Plans => Set<Plan>();
+        public DbSet<PlanModule> PlanModules => Set<PlanModule>();
+        public DbSet<PlanLimit> PlanLimits => Set<PlanLimit>();
+        public DbSet<OrganizationSubscription> OrganizationSubscriptions => Set<OrganizationSubscription>();
+        public DbSet<OrganizationModuleOverride> OrganizationModuleOverrides => Set<OrganizationModuleOverride>();
 
     }
 }

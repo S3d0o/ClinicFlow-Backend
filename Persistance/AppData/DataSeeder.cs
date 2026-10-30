@@ -126,6 +126,20 @@ public static partial class DataSeeder
         await SeedReviewsAsync(context, clock);
         await SeedNotificationsAsync(context, clock);
         await SeedGeneratedActivityAsync(context, clock, logger);
+        await SeedDemoSubscriptionPeriodAsync(context, clock);
+    }
+
+    // The migration puts the organization on the Full plan with recruitment added and no billing period (subscription
+    // billing comes in R4). The "Plan & modules" screen shows when the period ends, so the demo gets one 30 days
+    // ahead, moved forward on any start once it has passed, as the demo slots are
+    private static async Task SeedDemoSubscriptionPeriodAsync(ClinicDbContext context, SeedClock clock)
+    {
+        var subscription = await context.OrganizationSubscriptions.SingleOrDefaultAsync();
+        if (subscription is null || subscription.CurrentPeriodEnd > clock.UtcNow)
+            return;
+
+        subscription.CurrentPeriodEnd = clock.UtcNow.AddDays(30);
+        await context.SaveChangesAsync();
     }
 
     // Brings the schema up to date (migrate = true: `dotnet run` and the tests), or checks that it already is

@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
+using NSubstitute;
+using Services.Abstraction.Contracts;
 using Presentation.Authorization;
 using Shared.Authorization;
 using System.Security.Claims;
@@ -50,13 +52,77 @@ namespace ClinicFlow.Tests.Authorization
         [InlineData(Permissions.Appointments.CheckIn, false)]
         public async Task Handler_SucceedsOnlyWhenARoleGrantsThePermission(string permission, bool expected, params string[] roles)
         {
-            var user = new ClaimsPrincipal(new ClaimsIdentity(roles.Select(r => new Claim(ClaimTypes.Role, r)), "Test"));
-            var requirement = new PermissionRequirement(permission);
-            var context = new AuthorizationHandlerContext([requirement], user, resource: null);
+            var context = ContextFor(permission, roles);
 
-            await new PermissionAuthorizationHandler().HandleAsync(context);
+            await new PermissionAuthorizationHandler(AllModulesEnabled()).HandleAsync(context);
 
             Assert.Equal(expected, context.HasSucceeded);
+        }
+
+        [Fact]
+        public async Task Handler_ModuleOff_FailsWithTheModuleAsReason()
+        {
+            // ADR 0008 decision 8: a role's grant counts only while the permission's module is on
+            var entitlements = Substitute.For<IEntitlements>();
+            entitlements.IsEnabledAsync(Modules.FrontDesk, Arg.Any<CancellationToken>()).Returns(false);
+            var context = ContextFor(Permissions.Appointments.QueueView, Roles.Receptionist);
+
+            await new PermissionAuthorizationHandler(entitlements).HandleAsync(context);
+
+            Assert.False(context.HasSucceeded);
+            Assert.True(context.HasFailed);
+            var reason = Assert.IsType<ModuleNotEnabledReason>(Assert.Single(context.FailureReasons));
+            Assert.Equal(Modules.FrontDesk, reason.Module);
+        }
+
+        [Fact]
+        public async Task Handler_ModuleOn_Succeeds()
+        {
+            var entitlements = Substitute.For<IEntitlements>();
+            entitlements.IsEnabledAsync(Modules.FrontDesk, Arg.Any<CancellationToken>()).Returns(true);
+            var context = ContextFor(Permissions.Appointments.QueueView, Roles.Receptionist);
+
+            await new PermissionAuthorizationHandler(entitlements).HandleAsync(context);
+
+            Assert.True(context.HasSucceeded);
+        }
+
+        [Fact]
+        public async Task Handler_NoRoleGrantsThePermission_NeverAsksTheEntitlements()
+        {
+            // An ordinary 403, not "not in your plan": the module is irrelevant when no role grants the permission
+            var entitlements = Substitute.For<IEntitlements>();
+            var context = ContextFor(Permissions.Billing.InvoicesView, Roles.Admin, Roles.Nurse);
+
+            await new PermissionAuthorizationHandler(entitlements).HandleAsync(context);
+
+            Assert.False(context.HasSucceeded);
+            Assert.False(context.HasFailed);
+            await entitlements.DidNotReceiveWithAnyArgs().IsEnabledAsync(default!, default);
+        }
+
+        [Fact]
+        public async Task Handler_AsksAboutThePermissionsModule()
+        {
+            var entitlements = AllModulesEnabled();
+            var context = ContextFor(Permissions.Billing.InvoicesView, Roles.Accountant);
+
+            await new PermissionAuthorizationHandler(entitlements).HandleAsync(context);
+
+            await entitlements.Received(1).IsEnabledAsync(Modules.Billing, Arg.Any<CancellationToken>());
+        }
+
+        private static AuthorizationHandlerContext ContextFor(string permission, params string[] roles)
+        {
+            var user = new ClaimsPrincipal(new ClaimsIdentity(roles.Select(r => new Claim(ClaimTypes.Role, r)), "Test"));
+            return new AuthorizationHandlerContext([new PermissionRequirement(permission)], user, resource: null);
+        }
+
+        private static IEntitlements AllModulesEnabled()
+        {
+            var entitlements = Substitute.For<IEntitlements>();
+            entitlements.IsEnabledAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+            return entitlements;
         }
     }
 }

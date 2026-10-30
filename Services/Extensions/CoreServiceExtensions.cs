@@ -33,6 +33,13 @@ namespace Services.Extensions
             services.AddSingleton<IClock, Clock>();
             services.AddScoped<IAccessGuard, AccessGuard>(); // needs ICurrentUser, registered by the host (Presentation implements it)
 
+            // Modules and limits per organization (docs/v2/adr/0008): one cache for the process, which Persistence
+            // invalidates on save; IEntitlementQueries is registered by the host (Persistence implements it)
+            services.AddSingleton<EntitlementCache>();
+            services.AddSingleton<IEntitlementCache>(sp => sp.GetRequiredService<EntitlementCache>());
+            services.AddScoped<IEntitlements, Entitlements>();
+            services.AddScoped<ISubscriptionService, SubscriptionService>(); // reads PlatformSettings, configured by the host
+
             // An unknown zone would make every slot-time rule wrong, so fail at startup (REVIEW.md M2)
             services.AddOptions<ClinicSettings>()
                 .Bind(config.GetSection("Clinic"))

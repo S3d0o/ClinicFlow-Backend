@@ -99,9 +99,12 @@ namespace ClinicFlow.Extensions
             {
                 options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
             });
-            // [HasPermission] policies are built on demand and checked against the role matrix (docs/v2/adr/0002)
+            // [HasPermission] policies are built on demand and checked against the role matrix (docs/v2/adr/0002) and
+            // the organization's modules (docs/v2/adr/0008 decision 8): scoped, since IEntitlements is per request.
+            // A permission refused for its module answers 403 Subscription.ModuleNotEnabled
             services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
-            services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
+            services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+            services.AddSingleton<IAuthorizationMiddlewareResultHandler, SubscriptionAuthorizationResultHandler>();
             services.AddHttpContextAccessor();
             services.AddScoped<ICurrentUser, HttpCurrentUser>();
 
@@ -109,6 +112,8 @@ namespace ClinicFlow.Extensions
 
             // Query classes (CQRS-lite) read through the context directly, so unlike repositories they are registered here
             services.AddScoped<IAppointmentQueries, AppointmentQueries>();
+            services.AddScoped<IEntitlementQueries, EntitlementQueries>(); // read only by IEntitlements (docs/v2/adr/0008)
+            services.AddScoped<ISubscriptionQueries, SubscriptionQueries>();
 
 
             return services;

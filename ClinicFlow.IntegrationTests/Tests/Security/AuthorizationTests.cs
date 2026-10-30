@@ -89,6 +89,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
         [InlineData("/api/doctors")]
         [InlineData("/api/Specialty")]
         [InlineData("/api/reviews/doctor/1")]
+        [InlineData("/api/v2/organization/modules")]
         [InlineData("/health")]
         [InlineData("/health/live")]
         [InlineData("/health/ready")]
@@ -141,6 +142,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
             "GET api/reviews/doctor/{doctorId}",
             "GET api/Specialty",
             "GET api/Specialty/{id}",
+            "GET api/v2/organization/modules", // menus and pages follow the plan for visitors too (docs/v2/adr/0008)
             "ANY health",
             "ANY health/live",
             "ANY health/ready",
@@ -164,14 +166,16 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
         [InlineData("Patient", false)]
         public async Task PermissionPolicies_AreWiredIntoTheApp(string role, bool allowed)
         {
-            // No inherited route uses [HasPermission] yet (ADR 0002), so this checks the registration directly:
+            // Checks the registration directly, apart from any route:
             // the app's policy provider builds the policy and the matrix decides (Admin holds staff.view)
             var policy = await _factory.Services.GetRequiredService<IAuthorizationPolicyProvider>()
                 .GetPolicyAsync(PermissionPolicy.NameFor(Permissions.Staff.View));
             var user = new ClaimsPrincipal(new ClaimsIdentity(
                 [new Claim(ClaimTypes.Role, role)], "Test"));
 
-            var result = await _factory.Services.GetRequiredService<IAuthorizationService>().AuthorizeAsync(user, null, policy!);
+            // The permission handler is scoped: it asks the request's organization's entitlements (docs/v2/adr/0008)
+            using var scope = _factory.Services.CreateScope();
+            var result = await scope.ServiceProvider.GetRequiredService<IAuthorizationService>().AuthorizeAsync(user, null, policy!);
 
             result.Succeeded.Should().Be(allowed);
         }

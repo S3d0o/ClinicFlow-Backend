@@ -36,6 +36,11 @@ try
 
     builder.Services.AddCoreServices(builder.Configuration);
 
+    // The demo plan switches (docs/v2/adr/0008, plans/R1.md M1) upgrade a clinic for free: on in Development unless
+    // configured, off elsewhere unless Platform:AllowPlanSwitching says so (a demo deployment only)
+    builder.Services.Configure<PlatformSettings>(settings => settings.AllowPlanSwitching =
+        builder.Configuration.GetValue<bool?>("Platform:AllowPlanSwitching") ?? builder.Environment.IsDevelopment());
+
     builder.Services.AddProviderServices(builder.Configuration);
 
     builder.Services.AddHostedService<AppointmentReminderJob>();

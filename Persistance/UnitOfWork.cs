@@ -24,6 +24,7 @@ namespace Persistence
         private IAdminRepo? _admins;
         private IBranchRepo? _branches;
         private IMessageDeliveryRepo? _messageDeliveries;
+        private ISubscriptionRepo? _subscriptions;
         private IOutbox? _outbox;
 
         public IDoctorRepo Doctors
@@ -51,6 +52,8 @@ namespace Persistence
         public IBranchRepo Branches => _branches ??= new BranchRepo(_context);
 
         public IMessageDeliveryRepo MessageDeliveries => _messageDeliveries ??= new MessageDeliveryRepo(_context);
+
+        public ISubscriptionRepo Subscriptions => _subscriptions ??= new SubscriptionRepo(_context);
 
         public IOutbox Outbox => _outbox ??= new Outbox.Outbox(_context);
 
