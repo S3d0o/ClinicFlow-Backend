@@ -45,14 +45,14 @@ namespace Presentation.Authorization
     }
 
     // Permissions come from the roles in the token through the default matrix (ADR 0002 decision 5: tokens carry
-    // roles, not permissions), and count only while the permission's module is enabled for the organization
+    // roles, not permissions), with the staff assignments deciding the cells that depend on the person (an
+    // organization-wide Manager, a medical director: EffectiveAccess), and count only while the permission's module is enabled for the organization
     // (ADR 0008 decision 8). Scoped, because the entitlements are the request's organization's
     public sealed class PermissionAuthorizationHandler(IEntitlements entitlements) : AuthorizationHandler<PermissionRequirement>
     {
         protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, PermissionRequirement requirement)
         {
-            var roles = context.User.FindAll(ClaimTypes.Role).Select(c => c.Value);
-            if (DefaultPermissionMatrix.ScopeFor(roles, requirement.Permission) is null)
+            if (StaffClaims.ScopeOf(context.User, requirement.Permission) is null)
                 return;
 
             var module = Modules.Of(requirement.Permission);

@@ -19,6 +19,7 @@ namespace Domain.Interfaces
         IWorkingHoursRepo WorkingHours { get; }
         IHolidayRepo Holidays { get; }
         IOrganizationSettingRepo OrganizationSettings { get; }
+        IStaffRepo Staff { get; }
         IOrganizationRepo Organizations { get; }
         IMessageDeliveryRepo MessageDeliveries { get; }
         ISubscriptionRepo Subscriptions { get; }

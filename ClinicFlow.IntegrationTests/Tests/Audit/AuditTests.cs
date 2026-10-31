@@ -134,7 +134,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Audit
         }
 
         [Fact]
-        public async Task RegisterDoctor_AuditsTheAccountTheRoleAndTheProfile_AsOneRequest()
+        public async Task RegisterDoctor_AuditsTheAccountTheRolesAndTheProfile_AsOneRequest()
         {
             var specialtyId = 0;
             await factory.SeedAsync(async db =>
@@ -158,7 +158,8 @@ namespace ClinicFlow.IntegrationTests.Tests.Audit
 
             var entries = await EntriesAsync();
             entries.Select(e => (e.Action, e.EntityType)).Should().BeEquivalentTo(
-                [(AuditAction.Create, "User"), (AuditAction.Create, "UserRole"), (AuditAction.Create, "DoctorProfile")]);
+                [(AuditAction.Create, "User"), (AuditAction.Create, "UserRole"), (AuditAction.Create, "StaffMember"),
+                 (AuditAction.Create, "StaffRoleAssignment"), (AuditAction.Create, "DoctorProfile")]); // staff since P1 PR 4
             entries.Should().OnlyContain(e => e.UserId == null);            // nobody is signed in yet
             entries.Select(e => e.CorrelationId).Distinct().Should().ContainSingle();
 

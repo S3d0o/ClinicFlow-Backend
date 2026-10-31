@@ -115,6 +115,9 @@ public static partial class DataSeeder
         if (!string.IsNullOrWhiteSpace(adminEmail) && !string.IsNullOrWhiteSpace(adminPassword))
             await SeedBootstrapAdminAsync(userManager, adminEmail, adminPassword, utcNow);
 
+        // As the AddStaffMembers migration did for existing accounts: Admin and Doctor users are staff members
+        await EnsureStaffMembersAsync(context);
+
         if (!seedDemoData)
             return;
 
@@ -131,6 +134,41 @@ public static partial class DataSeeder
         await SeedNotificationsAsync(context, clock);
         await SeedGeneratedActivityAsync(context, clock, logger);
         await SeedDemoSubscriptionPeriodAsync(context, clock);
+        await EnsureStaffMembersAsync(context);
+    }
+
+    // Every Admin and Doctor user without a staff member gets one, Active: Admins organization-wide, Doctors at MAIN,
+    // with the doctor profile pointing to it. The same rule as the AddStaffMembers migration's backfill, for accounts
+    // the seeder creates after the migrations ran (a fresh database)
+    private static async Task EnsureStaffMembersAsync(ClinicDbContext context)
+    {
+        string[] staffRoles = [Roles.Admin, Roles.Doctor];
+        var missing = await (
+            from userRole in context.UserRoles
+            join role in context.Roles on userRole.RoleId equals role.Id
+            where staffRoles.Contains(role.Name!) && !context.StaffMembers.Any(s => s.UserId == userRole.UserId)
+            select new { userRole.UserId, Role = role.Name! })
+            .ToListAsync();
+        if (missing.Count == 0)
+            return;
+
+        var members = missing
+            .GroupBy(m => m.UserId)
+            .Select(g => new StaffMember
+            {
+                UserId = g.Key,
+                Status = StaffStatus.Active,
+                Assignments = g.Select(m => new StaffRoleAssignment { Role = m.Role, BranchId = m.Role == Roles.Admin ? null : Branch.MainId }).ToList(),
+            })
+            .ToList();
+        context.StaffMembers.AddRange(members);
+        await context.SaveChangesAsync();
+
+        var staffByUser = members.ToDictionary(m => m.UserId, m => m.Id);
+        var userIds = staffByUser.Keys.ToList();
+        foreach (var doctor in await context.DoctorProfiles.Where(d => d.StaffMemberId == null && userIds.Contains(d.UserId)).ToListAsync())
+            doctor.StaffMemberId = staffByUser[doctor.UserId];
+        await context.SaveChangesAsync();
     }
 
     // The migration puts the organization on the Full plan with recruitment added and no billing period (subscription

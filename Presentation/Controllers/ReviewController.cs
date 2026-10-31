@@ -60,7 +60,7 @@ namespace Presentation.Controllers
         public async Task<IActionResult> Delete(int id, CancellationToken ct)
         {
             var userId = User.GetUserId();
-            var role = User.GetRole();
+            var role = User.GetInheritedRole();
             var result = await service.DeleteReviewAsync(id, userId, role, ct);
             return HandleResult(result);
         }

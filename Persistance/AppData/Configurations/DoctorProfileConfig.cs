@@ -46,6 +46,8 @@
                 .HasForeignKey<DoctorProfile>(d => d.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            builder.HasOne<StaffMember>().WithMany().HasForeignKey(d => d.StaffMemberId).OnDelete(DeleteBehavior.Restrict);
+
         }
     }
 }

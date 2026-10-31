@@ -1,6 +1,7 @@
 using Domain.Entities.AppModule;
 using Domain.Entities.Auditing;
 using Domain.Entities.IdentityModule;
+using Domain.Entities.Staff;
 using Domain.Entities.Messaging;
 using Domain.Entities.Subscriptions;
 using Domain.Entities.Tenancy;
@@ -25,7 +26,8 @@ namespace ClinicFlow.Tests.Persistence
              typeof(AuditEntry),
              typeof(OrganizationSubscription), typeof(OrganizationModuleOverride), // an organization's plan and add-ons (docs/v2/adr/0008)
              typeof(Room), typeof(BranchWorkingHours), typeof(BranchHoliday), // FR-ORG-03, P1 PR 2
-             typeof(OrganizationSetting)]; // FR-ORG-05, P1 PR 3
+             typeof(OrganizationSetting), // FR-ORG-05, P1 PR 3
+             typeof(StaffMember), typeof(StaffRoleAssignment)]; // ADR 0002, P1 PR 4
 
         private static readonly Type[] ExpectedBranchOwned =
             [typeof(DoctorSchedule), typeof(AppointmentSlot), typeof(Appointment), typeof(Room), typeof(BranchWorkingHours)];

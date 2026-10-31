@@ -75,7 +75,7 @@ public class AppointmentController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AppointmentResponse>> GetById(int id, CancellationToken ct)
     {
-        var result = await queries.GetAppointmentAsync(id, User.GetUserId(), User.GetRole(), ct);
+        var result = await queries.GetAppointmentAsync(id, User.GetUserId(), User.GetInheritedRole(), ct);
         return HandleResult(result);
     }
 
@@ -97,7 +97,7 @@ public class AppointmentController(
         int id, [FromBody] CancelAppointmentRequest request, CancellationToken ct)
     {
         var userId = User.GetUserId();
-        var role = User.GetRole();
+        var role = User.GetInheritedRole();
 
         return role switch
         {
@@ -141,7 +141,7 @@ public class AppointmentController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> MarkNoShow(int id, CancellationToken ct)
-        => HandleResult(await visits.MarkNoShowAsync(User.GetUserId(), User.GetRole(), id, ct));
+        => HandleResult(await visits.MarkNoShowAsync(User.GetUserId(), User.GetInheritedRole(), id, ct));
 
     /// <summary>Add doctor notes</summary>
     /// <remarks>

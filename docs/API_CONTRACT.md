@@ -67,14 +67,20 @@ Status-code notes marked *(REVIEW Mx)* refer to known issues in [REVIEW.md](REVI
 | Access token (JWT, HS256) | 15 min (`expiresAt` in the login response) | `Authorization: Bearer <accessToken>` | No clock skew: it is rejected at the exact expiry |
 | Refresh token (opaque string) | 7 days | Request body of `refresh-token` / `logout` | **Single use.** Every refresh returns a new pair; the old refresh token stops working immediately |
 
-`LoginResponse.role` is the user's role (`"Admin"`, `"Doctor"` or `"Patient"`). **Use `role` from the login/refresh response.** If you must decode the JWT, its claims are:
+`LoginResponse.role` is the user's role (`"Admin"`, `"Doctor"` or `"Patient"`; since P1 PR 4 a staff member may hold several, and `role` is the first of them in the order Admin, Manager, Receptionist, Nurse, Doctor, Accountant, Patient). **Use `role` from the login/refresh response**, or on `/api/v2` the roles and permissions of `GET /api/v2/me` (#69). If you must decode the JWT, its claims are:
 
 | Claim (exact key in the payload) | Value |
 |---|---|
 | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier` | User id (GUID) |
 | `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name` | Full name |
-| `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | Role |
+| `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | Role; one claim per role (an array when there are several) |
+| `org` | The organization's id (since P1 PR 4) |
+| `staff` | The staff member's id; staff only |
+| `role_scope` | One per staff role: `"<Role>=*"` (the whole organization) or `"<Role>=1,3"` (those branch ids); staff only |
+| `med_dir` | `"true"` for the medical director; otherwise absent |
 | `email`, `jti`, `exp`, `iss`, `aud` | Standard |
+
+A staff member's roles come from their staff record (role assignments), read when the token is issued, so a change to them applies at the next refresh. Patients' come from their account. A role without a `role_scope` claim (patients, and accounts with no staff record) is treated as covering every branch.
 
 ### 2.2 Login rules
 - **Wrong password:** 401 `Auth.InvalidCredentials`. An unknown email returns the same error.
@@ -338,6 +344,8 @@ Auth column: **—** means anonymous; **Any** means any logged-in user.
 | | **Organization settings (`/api/v2`, §5.13)** | | | |
 | 67 | GET | `/api/v2/organization/settings` | Any staff | 200 `OrganizationSettings` |
 | 68 | PATCH | `/api/v2/organization/settings` | `org.settings.manage` | 200 `OrganizationSettings` |
+| | **Me (`/api/v2`, §5.14)** | | | |
+| 69 | GET | `/api/v2/me` | Signed in | 200 `Me` |
 
 `/api/Specialty` is case-insensitive (`/api/specialty` also works).
 
@@ -773,7 +781,7 @@ The first built `/api/v2` routes ([docs/v2/adr/0008](v2/adr/0008-multi-clinic-pl
 
 ### 5.11 Organization, branches and rooms (`/api/v2`)
 
-Built by P1 PR 1 from §13.24 and §13.25 unchanged; the types are §13.2's `Branch` and §13.23's `OrganizationProfile`, `BranchInput`, `Room` and `RoomInput`. §13.1 and §13.22 apply. "Any staff" is every role but `Patient`. Until P1 PR 4 assigns staff to branches, a branch-scope grant covers every branch (as in P0), so `Access.OutOfScope` comes only from the organization-wide checks below.
+Built by P1 PR 1 from §13.24 and §13.25 unchanged; the types are §13.2's `Branch` and §13.23's `OrganizationProfile`, `BranchInput`, `Room` and `RoomInput`. §13.1 and §13.22 apply. "Any staff" is every role but `Patient`. Since P1 PR 4 a branch-scope grant covers the branches its role is assigned to (`role_scope`, §2.1), and an organization-wide assignment widens it to the organization; so a Manager assigned to one branch gets 403 `Access.OutOfScope` on another branch's routes, and an organization-wide Manager may create, activate and deactivate branches.
 
 **51. `GET /api/v2/organization`** (`org.settings.manage`)
 - **200:** `OrganizationProfile`. Fields never set are `""`.
@@ -857,6 +865,17 @@ Built by P1 PR 3 from §13.24 unchanged (FR-ORG-05); the type is §13.23's `Orga
 - Each key whose value changes is audited (entity type `OrganizationSetting`, its old and new value); a key sent with its current value writes nothing. An amount sent as `100.0` is the same as `100`.
 - The appointment rules read the new values at once, for existing appointments too: a longer cancellation window can stop a patient cancelling a visit booked under the old one.
 - **Errors:** 400 validation: a value outside §13.23's bounds (key = the setting, e.g. `noShowGraceMinutes`), or a value of the wrong type; an unknown key (binding error, shape D, nothing saved)
+
+### 5.14 Me (`/api/v2`)
+
+Built by P1 PR 4 from §13.4; the type is §13.2's `Me`, with its `RoleAssignment` and `PermissionGrant`. §13.1 applies.
+
+**69. `GET /api/v2/me`** (any signed-in user)
+- **200:** `Me`. `roles` and `permissions` are the access token's (§2.1), so after a role change they show the new roles from the next refresh, as the API applies them.
+  - `roles`: each role with `scope` `"Branch"` and its `branchIds`, or `"Organization"` (no `branchIds`) for an organization-wide role, a patient, or a role without an assignment.
+  - `permissions`: every permission the roles grant (02 §6, with the organization-wide Manager's and the medical director's cells), with its widest `scope`; `branchIds` for a `"Branch"` grant, left out when it reaches every branch. A permission whose module isn't enabled is left out (§5.10).
+  - Until their PRs: `preferredLanguage` is `"ar"` and `notificationChannel` `"Email"` (P1 PR 5); `hasDoctorApplication`, `mfaEnabled` and `mfaEnrolled` are `false` (R2). `email` is left out when the account has none.
+- **Errors:** 401; 404 `Profile.NotFound` (the account was deleted after the token was issued)
 
 ## 6. Data types
 
@@ -965,6 +984,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) and planned changes whose fix **
 | 4.0.0-p0 | 2026-10-30 | Additive (P1 PR 1): **organization, branches and rooms** (§5.11, #51–#61), built from §13.24–§13.25 unchanged: the organization profile, branches with activate and deactivate, rooms, and the public branch list. New codes `Access.OutOfScope`, `Branch.NotFound`, `Branch.CodeTaken`, `Branch.LastActive`, `Room.NotFound`, `Room.NameTaken` (§3.3). **Behaviour:** the inherited booking route (#18) answers 409 `Appointment.SlotNotAvailable` for a slot at a deactivated branch. `openapi.json` regenerated |
 | 4.0.0-p0 | 2026-10-31 | Additive (P1 PR 2): **working hours and holidays** (§5.12, #62–#66), built from §13.25 (clarifications in §13.12): a branch's week of opening periods, its holidays and those that close every branch, adding a holiday (with the count of booked visits on it) and removing one. New codes `Branch.InvalidHours` (400) and `Holiday.NotFound` (404) (§3.3). **Behaviour:** slots are made only inside the branch's opening hours and never on a holiday; adding a holiday withdraws the free slots already published on it. Every existing branch is open `00:00–23:59` every day until its hours are set, so nothing changes before then, and a new branch (#54) starts with the first branch's week. **Inherited routes:** creating or updating a schedule (#15, #16) that starts or ends while the branch is closed returns the new 400 (shape C) `Doctor.ScheduleOutsideBranchHours`. `openapi.json` regenerated |
 | 4.0.0-p0 | 2026-10-31 | Additive (P1 PR 3): **organization settings** (§5.13, #67–#68), built from §13.24 unchanged: every setting with its default, and partial changes, each changed key audited. **Behaviour:** the patient's cancellation window (#22) and the no-show grace (#24b) come from `cancellationWindowHours` and `noShowGraceMinutes`; with the defaults (2 hours, 15 minutes) nothing changes. The messages of `Appointment.CancellationWindowExpired` and `Appointment.NoShowTooEarly` no longer name a fixed time; the codes and status codes are unchanged. `openapi.json` regenerated |
+| 4.0.0-p0 | 2026-10-31 | Additive (P1 PR 4): **staff members and branch-scoped access** (ADR 0002). New `GET /api/v2/me` (§5.14, #69). **Tokens (§2.1):** new claims `org`, `staff`, `role_scope` and `med_dir`; a staff member's role claims come from their role assignments, and a user may hold several roles. Every existing Admin and Doctor user became a staff member (Admins organization-wide, Doctors at MAIN), and the inherited doctor registration (#2) creates one, so their role claims are unchanged. **Behaviour:** a Branch grant now covers only the branches its role is assigned to (`Access.OutOfScope` elsewhere, §5.11), an organization-wide Manager gets the organization-wide cells (`org.settings.manage`, `audit.view`, branch creation), and a medical director the clinical ones. With several roles, `LoginResponse.role` is the first in the order Admin, Manager, Receptionist, Nurse, Doctor, Accountant, Patient, and the inherited routes that act by role (#21, #22, #24b, #27) use the first of Admin, Doctor, Patient, instead of whichever role the token listed first (REVIEW.md NL10). `openapi.json` regenerated |
 
 ## 11. How to change this contract
 
@@ -1424,7 +1444,7 @@ Auth column: **—** anonymous; **Signed in** any valid token.
 
 | Method and path | Auth | Body | Success | Errors | Phase |
 |---|---|---|---|---|---|
-| `GET /api/v2/me` | Signed in | — | 200 `Me` | — | P1 |
+| `GET /api/v2/me` | Signed in | — | 200 `Me` | — | **Built** (§5.14) |
 | `PATCH /api/v2/me` | Signed in | `{ preferredLanguage?, notificationChannel? }` | 200 `Me` | 400 validation, `Profile.EmailRequired` (`Email` or `Both` without a confirmed email) | P1 |
 | `POST /api/v2/me/phone` | Signed in | `{ phone }` | 200 `OtpTicket`; a `ChangePhone` code goes to the new number | 400 validation; 409 `Auth.PhoneAlreadyUsed`; 429 `Otp.ResendTooSoon`, `Otp.TooManyAttempts` | P1 |
 | `POST /api/v2/me/phone/confirm` | Signed in | `{ phone, code }` | 200 `Me`; the new number replaces the old one | 400 `Otp.InvalidCode` (+`attemptsLeft`); 409 `Auth.PhoneAlreadyUsed`; 429 `Otp.TooManyAttempts` | P1 |

@@ -9,10 +9,13 @@ namespace Services.Abstraction.Contracts
         // The widest scope the current user holds the permission in (the union of their roles), or null
         PermissionScope? ScopeOf(string permission);
 
+        // The branches the permission reaches, for filtering lists: null for every branch (Organization scope, or a role
+        // without assignments), empty when the user doesn't hold it or only holds it for their own records
+        IReadOnlySet<int>? AllowedBranchIds(string permission);
         // Whether the current user may use the permission on the record. Organization covers every record (the
         // tenant filter already keeps them to the user's organization). Own covers records whose owner is the
-        // user. Branch covers the user's branches: until P1 assigns staff to branches there is one branch and no
-        // assignments, so in P0 it covers every record, like Organization
+        // user. Branch covers the records of the branches the user's roles are assigned to (P1 PR 4), and records
+        // of no branch
         Task<bool> CanAccessAsync(string permission, AccessTarget target, CancellationToken ct);
     }
 

@@ -112,6 +112,21 @@ namespace ClinicFlow.Tests.Authorization
             await entitlements.Received(1).IsEnabledAsync(Modules.Billing, Arg.Any<CancellationToken>());
         }
 
+        [Theory]
+        [InlineData("Manager=*", true)]
+        [InlineData("Manager=2", false)]
+        public async Task Handler_OrgManagersOnlyCell_FollowsTheRoleScopeClaim(string roleScope, bool expected)
+        {
+            // 02 §6: org.settings.manage is a Manager's only when assigned organization-wide (P1 PR 4)
+            var user = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Role, Roles.Manager), new Claim(ClinicClaims.RoleScope, roleScope)], "Test"));
+            var context = new AuthorizationHandlerContext([new PermissionRequirement(Permissions.Organization.SettingsManage)], user, resource: null);
+
+            await new PermissionAuthorizationHandler(AllModulesEnabled()).HandleAsync(context);
+
+            Assert.Equal(expected, context.HasSucceeded);
+        }
+
         private static AuthorizationHandlerContext ContextFor(string permission, params string[] roles)
         {
             var user = new ClaimsPrincipal(new ClaimsIdentity(roles.Select(r => new Claim(ClaimTypes.Role, r)), "Test"));

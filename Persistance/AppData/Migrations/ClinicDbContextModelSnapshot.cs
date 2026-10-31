@@ -210,6 +210,9 @@ namespace Persistence.AppData.Migrations
                     b.Property<int>("SpecialtyId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("StaffMemberId")
+                        .HasColumnType("int");
+
                     b.Property<int>("TotalReviews")
                         .HasColumnType("int")
                         .HasAnnotation("ClinicFlow:Audit:Mode", "Ignored");
@@ -225,6 +228,8 @@ namespace Persistence.AppData.Migrations
                     b.HasIndex("OrganizationId");
 
                     b.HasIndex("SpecialtyId");
+
+                    b.HasIndex("StaffMemberId");
 
                     b.HasIndex("UserId")
                         .IsUnique();
@@ -737,6 +742,87 @@ namespace Persistence.AppData.Migrations
                         .HasFilter("[ProcessedAtUtc] IS NULL AND [DeadLetteredAtUtc] IS NULL");
 
                     b.ToTable("OutboxMessages", (string)null);
+                });
+
+            modelBuilder.Entity("Domain.Entities.Staff.StaffMember", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateOnly?>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsMedicalDirector")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly?>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("OrganizationId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("StaffMembers", (string)null);
+
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "StaffMember");
+                });
+
+            modelBuilder.Entity("Domain.Entities.Staff.StaffRoleAssignment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("BranchId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("StaffMemberId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BranchId");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("StaffMemberId", "Role", "BranchId")
+                        .IsUnique()
+                        .HasFilter("[BranchId] IS NOT NULL");
+
+                    b.ToTable("StaffRoleAssignments", (string)null);
+
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "StaffRoleAssignment");
                 });
 
             modelBuilder.Entity("Domain.Entities.Subscriptions.OrganizationModuleOverride", b =>
@@ -1539,6 +1625,11 @@ namespace Persistence.AppData.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Domain.Entities.Staff.StaffMember", null)
+                        .WithMany()
+                        .HasForeignKey("StaffMemberId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Domain.Entities.IdentityModule.ApplicationUser", "User")
                         .WithOne("DoctorProfile")
                         .HasForeignKey("Domain.Entities.AppModule.DoctorProfile", "UserId")
@@ -1675,6 +1766,43 @@ namespace Persistence.AppData.Migrations
                         .WithMany()
                         .HasForeignKey("OrganizationId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Domain.Entities.Staff.StaffMember", b =>
+                {
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Entities.IdentityModule.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Domain.Entities.Staff.StaffRoleAssignment", b =>
+                {
+                    b.HasOne("Domain.Entities.Tenancy.Branch", null)
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Entities.Staff.StaffMember", null)
+                        .WithMany("Assignments")
+                        .HasForeignKey("StaffMemberId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
@@ -1889,6 +2017,11 @@ namespace Persistence.AppData.Migrations
             modelBuilder.Entity("Domain.Entities.Messaging.OutboxMessage", b =>
                 {
                     b.Navigation("Deliveries");
+                });
+
+            modelBuilder.Entity("Domain.Entities.Staff.StaffMember", b =>
+                {
+                    b.Navigation("Assignments");
                 });
 
             modelBuilder.Entity("Domain.Entities.Subscriptions.Plan", b =>

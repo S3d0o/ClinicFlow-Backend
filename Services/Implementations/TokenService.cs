@@ -13,6 +13,7 @@ namespace Services.Implementations
         UserManager<ApplicationUser> userManager,
         IUnitOfWork uow,
         IAccessTokenFactory accessTokenFactory,
+        IUserAccessService userAccess,
         IClock clock,
         ILogger<TokenService> logger) : ITokenService
     {
@@ -21,12 +22,11 @@ namespace Services.Implementations
 
         private readonly JwtSettings _jwt = jwtOptions.Value;
 
-        public async Task<TokenDto> GenerateTokensAsync(ApplicationUser user, IList<string> roles, string ipAddress, CancellationToken ct)
+        public async Task<TokenDto> GenerateTokensAsync(ApplicationUser user, UserAccess access, string ipAddress, CancellationToken ct)
         {
             ArgumentNullException.ThrowIfNull(user);
-            roles ??= new List<string>();
 
-            var accessToken = CreateAccessToken(user, roles);
+            var accessToken = CreateAccessToken(user, access);
 
             var securityStamp = await userManager.GetSecurityStampAsync(user);
 
@@ -99,15 +99,16 @@ namespace Services.Implementations
                 return AuthErrors.InvalidRefreshToken;
             }
 
-            var roles = await userManager.GetRolesAsync(user);
-            var accessToken = CreateAccessToken(user, roles);
+            // Role changes take effect here, at the next refresh (FR-STF-03)
+            var access = await userAccess.GetAsync(user, ct);
+            var accessToken = CreateAccessToken(user, access);
             return new LoginResponse(
                 AccessToken: accessToken.Value,
                 RefreshToken: newRefreshToken,
                 ExpiresAt: accessToken.ExpiresAtUtc,
                 Email: user.Email ?? "",
                 FullName: string.Join(" ", user.FirstName, user.LastName),
-                Role: roles.FirstOrDefault() ?? ""
+                Role: access.PrimaryRole
             );
         }
 
@@ -160,8 +161,8 @@ namespace Services.Implementations
             return AuthErrors.InvalidRefreshToken;
         }
 
-        private AccessToken CreateAccessToken(ApplicationUser user, IEnumerable<string> roles)
-            => accessTokenFactory.Create(user.Id, user.Email ?? "", $"{user.FirstName} {user.LastName}", roles);
+        private AccessToken CreateAccessToken(ApplicationUser user, UserAccess access)
+            => accessTokenFactory.Create(user.Id, user.Email ?? "", $"{user.FirstName} {user.LastName}", access);
 
         private string GenerateRefreshToken() =>
           Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));

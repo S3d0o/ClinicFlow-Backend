@@ -5,7 +5,8 @@ namespace Services.Abstraction.Contracts
 {
     public interface ITokenService
     {
-        Task<TokenDto> GenerateTokensAsync(ApplicationUser user, IList<string> roles, string ipAddress, CancellationToken ct);
+        // access: the user's roles and staff assignments, from IUserAccessService
+        Task<TokenDto> GenerateTokensAsync(ApplicationUser user, UserAccess access, string ipAddress, CancellationToken ct);
 
         //since we load the user we can directly return the LoginResponse instead of TokenDto
         //so that we can return the user details along with the tokens
