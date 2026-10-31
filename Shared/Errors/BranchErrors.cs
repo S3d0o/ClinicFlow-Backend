@@ -2,7 +2,7 @@ using Domain.ResultPattern;
 
 namespace Shared.Errors
 {
-    // Branches and their rooms (FR-ORG-02, 04; API_CONTRACT.md §13.25)
+    // Branches, their hours, holidays and rooms (FR-ORG-02, 03, 04; API_CONTRACT.md §13.25)
     public static class BranchErrors
     {
         public static Error NotFound(int id) =>
@@ -20,5 +20,12 @@ namespace Shared.Errors
 
         public static readonly Error RoomNameTaken =
             Error.Conflict("Room.NameTaken", "Another room at this branch already has this name");
+
+        // A day's periods start after they end or overlap, or a weekday is unknown or repeated (FR-ORG-03)
+        public static readonly Error InvalidHours =
+            Error.Validation("Branch.InvalidHours", "Each opening period must end after it starts, and a day's periods may not overlap");
+
+        public static Error HolidayNotFound(int id) =>
+            Error.NotFound("Holiday.NotFound", $"Holiday with id {id} was not found");
     }
 }

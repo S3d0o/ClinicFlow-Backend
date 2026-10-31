@@ -1,6 +1,7 @@
 using Domain.Entities.AppModule;
 using NSubstitute;
 using Shared.DTOs.Doctor;
+using Shared.Errors;
 
 namespace ClinicFlow.Tests.Services.DoctorServiceTests
 {
@@ -25,6 +26,45 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
             EndTime = TimeOnly.Parse(end),
             SlotDurationMinutes = duration
         };
+
+        [Theory]
+        [InlineData("08:00", "12:00")] // starts before opening
+        [InlineData("18:00", "23:00")] // ends after closing
+        public async Task CreateScheduleAsync_OutsideTheBranchHours_ReturnsScheduleOutsideBranchHours(string start, string end)
+        {
+            _uow.Branches.GetCalendarAsync(DefaultBranchId, _ct).Returns(OpenDaily(DefaultBranchId, (new TimeOnly(9, 0), new TimeOnly(22, 0))));
+
+            var result = await _sut.CreateScheduleAsync(_doctorUserId, Request(start, end, 30), _ct);
+
+            Assert.Equal(DoctorErrors.ScheduleOutsideBranchHours, Assert.Single(result.Errors));
+            _uow.Doctors.DidNotReceive().AddSchedule(Arg.Any<DoctorSchedule>());
+        }
+
+        [Fact]
+        public async Task CreateScheduleAsync_AcrossTheBranchesBreak_SkipsTheBreak()
+        {
+            // Open 09–13 and 16–22: one schedule may cover both shifts, but no slot falls in between
+            _uow.Branches.GetCalendarAsync(DefaultBranchId, _ct).Returns(OpenDaily(DefaultBranchId,
+                (new TimeOnly(9, 0), new TimeOnly(13, 0)), (new TimeOnly(16, 0), new TimeOnly(22, 0))));
+
+            var result = await _sut.CreateScheduleAsync(_doctorUserId, Request("12:00", "17:00", 60), _ct);
+
+            Assert.True(result.IsSuccess);
+            Assert.Equal([new TimeOnly(12, 0), new TimeOnly(16, 0)], _generatedSlots!.Select(s => s.StartTime).Distinct().Order());
+        }
+
+        [Fact]
+        public async Task CreateScheduleAsync_ReusedSchedule_IsCheckedAgainstItsOwnBranch()
+        {
+            var inactive = new DoctorSchedule { Id = 5, DoctorProfileId = 7, BranchId = 9, DayOfWeek = DayOfWeek.Monday, IsActive = false };
+            _uow.Doctors.GetScheduleByUserIdAndDayAsync(_doctorUserId, DayOfWeek.Monday, _ct).Returns(inactive);
+            _uow.Branches.GetCalendarAsync(9, _ct).Returns(OpenDaily(9, (new TimeOnly(14, 0), new TimeOnly(20, 0))));
+
+            var result = await _sut.CreateScheduleAsync(_doctorUserId, Request("09:00", "12:00", 30), _ct);
+
+            Assert.Equal(DoctorErrors.ScheduleOutsideBranchHours, Assert.Single(result.Errors));
+            Assert.False(inactive.IsActive);
+        }
 
         [Fact]
         public async Task CreateScheduleAsync_WhenScheduleEndsNearMidnight_StopsWithoutWrappingPastMidnight()

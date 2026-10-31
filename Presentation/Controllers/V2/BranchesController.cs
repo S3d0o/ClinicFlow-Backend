@@ -5,9 +5,10 @@ using Shared.DTOs.Organization;
 
 namespace Presentation.Controllers.V2
 {
-    // Branches and their rooms (FR-ORG-02, 04; API_CONTRACT.md §13.25). Working hours and holidays come with P1 PR 2
+    // Branches, their working hours, holidays and rooms (FR-ORG-02, 03, 04; API_CONTRACT.md §13.25). Holidays are added
+    // and removed through HolidaysController, since one can close every branch
     [Route(RoutePrefix + "/branches")]
-    public class BranchesController(IBranchService service, IOrganizationQueries queries) : V2ApiController
+    public class BranchesController(IBranchService service, IBranchCalendarService calendar, IOrganizationQueries queries) : V2ApiController
     {
         [HttpGet]
         [Authorize(Roles = Roles.AnyStaff)]
@@ -70,6 +71,47 @@ namespace Presentation.Controllers.V2
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
         public async Task<ActionResult<BranchResponse>> Activate(int branchId, CancellationToken ct)
             => HandleResult(await service.ActivateAsync(branchId, ct));
+
+        [HttpGet("{branchId:int}/working-hours")]
+        [Authorize(Roles = Roles.AnyStaff)]
+        [EndpointSummary("Get a branch's working hours")]
+        [EndpointDescription(
+            "Seven days, Sunday (0) first, each with its opening periods in the branch's wall clock; a day with none is " +
+            "closed. Any staff member.")]
+        [ProducesResponseType(typeof(IReadOnlyList<DayHoursResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<IReadOnlyList<DayHoursResponse>>> GetWorkingHours(int branchId, CancellationToken ct)
+            => HandleResult(await queries.GetWorkingHoursAsync(branchId, ct));
+
+        [HttpPut("{branchId:int}/working-hours")]
+        [HasPermission(Permissions.Organization.BranchesManage)]
+        [EndpointSummary("Set a branch's working hours")]
+        [EndpointDescription(
+            "Replaces the week; a weekday not sent is closed. New slots are generated only inside the opening periods; " +
+            "existing slots stay. Requires branches.manage for the branch.")]
+        [ProducesResponseType(typeof(IReadOnlyList<DayHoursResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<IReadOnlyList<DayHoursResponse>>> SetWorkingHours(
+            int branchId, IReadOnlyList<DayHoursRequest> week, CancellationToken ct)
+            => HandleResult(await calendar.SetWorkingHoursAsync(branchId, week, ct));
+
+        [HttpGet("{branchId:int}/holidays")]
+        [Authorize(Roles = Roles.AnyStaff)]
+        [EndpointSummary("List a branch's holidays")]
+        [EndpointDescription(
+            "The branch's holidays and those that close every branch, by start date. With year, those that fall in it; " +
+            "without, this year's and later. Yearly holidays are always listed. Any staff member.")]
+        [ProducesResponseType(typeof(IReadOnlyList<HolidayResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<IReadOnlyList<HolidayResponse>>> ListHolidays(int branchId, [FromQuery] int? year, CancellationToken ct)
+            => HandleResult(await queries.ListHolidaysAsync(branchId, year, ct));
 
         [HttpGet("{branchId:int}/rooms")]
         [Authorize(Roles = Roles.AnyStaff)]

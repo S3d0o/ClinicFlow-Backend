@@ -19,6 +19,10 @@ namespace Shared.Errors
         public static readonly Error InvalidScheduleTime =
             Error.Validation("Doctor.InvalidScheduleTime", "End time must be after start time");
 
+        // The schedule starts or ends while its branch is closed on that weekday (FR-ORG-03)
+        public static readonly Error ScheduleOutsideBranchHours =
+            Error.Validation("Doctor.ScheduleOutsideBranchHours", "The schedule must start and end within the branch's opening hours on that day");
+
         public static Error ProfileNotFound(Guid userId) =>
             Error.NotFound("Doctor.ProfileNotFound", $"Doctor profile not found for user {userId}");
     }

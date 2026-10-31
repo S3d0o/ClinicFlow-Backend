@@ -27,9 +27,16 @@ namespace Services.Implementations
             var branch = new Branch { IsActive = true };
             Apply(branch, request);
 
+            // A new branch opens with the organization's usual week (its first branch's hours) until they are changed
+            var usualWeek = await uow.WorkingHours.GetUsualWeekAsync(ct);
+
             return await uow.ExecuteInTransactionAsync<Result<BranchResponse>>(async transaction =>
             {
                 uow.Branches.Add(branch);
+                await uow.SaveChangesAsync(ct);
+                uow.WorkingHours.AddRange(usualWeek.Count > 0
+                    ? usualWeek.Select(h => new BranchWorkingHours { BranchId = branch.Id, Weekday = h.Weekday, From = h.From, To = h.To }).ToList()
+                    : BranchWorkingHours.AllWeek(branch.Id).ToList());
                 await uow.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
 

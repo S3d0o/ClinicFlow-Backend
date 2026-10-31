@@ -201,6 +201,7 @@ Only codes the API can actually return are listed.
 | `Doctor.ScheduleDayAlreadyExists` | 409 | An active schedule for that weekday already exists |
 | `Doctor.CannotDeleteScheduleWithBookedSlots` | 409 | Deleting a schedule while upcoming appointments are booked on it |
 | `Doctor.InvalidScheduleTime` | 400 (shape C) | Schedule update would leave end ≤ start, or not fit one slot |
+| `Doctor.ScheduleOutsideBranchHours` | 400 (shape C) | The schedule would start or end while its branch is closed that weekday (#15, #16; §5.12) |
 | `Patient.ProfileNotFound` | 404 | The logged-in user has no patient profile |
 | `Appointment.NotFound` | 404 | Appointment id unknown |
 | `Appointment.SlotNotFound` | 404 | Slot id unknown (booking) |
@@ -236,8 +237,10 @@ Only codes the API can actually return are listed.
 | `Subscription.NotAnAddOn` | 400 | A core or unknown module in #50 |
 | `Subscription.ModuleRequired` | 409 | Switching off an add-on that another enabled add-on needs (#50) |
 | `Subscription.SwitchingDisabled` | 403 | #49 or #50 on a deployment where `Platform:AllowPlanSwitching` is off (the default outside Development) |
-| `Access.OutOfScope` | 403 | The user holds the permission, but not in a scope that covers the record (#54–#57, #59) |
-| `Branch.NotFound` | 404 | Unknown branch (#55–#59) |
+| `Access.OutOfScope` | 403 | The user holds the permission, but not in a scope that covers the record (#54–#57, #59, #63, #65, #66) |
+| `Branch.NotFound` | 404 | Unknown branch (#55–#59, #62–#65) |
+| `Branch.InvalidHours` | 400 | A day's ranges are out of order or overlap, or a weekday is outside 0–6 or sent twice (#63) |
+| `Holiday.NotFound` | 404 | Unknown holiday (#66) |
 | `Branch.CodeTaken` | 409 | Another branch has the code (#54, #55) |
 | `Branch.LastActive` | 409 | Deactivating the only active branch (#56) |
 | `Room.NotFound` | 404 | Unknown room, or outside the caller's scope (#60) |
@@ -326,6 +329,12 @@ Auth column: **—** means anonymous; **Any** means any logged-in user.
 | 59 | POST | `/api/v2/branches/{branchId}/rooms` | `rooms.manage` | 201 `Room` |
 | 60 | PUT | `/api/v2/rooms/{roomId}` | `rooms.manage` | 200 `Room` |
 | 61 | GET | `/api/v2/public/branches` | — | 200 `Branch[]` |
+| | **Working hours and holidays (`/api/v2`, §5.12)** | | | |
+| 62 | GET | `/api/v2/branches/{branchId}/working-hours` | Any staff | 200 `DayHours[]` |
+| 63 | PUT | `/api/v2/branches/{branchId}/working-hours` | `branches.manage` | 200 `DayHours[]` |
+| 64 | GET | `/api/v2/branches/{branchId}/holidays?year=` | Any staff | 200 `Holiday[]` |
+| 65 | POST | `/api/v2/holidays` | `branches.manage` (organization when `branchId` is null) | 201 `{ holiday, affectedAppointments }` |
+| 66 | DELETE | `/api/v2/holidays/{holidayId}` | as #65 | 204 |
 
 `/api/Specialty` is case-insensitive (`/api/specialty` also works).
 
@@ -471,13 +480,15 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **Errors:**
   - 400 (B)
   - 404 `Doctor.ProfileNotFound`
+  - 400 (C) `Doctor.ScheduleOutsideBranchHours` (the schedule starts or ends while the branch is closed that weekday; §5.12)
   - 409 `Doctor.ScheduleDayAlreadyExists` (an active schedule for that weekday exists)
+- Slots are only made inside the branch's opening hours and never on a holiday (§5.12), here, on #16 and in the daily job.
 
 **16. `PUT /api/doctors/schedule/{id}`** (Doctor, own schedule)
 - **Body:** `UpdateScheduleRequest`. All fields are optional; omitted fields keep their value. `slotDurationMinutes` is 10–120. If both times are sent, `endTime` must be after `startTime`.
 - **200:** `ScheduleResponse`. Future free slots are regenerated in one transaction. Booked slots, and slots a cancelled appointment points to, are kept; new slots skip times that overlap them. Setting `isActive: false` removes the free slots and generates none.
 - **Errors:**
-  - 400 (B), or (C) `Doctor.InvalidScheduleTime`
+  - 400 (B), or (C) `Doctor.InvalidScheduleTime`, or (C) `Doctor.ScheduleOutsideBranchHours` (an active schedule whose new times start or end while the branch is closed; switching it off with `isActive: false` always works)
   - 404 `Doctor.ScheduleNotFound` (also when the schedule is another doctor's)
 
 **17. `DELETE /api/doctors/schedule/{id}`** (Doctor, own schedule)
@@ -800,6 +811,37 @@ Built by P1 PR 1 from §13.24 and §13.25 unchanged; the types are §13.2's `Bra
 **61. `GET /api/v2/public/branches`** (anonymous)
 - **200:** `Branch[]`, *full*, active branches only, by `code`.
 
+### 5.12 Working hours and holidays (`/api/v2`)
+
+Built by P1 PR 2 from §13.25 unchanged (FR-ORG-03); the types are §13.23's `TimeRange`, `DayHours`, `Holiday` and `HolidayInput`. §13.1 and §13.22 apply: times are `"HH:mm"` in the branch's wall clock, dates `"yyyy-MM-dd"`, ids strings. Every change is audited (entity types `BranchWorkingHours` and `Holiday`).
+
+What the hours and holidays do:
+- **Slots.** Slot generation (#15, #16 and the daily job) makes a slot only inside one opening period of its day, and none on a holiday. Touching periods (`09:00–15:00` and `15:00–22:00`) count as one, so a slot may run across the change; a slot that would run past closing time isn't made.
+- **Schedules.** A doctor's schedule must start and end while the branch is open that weekday (#15, #16: 400 `Doctor.ScheduleOutsideBranchHours`). It may span a break between two periods; no slots are made in the break.
+- **Until hours are set.** Every branch that existed before P1 PR 2 is open `00:00–23:59` every day, so nothing changes until the clinic sets its week. A new branch (#54) starts with the week of the organization's first branch.
+
+**62. `GET /api/v2/branches/{branchId}/working-hours`** (any staff)
+- **200:** `DayHours[]`: seven entries, Sunday (`weekday` 0) first, each day's `ranges` by `from`. A day with no ranges is closed.
+- **Errors:** 404 `Branch.NotFound`
+
+**63. `PUT /api/v2/branches/{branchId}/working-hours`** (`branches.manage` for the branch)
+- **Body:** `DayHours[]`. A weekday not sent is closed. **200:** the week, as #62.
+- Existing slots outside the new hours stay, and stay bookable; new slots follow the new hours.
+- **Errors:** 400 `Branch.InvalidHours` (a range with `from` ≥ `to`, overlapping ranges on a day, or a `weekday` outside 0–6 or sent twice); 403 `Access.OutOfScope`; 404 `Branch.NotFound`
+
+**64. `GET /api/v2/branches/{branchId}/holidays?year=`** (any staff)
+- **200:** `Holiday[]`, *full*: the branch's and those that close every branch (`branchId: null`), by `from`. With `year`, those that fall in that year; without it, those that end this year (the branch's calendar) or later. Yearly holidays are always listed.
+- **Errors:** 404 `Branch.NotFound`
+
+**65. `POST /api/v2/holidays`** (`branches.manage` for the branch; held organization-wide when `branchId` is null)
+- **Body:** `HolidayInput`. `from` and `to` are inclusive. A yearly holiday (`recursYearly`) closes the same month-days every year, also before its first year; its range may wrap New Year (`2026-12-30` to `2027-01-02`) and must be shorter than a year.
+- **201:** `{ holiday: Holiday, affectedAppointments: number }`. `affectedAppointments` counts the `Pending` and `Confirmed` visits from today on (each branch's own date) that fall on it; they stay booked and need moving (the J5 worklist comes with P2). Free slots already published on its days are withdrawn (not bookable any more), and no new ones are made.
+- **Errors:** 400 validation (`nameEn` / `nameAr` required, at most 80; `to` before `from`; a yearly holiday a year or longer, key `to`); 403 `Access.OutOfScope` (a branch outside the caller's scope, or `branchId: null` without the permission organization-wide, as a Manager holds it); 404 `Branch.NotFound`
+
+**66. `DELETE /api/v2/holidays/{holidayId}`** (as #65, for the holiday's branch)
+- **204.** Slot generation fills its days again on its next run (daily). A free slot that was blocked rather than deleted (because a cancelled appointment points to it) stays blocked.
+- **Errors:** 403 `Access.OutOfScope`; 404 `Holiday.NotFound`
+
 ## 6. Data types
 
 Types use TypeScript-style notation. `?` means the field may be omitted in a request; `| null` means the value may be null.
@@ -905,6 +947,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) and planned changes whose fix **
 | 4.0.0-p0 | 2026-10-30 | Still the pre-release on `v2` (P1 PR 0, "V2 API conventions"); no `/api/v2` endpoint exists yet, so the version is unchanged. **Breaking (format, P1 plan Q-F): validation keys are camelCase on every route** (§3.1 B, §9). A 400 from FluentValidation keys each message by the property path in the JSON naming policy, as the client sent it: `email`, `slotId`, `reasonForVisit`, `lines[0].unitPrice`. Before, inherited routes sent the C# names (`Email`, `SlotId`); 3.1.1's `Notes` key for #24 is `notes` again. Shape C (business-rule codes as keys) and shape D (`$.email`, parameter names) are unchanged, and so is every status code. **Groundwork for `/api/v2` (§13.1), active only on `/api/v2` routes and so not observable yet:** ids written and read as JSON strings; `startTime` / `endTime` as `"HH:mm"`; every coded error as shape A at any status (no shape C); `Auth.InvalidCredentials`-type errors are 400, so 401 means only a token problem; a 429 error type with `retryAt`; error extensions `retryAt` and `attemptsLeft` at the top level of the ProblemDetails; paging with defaults 1 / 20 and `pageSize` at most 100; `rowVersion` checks that return 409 `Concurrency.Conflict`; `RateLimit.Exceeded` gains `retryAt` on `/api/v2`. Inherited routes keep §1–§3 apart from the validation keys. `openapi.json` is unchanged (validation keys aren't in the document) |
 | 4.0.0-p0 | 2026-10-30 | Additive: **the first `/api/v2` routes, plans and modules** (§5.10, #46–#50; ADR 0008, R1 M1): the organization's entitlements, its enabled modules (anonymous), the plans, and two switches for the plan and add-ons that work only where `Platform:AllowPlanSwitching` is on (Development by default). New 403 `Subscription.ModuleNotEnabled` when a role grants a permission whose module isn't in the plan; inherited routes are unaffected. New codes `Subscription.NotFound`, `PlanNotFound`, `NotAnAddOn`, `ModuleRequired`, `SwitchingDisabled` (§3.3). New types `EntitlementsResponse`, `PlanResponse`, `ChangePlanRequest`, `SetModuleRequest`, enums `Module` and `SubscriptionStatus`. `openapi.json` regenerated |
 | 4.0.0-p0 | 2026-10-30 | Additive (P1 PR 1): **organization, branches and rooms** (§5.11, #51–#61), built from §13.24–§13.25 unchanged: the organization profile, branches with activate and deactivate, rooms, and the public branch list. New codes `Access.OutOfScope`, `Branch.NotFound`, `Branch.CodeTaken`, `Branch.LastActive`, `Room.NotFound`, `Room.NameTaken` (§3.3). **Behaviour:** the inherited booking route (#18) answers 409 `Appointment.SlotNotAvailable` for a slot at a deactivated branch. `openapi.json` regenerated |
+| 4.0.0-p0 | 2026-10-31 | Additive (P1 PR 2): **working hours and holidays** (§5.12, #62–#66), built from §13.25 (clarifications in §13.12): a branch's week of opening periods, its holidays and those that close every branch, adding a holiday (with the count of booked visits on it) and removing one. New codes `Branch.InvalidHours` (400) and `Holiday.NotFound` (404) (§3.3). **Behaviour:** slots are made only inside the branch's opening hours and never on a holiday; adding a holiday withdraws the free slots already published on it. Every existing branch is open `00:00–23:59` every day until its hours are set, so nothing changes before then, and a new branch (#54) starts with the first branch's week. **Inherited routes:** creating or updating a schedule (#15, #16) that starts or ends while the branch is closed returns the new 400 (shape C) `Doctor.ScheduleOutsideBranchHours`. `openapi.json` regenerated |
 
 ## 11. How to change this contract
 
@@ -1527,6 +1570,7 @@ Compared with the mock backend at `16a6dcb`. Screens keep working; most items ar
 | 2026-10-27 | First version: auth and sessions, me and profile, public reference data and the doctor directory, doctor applications, the patient's appointments, queue and reminders, visits, invoices, documents, insurance and notifications. Settles P1 plan Q-A |
 | 2026-10-27 | Front desk and nurse station added (§13.13–§13.21), from the frontend's interfaces at `22b7f00`: patient search, duplicates and registration; the desk's day, check-in, no-show, booking on behalf and walk-ins; the queue board, waiting-room screen and `WatchBranch` on `/hubs/queue`; triage keyed by appointment (built in P2); checkout lines, desk payments, receipts and cash sessions. Replaces five 07 routes (§13.13). `Idempotency-Key` also on booking on behalf, walk-ins and desk payments |
 | 2026-10-30 | Clinic setup added (§13.22–§13.31) for R1 M1, from the frontend's interfaces at `6c42840`: the organization profile and settings, branches with working hours, holidays and rooms, staff with invitations, roles, deactivation and the doctor profile, the read-only roles matrix, services, the price list and specialties, message templates and the audit log. Templates, the price list and the audit log are provisional until their screens exist. `/me` and invitation acceptance stay in §13.3–§13.4. Deviations from 07 are listed in §13.22 |
+| 2026-10-31 | Built §13.25's working hours and holidays (P1 PR 2, §5.12) with three clarifications, none changing a shape: `Branch.InvalidHours` also covers a `weekday` outside 0–6 or sent twice; `POST /api/v2/holidays` also withdraws the free slots already published on the holiday, and refuses a yearly holiday of a year or longer (validation, key `to`); `affectedAppointments` counts `Pending` and `Confirmed` visits from each branch's today on |
 
 ### 13.13 Front desk and nurse station: conventions
 
@@ -1903,11 +1947,11 @@ The appointment rules read the settings from then on: a new cancellation window 
 | `PUT /api/v2/branches/{branchId}` | `branches.manage` | `BranchInput` | 200 `Branch` | as `POST`, plus 404 `Branch.NotFound` | **Built** (§5.11) |
 | `POST /api/v2/branches/{branchId}/deactivate` | `branches.manage` (organization) | — | 200 `Branch`. It takes no new bookings, online or at the desk; its records stay readable and booked visits stay (FR-ORG-02) | 404 `Branch.NotFound`; 409 `Branch.LastActive` | **Built** (§5.11) |
 | `POST /api/v2/branches/{branchId}/activate` | `branches.manage` (organization) | — | 200 `Branch` | 404 `Branch.NotFound` | **Built** (§5.11) |
-| `GET /api/v2/branches/{branchId}/working-hours` | Any staff | — | 200 `DayHours[]`: seven entries, Sunday first | 404 `Branch.NotFound` | P1 PR 2 |
-| `PUT /api/v2/branches/{branchId}/working-hours` | `branches.manage` | `DayHours[]`: a missing weekday is closed | 200 `DayHours[]` as `GET`. Existing slots outside the new hours stay; new ones follow them | 400 `Branch.InvalidHours` (a range with `from` ≥ `to`, or overlapping ranges on a day); 404 `Branch.NotFound` | P1 PR 2 |
-| `GET /api/v2/branches/{branchId}/holidays` | Any staff | `year?` (default: this year and later) | 200 `Holiday[]`, *full*: the branch's and those that close every branch, by `from` | 404 `Branch.NotFound` | P1 PR 2 |
-| `POST /api/v2/holidays` | `branches.manage` (organization when `branchId` is null) | `HolidayInput` | 201 `{ holiday: Holiday, affectedAppointments: number }`: the booked visits that fall on it and need moving (the J5 worklist, P2). No slots are made on it from then on | 400 validation (`to` before `from`); 404 `Branch.NotFound` | P1 PR 2 |
-| `DELETE /api/v2/holidays/{holidayId}` | as `POST` | — | 204. Slot generation fills the days again on its next run | 404 `Holiday.NotFound` | P1 PR 2 |
+| `GET /api/v2/branches/{branchId}/working-hours` | Any staff | — | 200 `DayHours[]`: seven entries, Sunday first | 404 `Branch.NotFound` | **Built** (§5.12) |
+| `PUT /api/v2/branches/{branchId}/working-hours` | `branches.manage` | `DayHours[]`: a missing weekday is closed | 200 `DayHours[]` as `GET`. Existing slots outside the new hours stay; new ones follow them | 400 `Branch.InvalidHours` (a range with `from` ≥ `to`, overlapping ranges on a day, or a `weekday` outside 0–6 or sent twice); 404 `Branch.NotFound` | **Built** (§5.12) |
+| `GET /api/v2/branches/{branchId}/holidays` | Any staff | `year?` (default: this year and later) | 200 `Holiday[]`, *full*: the branch's and those that close every branch, by `from` | 404 `Branch.NotFound` | **Built** (§5.12) |
+| `POST /api/v2/holidays` | `branches.manage` (organization when `branchId` is null) | `HolidayInput` | 201 `{ holiday: Holiday, affectedAppointments: number }`: the booked visits that fall on it and need moving (the J5 worklist, P2). No slots are made on it from then on, and free slots already published on it are withdrawn | 400 validation (`to` before `from`; a yearly holiday a year or longer); 404 `Branch.NotFound` | **Built** (§5.12) |
+| `DELETE /api/v2/holidays/{holidayId}` | as `POST` | — | 204. Slot generation fills the days again on its next run | 404 `Holiday.NotFound` | **Built** (§5.12) |
 | `GET /api/v2/branches/{branchId}/rooms` | Any staff | — | 200 `Room[]`, *full*, inactive included | 404 `Branch.NotFound` | **Built** (§5.11) |
 | `POST /api/v2/branches/{branchId}/rooms` | `rooms.manage` | `RoomInput` | 201 `Room`, active | 400 validation (names at most 60); 404 `Branch.NotFound`; 409 `Room.NameTaken` (same name at the branch) | **Built** (§5.11) |
 | `PUT /api/v2/rooms/{roomId}` | `rooms.manage` | `RoomInput` with `isActive` | 200 `Room` | as `POST`, plus 404 `Room.NotFound` | **Built** (§5.11) |
@@ -1971,7 +2015,7 @@ In addition to [§13.10](#1310-error-codes) and [§13.20](#1320-front-desk-and-n
 |---|---|---|
 | `Branch.CodeTaken` | 409 | Another branch has the code |
 | `Branch.LastActive` | 409 | Deactivating the only active branch |
-| `Branch.InvalidHours` | 400 | A day's ranges are out of order or overlap |
+| `Branch.InvalidHours` | 400 | A day's ranges are out of order or overlap, or a weekday is outside 0–6 or sent twice |
 | `Holiday.NotFound` | 404 | Unknown holiday |
 | `Room.NotFound` | 404 | Unknown room, or at a branch outside the caller's scope |
 | `Room.NameTaken` | 409 | Another room at the branch has the name |

@@ -42,5 +42,17 @@ namespace Persistence.Repositories
             return (CountOf(AppointmentStatus.Pending), CountOf(AppointmentStatus.Confirmed), CountOf(AppointmentStatus.Completed),
                     CountOf(AppointmentStatus.Cancelled), CountOf(AppointmentStatus.NoShow));
         }
+
+        public async Task<IReadOnlyList<(int BranchId, DateOnly Date)>> GetUpcomingVisitDaysAsync(int? branchId, DateOnly from, CancellationToken ct)
+        {
+            var visits = await context.Appointments
+                .AsNoTracking()
+                .Where(a => (a.Status == AppointmentStatus.Pending || a.Status == AppointmentStatus.Confirmed)
+                         && a.Slot.Date >= from
+                         && (branchId == null || a.BranchId == branchId))
+                .Select(a => new { a.BranchId, a.Slot.Date })
+                .ToListAsync(ct);
+            return visits.Select(v => (v.BranchId, v.Date)).ToList();
+        }
     }
 }

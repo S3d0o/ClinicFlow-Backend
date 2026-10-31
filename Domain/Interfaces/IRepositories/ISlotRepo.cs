@@ -20,5 +20,8 @@
         Task SyncKeptSlotsWithScheduleAsync(DoctorSchedule schedule, DateOnly today, CancellationToken ct);
         // Deletes the schedule's slots that no appointment (of any status) points to
         Task DeleteUnusedByScheduleAsync(int scheduleId, CancellationToken ct);
+        // Free slots on the dates (a new holiday), at the branch or at every branch, stop being bookable: deleted, or
+        // blocked when a cancelled appointment points to them. Returns how many
+        Task<int> WithdrawFreeSlotsAsync(int? branchId, IReadOnlyCollection<DateOnly> dates, CancellationToken ct);
     }
 }

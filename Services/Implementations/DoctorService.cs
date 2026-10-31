@@ -1,6 +1,7 @@
 ﻿using ClinicFlow.Domain.Enums;
 using Domain.Interfaces.IRepositories;
 using Domain.Parameters;
+using Domain.Time;
 using Shared.DTOs.Doctor;
 using Shared.DTOs.Review;
 
@@ -77,6 +78,15 @@ namespace Services.Implementations
                 return DoctorErrors.ScheduleDayAlreadyExists;
             }
 
+            // The schedule must start and end while its branch is open that day (FR-ORG-03); a reused one keeps its branch
+            var calendar = await uow.Branches.GetCalendarAsync(existingSchedule?.BranchId ?? tenant.DefaultBranchId, ct);
+            if (!calendar.CoversSchedule(request.DayOfWeek, request.StartTime, request.EndTime))
+            {
+                logger.LogWarning("Schedule for doctor {DoctorId} on {DayOfWeek} rejected: {StartTime}-{EndTime} is outside the branch's hours",
+                    doctor.Id, request.DayOfWeek, request.StartTime, request.EndTime);
+                return DoctorErrors.ScheduleOutsideBranchHours;
+            }
+
             // An inactive schedule for this day (e.g. one kept for its appointment history when it was
             // deleted) is reused, since there is one schedule per weekday (REVIEW.md H4)
             if (existingSchedule is not null)
@@ -86,7 +96,7 @@ namespace Services.Implementations
                 await uow.SaveChangesAsync(ct);
                 var zone = await uow.Branches.GetTimeZoneIdAsync(existingSchedule.BranchId, ct);
                 await uow.Slots.SyncKeptSlotsWithScheduleAsync(existingSchedule, clock.Today(zone), ct);
-                await GenerateSlotsAsync(existingSchedule, zone, ct);
+                await GenerateSlotsAsync(existingSchedule, zone, calendar, ct);
 
                 logger.LogInformation("Reactivated schedule {ScheduleId} for doctor {DoctorId} on {DayOfWeek}",
                     existingSchedule.Id, doctor.Id, request.DayOfWeek);
@@ -101,7 +111,7 @@ namespace Services.Implementations
             uow.Doctors.AddSchedule(schedule);
             await uow.SaveChangesAsync(ct);
 
-            await GenerateSlotsAsync(schedule, await uow.Branches.GetTimeZoneIdAsync(schedule.BranchId, ct), ct);
+            await GenerateSlotsAsync(schedule, await uow.Branches.GetTimeZoneIdAsync(schedule.BranchId, ct), calendar, ct);
 
             logger.LogInformation("Created schedule for doctor {DoctorId} on {DayOfWeek}", doctor.Id, request.DayOfWeek);
             return mapper.Map<ScheduleResponse>(schedule);
@@ -125,6 +135,15 @@ namespace Services.Implementations
                 return DoctorErrors.InvalidScheduleTime;
             }
 
+            var calendar = await uow.Branches.GetCalendarAsync(updatedSchedule.BranchId, ct);
+            if (updatedSchedule.IsActive
+                && !calendar.CoversSchedule(updatedSchedule.DayOfWeek, updatedSchedule.StartTime, updatedSchedule.EndTime))
+            {
+                logger.LogWarning("Schedule {ScheduleId} update rejected: {StartTime}-{EndTime} is outside the branch's hours",
+                    scheduleId, updatedSchedule.StartTime, updatedSchedule.EndTime);
+                return DoctorErrors.ScheduleOutsideBranchHours;
+            }
+
             // One transaction, so a failure can't leave the schedule changed but its slots half-replaced (REVIEW.md H4).
             // Booked slots, and slots an appointment still points to, are kept; regeneration skips their times.
             // Kept free slots outside the new hours are blocked so patients can't book them.
@@ -135,7 +154,7 @@ namespace Services.Implementations
                 await uow.SaveChangesAsync(ct);
                 await uow.Slots.DeleteFutureAvailableByScheduleAsync(scheduleId, today, ct);
                 await uow.Slots.SyncKeptSlotsWithScheduleAsync(updatedSchedule, today, ct);
-                var slotCount = await GenerateSlotsAsync(updatedSchedule, zone, ct);
+                var slotCount = await GenerateSlotsAsync(updatedSchedule, zone, calendar, ct);
                 await transaction.CommitAsync(ct);
                 return slotCount;
             }, ct);
@@ -211,13 +230,14 @@ namespace Services.Implementations
         {
             var schedules = await uow.Doctors.GetActiveSchedulesAsync(ct);
             var zones = await uow.Branches.GetTimeZoneIdsAsync(ct);
+            var calendars = await uow.Branches.GetCalendarsAsync(ct);
             var created = 0;
 
             foreach (var schedule in schedules)
             {
                 try
                 {
-                    created += await GenerateSlotsAsync(schedule, zones[schedule.BranchId], ct);
+                    created += await GenerateSlotsAsync(schedule, zones[schedule.BranchId], calendars[schedule.BranchId], ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -239,7 +259,8 @@ namespace Services.Implementations
         private const int SlotWindowDays = 14;
 
         // timeZoneId is the schedule's branch zone: slot dates and times are that branch's wall clock (docs/v2/adr/0003)
-        private async Task<int> GenerateSlotsAsync(DoctorSchedule schedule, string timeZoneId, CancellationToken ct)
+        // and calendar its hours and holidays: no slot on a holiday, or outside an opening period (FR-ORG-03)
+        private async Task<int> GenerateSlotsAsync(DoctorSchedule schedule, string timeZoneId, BranchCalendar calendar, CancellationToken ct)
         {
             // Inactive schedules publish no bookable slots
             if (!schedule.IsActive || schedule.SlotDurationMinutes <= 0)
@@ -262,14 +283,15 @@ namespace Services.Implementations
             {
                 var date = today.AddDays(dayOffset);
 
-                // Only generate for the matching day of week
-                if (date.DayOfWeek != schedule.DayOfWeek) continue;
+                // Only generate for the matching day of week, when it isn't a holiday
+                if (date.DayOfWeek != schedule.DayOfWeek || calendar.IsHoliday(date)) continue;
 
                 for (var minute = startMinutes; minute + duration <= endMinutes; minute += duration)
                 {
                     var slotStart = TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(minute));
                     var slotEnd = slotStart.AddMinutes(duration);
                     if (existing.Any(e => e.Date == date && e.StartTime < slotEnd && slotStart < e.EndTime)) continue;
+                    if (!calendar.IsOpen(date, slotStart, slotEnd)) continue; // e.g. a slot that runs past closing time
 
                     // A time daylight saving skips doesn't exist, so neither does a slot touching it; a repeated time
                     // is its first occurrence (Domain.Time.WallClock)
