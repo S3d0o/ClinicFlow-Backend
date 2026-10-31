@@ -143,7 +143,7 @@ Every non-2xx response is one of these shapes. Branch on the **error code** wher
   "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
   "title": "One or more validation errors occurred.",
   "status": 400,
-  "errors": { "Appointment.CancellationWindowExpired": ["Appointments can only be cancelled at least 2 hours before the scheduled time"] },
+  "errors": { "Appointment.CancellationWindowExpired": ["Appointments can only be cancelled up to the clinic's cancellation window before the scheduled time"] },
   "traceId": "00-…-00"
 }
 ```
@@ -208,13 +208,13 @@ Only codes the API can actually return are listed.
 | `Appointment.SlotNotAvailable` | 409 | Slot is booked or blocked |
 | `Appointment.SlotAlreadyBooked` | 409 | Someone else booked the slot first |
 | `Appointment.SlotInPast` | 400 (shape C) | The slot has already started |
-| `Appointment.CancellationWindowExpired` | 400 (shape C) | Patient cancelling less than 2 hours before the start |
+| `Appointment.CancellationWindowExpired` | 400 (shape C) | Patient cancelling inside the cancellation window (`cancellationWindowHours`, default 2 hours) before the start |
 | `Appointment.AlreadyCancelled` | 409 | Already cancelled |
 | `Appointment.AlreadyCompleted` | 409 | Already completed |
 | `Appointment.CannotCompleteCancelled` | 409 | Completing a cancelled appointment |
 | `Appointment.CannotCompleteBeforeStart` | 400 (shape C) | Completing an appointment before its start time |
 | `Appointment.AlreadyNoShow` | 409 | Cancelling, completing or marking again an appointment already marked as a no-show |
-| `Appointment.NoShowTooEarly` | 400 (shape C) | Marking a no-show less than 15 minutes after the start time |
+| `Appointment.NoShowTooEarly` | 400 (shape C) | Marking a no-show before the no-show grace (`noShowGraceMinutes`, default 15 minutes) after the start has passed |
 | `Appointment.DoctorNotesNotAllowed` | 409 | Notes on a cancelled (or rescheduled) appointment |
 | `Appointment.InvalidStatusTransition` | 409 | A status change the appointment rules don't allow when none of the codes above applies, e.g. cancelling a visit that is in progress (since 4.0.0-p0). The message names both statuses |
 | `Appointment.Unauthorized` | 403 | Not the owner of the appointment |
@@ -335,6 +335,9 @@ Auth column: **—** means anonymous; **Any** means any logged-in user.
 | 64 | GET | `/api/v2/branches/{branchId}/holidays?year=` | Any staff | 200 `Holiday[]` |
 | 65 | POST | `/api/v2/holidays` | `branches.manage` (organization when `branchId` is null) | 201 `{ holiday, affectedAppointments }` |
 | 66 | DELETE | `/api/v2/holidays/{holidayId}` | as #65 | 204 |
+| | **Organization settings (`/api/v2`, §5.13)** | | | |
+| 67 | GET | `/api/v2/organization/settings` | Any staff | 200 `OrganizationSettings` |
+| 68 | PATCH | `/api/v2/organization/settings` | `org.settings.manage` | 200 `OrganizationSettings` |
 
 `/api/Specialty` is case-insensitive (`/api/specialty` also works).
 
@@ -542,7 +545,7 @@ Each entry lists the request, the success response, and the errors that endpoint
 - **Patient rules:**
   - own appointment only
   - not already cancelled, completed, marked as a no-show, in progress or rescheduled
-  - at least 2 hours before the start (on the clinic's clock)
+  - at least the organization's cancellation window before the start (`cancellationWindowHours`, default 2 hours; §5.13), on the clinic's clock
 - **Doctor rules:**
   - own appointment only
   - not cancelled, completed, a no-show, in progress or rescheduled
@@ -578,7 +581,7 @@ Each entry lists the request, the success response, and the errors that endpoint
 **24b. `POST /api/appointments/{id}/no-show`** (the owning doctor, or an admin)
 - No body.
 - **204.** A `Confirmed` appointment becomes `NoShow`, and the patient gets a `SystemAlert` notification ("Missed Appointment"). The slot stays booked. Nothing is marked automatically.
-- **Rules:** at least **15 minutes** after the start time, on the clinic's clock.
+- **Rules:** at least the organization's no-show grace after the start time (`noShowGraceMinutes`, default **15 minutes**; §5.13), on the clinic's clock.
 - **Errors:**
   - 400 (C) `Appointment.NoShowTooEarly`
   - 403 `Appointment.Unauthorized` (another doctor's appointment)
@@ -842,6 +845,19 @@ What the hours and holidays do:
 - **204.** Slot generation fills its days again on its next run (daily). A free slot that was blocked rather than deleted (because a cancelled appointment points to it) stays blocked.
 - **Errors:** 403 `Access.OutOfScope`; 404 `Holiday.NotFound`
 
+### 5.13 Organization settings (`/api/v2`)
+
+Built by P1 PR 3 from §13.24 unchanged (FR-ORG-05); the type is §13.23's `OrganizationSettings`, with its bounds and defaults. §13.1 and §13.22 apply. Money is EGP. Only `cancellationWindowHours` and `noShowGraceMinutes` are read by a rule today (#22, #24b); `rescheduleWindowHours` waits for rescheduling (P2), and the others for front desk, billing and recruitment. Each is stored once it differs from its default; until then the default applies.
+
+**67. `GET /api/v2/organization/settings`** (any staff)
+- **200:** `OrganizationSettings`: all 14 keys, a default for each one never changed.
+
+**68. `PATCH /api/v2/organization/settings`** (`org.settings.manage`)
+- **Body:** `Partial<OrganizationSettings>`: only the keys to change. **200:** every setting, as #67.
+- Each key whose value changes is audited (entity type `OrganizationSetting`, its old and new value); a key sent with its current value writes nothing. An amount sent as `100.0` is the same as `100`.
+- The appointment rules read the new values at once, for existing appointments too: a longer cancellation window can stop a patient cancelling a visit booked under the old one.
+- **Errors:** 400 validation: a value outside §13.23's bounds (key = the setting, e.g. `noShowGraceMinutes`), or a value of the wrong type; an unknown key (binding error, shape D, nothing saved)
+
 ## 6. Data types
 
 Types use TypeScript-style notation. `?` means the field may be omitted in a request; `| null` means the value may be null.
@@ -948,6 +964,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) and planned changes whose fix **
 | 4.0.0-p0 | 2026-10-30 | Additive: **the first `/api/v2` routes, plans and modules** (§5.10, #46–#50; ADR 0008, R1 M1): the organization's entitlements, its enabled modules (anonymous), the plans, and two switches for the plan and add-ons that work only where `Platform:AllowPlanSwitching` is on (Development by default). New 403 `Subscription.ModuleNotEnabled` when a role grants a permission whose module isn't in the plan; inherited routes are unaffected. New codes `Subscription.NotFound`, `PlanNotFound`, `NotAnAddOn`, `ModuleRequired`, `SwitchingDisabled` (§3.3). New types `EntitlementsResponse`, `PlanResponse`, `ChangePlanRequest`, `SetModuleRequest`, enums `Module` and `SubscriptionStatus`. `openapi.json` regenerated |
 | 4.0.0-p0 | 2026-10-30 | Additive (P1 PR 1): **organization, branches and rooms** (§5.11, #51–#61), built from §13.24–§13.25 unchanged: the organization profile, branches with activate and deactivate, rooms, and the public branch list. New codes `Access.OutOfScope`, `Branch.NotFound`, `Branch.CodeTaken`, `Branch.LastActive`, `Room.NotFound`, `Room.NameTaken` (§3.3). **Behaviour:** the inherited booking route (#18) answers 409 `Appointment.SlotNotAvailable` for a slot at a deactivated branch. `openapi.json` regenerated |
 | 4.0.0-p0 | 2026-10-31 | Additive (P1 PR 2): **working hours and holidays** (§5.12, #62–#66), built from §13.25 (clarifications in §13.12): a branch's week of opening periods, its holidays and those that close every branch, adding a holiday (with the count of booked visits on it) and removing one. New codes `Branch.InvalidHours` (400) and `Holiday.NotFound` (404) (§3.3). **Behaviour:** slots are made only inside the branch's opening hours and never on a holiday; adding a holiday withdraws the free slots already published on it. Every existing branch is open `00:00–23:59` every day until its hours are set, so nothing changes before then, and a new branch (#54) starts with the first branch's week. **Inherited routes:** creating or updating a schedule (#15, #16) that starts or ends while the branch is closed returns the new 400 (shape C) `Doctor.ScheduleOutsideBranchHours`. `openapi.json` regenerated |
+| 4.0.0-p0 | 2026-10-31 | Additive (P1 PR 3): **organization settings** (§5.13, #67–#68), built from §13.24 unchanged: every setting with its default, and partial changes, each changed key audited. **Behaviour:** the patient's cancellation window (#22) and the no-show grace (#24b) come from `cancellationWindowHours` and `noShowGraceMinutes`; with the defaults (2 hours, 15 minutes) nothing changes. The messages of `Appointment.CancellationWindowExpired` and `Appointment.NoShowTooEarly` no longer name a fixed time; the codes and status codes are unchanged. `openapi.json` regenerated |
 
 ## 11. How to change this contract
 
@@ -1933,8 +1950,8 @@ export interface AuditEntryView {
 |---|---|---|---|---|---|
 | `GET /api/v2/organization` | `org.settings.manage` | — | 200 `OrganizationProfile` | — | **Built** (§5.11) |
 | `PUT /api/v2/organization` | `org.settings.manage` | `OrganizationProfile` | 200 `OrganizationProfile` | 400 validation (`legalName` at most 150, brand names 80, tax number and registration 30, `phone` 20, `email`) | **Built** (§5.11) |
-| `GET /api/v2/organization/settings` | Any staff | — | 200 `OrganizationSettings`, every key, defaults filled in | — | P1 PR 3 |
-| `PATCH /api/v2/organization/settings` | `org.settings.manage` | `Partial<OrganizationSettings>`: only the keys to change | 200 `OrganizationSettings`. Each changed key is audited with its old and new value | 400 validation: a value outside the bounds in §13.23 (key = the setting); an unknown key | P1 PR 3 |
+| `GET /api/v2/organization/settings` | Any staff | — | 200 `OrganizationSettings`, every key, defaults filled in | — | **Built** (§5.13) |
+| `PATCH /api/v2/organization/settings` | `org.settings.manage` | `Partial<OrganizationSettings>`: only the keys to change | 200 `OrganizationSettings`. Each changed key is audited with its old and new value | 400 validation: a value outside the bounds in §13.23 (key = the setting); an unknown key | **Built** (§5.13) |
 
 The appointment rules read the settings from then on: a new cancellation window or no-show grace applies to existing appointments too.
 

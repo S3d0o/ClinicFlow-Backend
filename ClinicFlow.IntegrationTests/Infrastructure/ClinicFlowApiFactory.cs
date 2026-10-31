@@ -9,6 +9,7 @@ using Microsoft.Extensions.Hosting;
 using Persistence.AppData;
 using Persistence.Outbox;
 using Services.Abstraction.Contracts;
+using Services.Implementations;
 using Shared.Settings;
 using Testcontainers.MsSql;
 
@@ -127,6 +128,7 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
             // The database is back to its migrated subscription (the Full plan), which this process's cache of
             // entitlements can't see: dropping and migrating saves nothing through a context
             Services.GetRequiredService<IEntitlementCache>().InvalidateAll();
+            Services.GetRequiredService<OrganizationSettingsCache>().InvalidateAll(); // and the settings, back to their defaults
         }
 
         // The OutboxDispatcher job doesn't run in tests: call this after the request under test to deliver the

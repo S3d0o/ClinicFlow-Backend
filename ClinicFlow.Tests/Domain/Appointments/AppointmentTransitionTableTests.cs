@@ -16,10 +16,10 @@ namespace ClinicFlow.Tests.Domain.Appointments
             ["CheckIn"] = a => a.CheckIn(Start.AddMinutes(-20), VisitDay),
             ["Start"] = a => a.Start(Start),
             ["Complete"] = a => a.Complete(Start.AddMinutes(30)),
-            ["Cancel"] = a => a.Cancel(CancelledBy.Admin, Start.AddMinutes(5), null),
-            ["MarkNoShow"] = a => a.MarkNoShow(Start.AddMinutes(20)),
+            ["Cancel"] = a => a.Cancel(CancelledBy.Admin, Start.AddMinutes(5), null, Window),
+            ["MarkNoShow"] = a => a.MarkNoShow(Start.AddMinutes(20), Grace),
             ["RevertNoShow"] = a => a.RevertNoShow(VisitDay),
-            ["RescheduleTo"] = a => a.RescheduleTo(Booked(), CancelledBy.Admin, Start.AddDays(-1)),
+            ["RescheduleTo"] = a => a.RescheduleTo(Booked(), CancelledBy.Admin, Start.AddDays(-1), Window),
         };
 
         private const string Invalid = "Appointment.InvalidStatusTransition";

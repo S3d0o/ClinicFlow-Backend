@@ -131,6 +131,7 @@ namespace Persistence.AppData
         public DbSet<Room> Rooms => Set<Room>();
         public DbSet<BranchWorkingHours> BranchWorkingHours => Set<BranchWorkingHours>();
         public DbSet<BranchHoliday> Holidays => Set<BranchHoliday>();
+        public DbSet<OrganizationSetting> OrganizationSettings => Set<OrganizationSetting>();
         public DbSet<DoctorProfile> DoctorProfiles => Set<DoctorProfile>();
         public DbSet<Specialty> Specialties => Set<Specialty>();
         public DbSet<DoctorSchedule> DoctorSchedules => Set<DoctorSchedule>();

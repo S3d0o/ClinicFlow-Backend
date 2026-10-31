@@ -4,11 +4,13 @@ using Shared.DTOs.Appointment;
 
 namespace Services.Implementations
 {
-    // Each role finds and checks its caller; the status rules and the patient's 2-hour window are Appointment.Cancel's
+    // Each role finds and checks its caller; the status rules and the patient's window are Appointment.Cancel's, with the
+    // window from the organization's settings (cancellationWindowHours, FR-ORG-05)
     public class AppointmentCancellationService(
         IUnitOfWork uow,
         ILogger<AppointmentCancellationService> logger,
-        IClock clock) : IAppointmentCancellationService
+        IClock clock,
+        IOrganizationSettings settings) : IAppointmentCancellationService
     {
         public async Task<Result> CancelByPatientAsync(Guid patientUserId, int appointmentId, CancelAppointmentRequest request, CancellationToken ct)
         {
@@ -74,7 +76,7 @@ namespace Services.Implementations
         // the entity raises is saved with the change; its handler notifies the patient and the doctor
         private async Task<Result> CancelAsync(Appointment appointment, CancelledBy cancelledBy, string? reason, CancellationToken ct)
         {
-            var cancelled = appointment.Cancel(cancelledBy, clock.UtcNow, reason);
+            var cancelled = appointment.Cancel(cancelledBy, clock.UtcNow, reason, (await settings.GetAsync(ct)).CancellationWindow);
             if (cancelled.IsFailure)
             {
                 logger.LogWarning("Appointment {AppointmentId} ({Status}) cannot be cancelled by {CancelledBy}: {ErrorCode}",

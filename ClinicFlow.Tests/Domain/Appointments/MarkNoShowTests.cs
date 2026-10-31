@@ -15,12 +15,18 @@ namespace ClinicFlow.Tests.Domain.Appointments
         {
             var appointment = Booked();
 
-            var result = appointment.MarkNoShow(Start.AddMinutes(minutesAfterStart));
+            var result = appointment.MarkNoShow(Start.AddMinutes(minutesAfterStart), Grace);
 
             if (allowed)
                 Assert.Equal(Start.AddMinutes(minutesAfterStart), appointment.NoShowAt);
             else
                 Assert.Equal("Appointment.NoShowTooEarly", Assert.Single(result.Errors).Code);
         }
+
+        [Theory]
+        [InlineData(29, false)]
+        [InlineData(30, true)]
+        public void MarkNoShow_UsesTheGracePeriodItIsGiven(int minutesAfterStart, bool allowed)
+            => Assert.Equal(allowed, Booked().MarkNoShow(Start.AddMinutes(minutesAfterStart), TimeSpan.FromMinutes(30)).IsSuccess);
     }
 }

@@ -244,12 +244,12 @@ public static partial class DataSeeder
             {
                 var roll = rng.NextDouble();
                 var by = roll < 0.6 ? CancelledBy.Patient : roll < 0.9 ? CancelledBy.Doctor : CancelledBy.Admin;
-                // Patients can only cancel up to 2 hours before the start; nobody cancels in the future
-                var latest = by == CancelledBy.Patient ? start.AddHours(-2) : start;
+                // Patients can only cancel up to the (default) window before the start; nobody cancels in the future
+                var latest = by == CancelledBy.Patient ? start - DefaultSettings.CancellationWindow : start;
                 if (latest > clock.ClinicNow) latest = clock.ClinicNow;
                 if (latest < bookedLocal) latest = bookedLocal;
                 Apply(appointment, appointment.Cancel(by, clock.ToUtc(bookedLocal + (latest - bookedLocal) * rng.NextDouble()),
-                    Pick(rng, CancellationReasons[by])));
+                    Pick(rng, CancellationReasons[by]), DefaultSettings.CancellationWindow));
                 // The slot stays Available, as after a real cancellation
             }
             else

@@ -36,6 +36,10 @@ namespace Persistence.AppData;
 /// </summary>
 public static partial class DataSeeder
 {
+    // The demo organization keeps the default settings, so its history follows the default appointment windows
+    private static readonly Shared.DTOs.Organization.OrganizationSettingsResponse DefaultSettings =
+        Shared.DTOs.Organization.OrganizationSettingsResponse.Defaults;
+
     // ── Fixed GUIDs ───────────────────────────────────────────────────────────
     // Using fixed IDs makes the seeder idempotent: re-running never duplicates rows.
 
@@ -743,7 +747,7 @@ public static partial class DataSeeder
             if (cancellation is { } c)
             {
                 var cancelledAt = appointment.BookedAt.AddDays(1);
-                Apply(appointment, appointment.Cancel(c.By, cancelledAt < now ? cancelledAt : now, c.Reason));
+                Apply(appointment, appointment.Cancel(c.By, cancelledAt < now ? cancelledAt : now, c.Reason, DefaultSettings.CancellationWindow));
                 // A cancelled appointment frees its slot, as the cancellation service does
             }
             else
@@ -1013,8 +1017,8 @@ public static partial class DataSeeder
                     Apply(appointment, appointment.AddDoctorNotes(notes));
                 break;
             case AppointmentStatus.NoShow:
-                var markedAt = endUtc + Appointment.NoShowGracePeriod;
-                Apply(appointment, appointment.MarkNoShow(markedAt < clock.UtcNow ? markedAt : clock.UtcNow));
+                var markedAt = endUtc + DefaultSettings.NoShowGrace;
+                Apply(appointment, appointment.MarkNoShow(markedAt < clock.UtcNow ? markedAt : clock.UtcNow, DefaultSettings.NoShowGrace));
                 break;
             case AppointmentStatus.Confirmed:
                 break;

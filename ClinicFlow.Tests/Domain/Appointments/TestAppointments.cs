@@ -13,6 +13,10 @@ namespace ClinicFlow.Tests.Domain.Appointments
         public static readonly DateOnly VisitDay = new(2026, 10, 23);
         public static readonly DateTime Start = new(2026, 10, 23, 7, 0, 0, DateTimeKind.Utc);
 
+        // The default settings (FR-ORG-05): patients change until 2 hours before, a no-show 15 minutes after the start
+        public static readonly TimeSpan Window = TimeSpan.FromHours(2);
+        public static readonly TimeSpan Grace = TimeSpan.FromMinutes(15);
+
         public static AppointmentSlot Slot() => new()
         {
             Id = 5,
@@ -55,13 +59,13 @@ namespace ClinicFlow.Tests.Domain.Appointments
                     Must(appointment.Complete(Start.AddMinutes(30)));
                     break;
                 case AppointmentStatus.Cancelled:
-                    Must(appointment.Cancel(CancelledBy.Admin, Start.AddDays(-1), "Doctor unavailable"));
+                    Must(appointment.Cancel(CancelledBy.Admin, Start.AddDays(-1), "Doctor unavailable", Window));
                     break;
                 case AppointmentStatus.NoShow:
-                    Must(appointment.MarkNoShow(Start.AddMinutes(20)));
+                    Must(appointment.MarkNoShow(Start.AddMinutes(20), Grace));
                     break;
                 case AppointmentStatus.Rescheduled:
-                    Must(appointment.RescheduleTo(Booked(), CancelledBy.Admin, Start.AddDays(-1)));
+                    Must(appointment.RescheduleTo(Booked(), CancelledBy.Admin, Start.AddDays(-1), Window));
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(status), status, null);

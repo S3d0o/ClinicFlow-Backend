@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Services.Abstraction.Contracts;
 using Services.Implementations;
+using Shared.DTOs.Organization;
 
 namespace ClinicFlow.Tests.Services.AppointmentCancellationServiceTests
 {
@@ -12,6 +13,8 @@ namespace ClinicFlow.Tests.Services.AppointmentCancellationServiceTests
         protected readonly IUnitOfWork _uow;
         protected readonly ILogger<AppointmentCancellationService> _logger;
         protected readonly IClock _clock;
+        // The default settings unless a test changes them (FR-ORG-05)
+        protected readonly IOrganizationSettings _settings = Substitute.For<IOrganizationSettings>();
         protected static readonly DateTime UtcNow = new(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc);
 
         // System Under Test
@@ -24,7 +27,8 @@ namespace ClinicFlow.Tests.Services.AppointmentCancellationServiceTests
             _clock = Substitute.For<IClock>();
             _clock.UtcNow.Returns(UtcNow);
 
-            _sut = new AppointmentCancellationService(_uow, _logger, _clock);
+            _settings.GetAsync(Arg.Any<CancellationToken>()).Returns(OrganizationSettingsResponse.Defaults);
+            _sut = new AppointmentCancellationService(_uow, _logger, _clock, _settings);
         }
     }
 }

@@ -34,7 +34,7 @@ namespace Domain.Errors
 
         public static readonly Error CancellationWindowExpired =
             Error.Validation("Appointment.CancellationWindowExpired",
-                "Appointments can only be cancelled at least 2 hours before the scheduled time");
+                "Appointments can only be cancelled up to the clinic's cancellation window before the scheduled time");
 
         // 403 (not the owner). The code keeps its original "Unauthorized" name: it is part of the API contract
         public static readonly Error Forbidden =
@@ -55,7 +55,7 @@ namespace Domain.Errors
 
         public static readonly Error NoShowTooEarly =
             Error.Validation("Appointment.NoShowTooEarly",
-                "An appointment can only be marked as a no-show 15 minutes after it starts");
+                "An appointment can only be marked as a no-show once the clinic's grace period after its start has passed");
 
         public static readonly Error DoctorNotesNotAllowed =
             Error.Conflict("Appointment.DoctorNotesNotAllowed",

@@ -25,10 +25,10 @@ namespace ClinicFlow.Tests.Domain.Appointments
             AssertRaises(Saved(AppointmentStatus.Confirmed), a => a.CheckIn(Start.AddMinutes(-20), VisitDay), new PatientCheckedIn(Id));
             AssertRaises(Saved(AppointmentStatus.CheckedIn), a => a.Start(Start), new AppointmentStarted(Id));
             AssertRaises(Saved(AppointmentStatus.Confirmed), a => a.Complete(Start.AddMinutes(30)), new AppointmentCompleted(Id));
-            AssertRaises(Saved(AppointmentStatus.Confirmed), a => a.Cancel(CancelledBy.Doctor, Start.AddDays(-1), null), new AppointmentCancelled(Id, CancelledBy.Doctor));
-            AssertRaises(Saved(AppointmentStatus.Confirmed), a => a.MarkNoShow(Start.AddMinutes(20)), new AppointmentMarkedNoShow(Id));
+            AssertRaises(Saved(AppointmentStatus.Confirmed), a => a.Cancel(CancelledBy.Doctor, Start.AddDays(-1), null, Window), new AppointmentCancelled(Id, CancelledBy.Doctor));
+            AssertRaises(Saved(AppointmentStatus.Confirmed), a => a.MarkNoShow(Start.AddMinutes(20), Grace), new AppointmentMarkedNoShow(Id));
             AssertRaises(Saved(AppointmentStatus.NoShow), a => a.RevertNoShow(VisitDay), new AppointmentNoShowReverted(Id));
-            AssertRaises(Saved(AppointmentStatus.Confirmed), a => a.RescheduleTo(Booked(), CancelledBy.Admin, Start.AddDays(-1)), new AppointmentRescheduled(Id));
+            AssertRaises(Saved(AppointmentStatus.Confirmed), a => a.RescheduleTo(Booked(), CancelledBy.Admin, Start.AddDays(-1), Window), new AppointmentRescheduled(Id));
             AssertRaises(Saved(AppointmentStatus.Confirmed), a => a.QueueReminder(Start.AddHours(-20)), new AppointmentReminderDue(Id));
         }
 
@@ -37,7 +37,7 @@ namespace ClinicFlow.Tests.Domain.Appointments
         {
             var appointment = Saved(AppointmentStatus.Completed);
 
-            appointment.Cancel(CancelledBy.Admin, Start, null);
+            appointment.Cancel(CancelledBy.Admin, Start, null, Window);
 
             Assert.Empty(appointment.TakeDomainEvents());
         }

@@ -5,6 +5,7 @@ using NSubstitute;
 using Domain.Events;
 using Shared.Errors;
 using Domain.Errors;
+using Shared.DTOs.Organization;
 
 namespace ClinicFlow.Tests.Services.AppointmentVisitServiceTests
 {
@@ -74,6 +75,19 @@ namespace ClinicFlow.Tests.Services.AppointmentVisitServiceTests
             Assert.Contains(AppointmentErrors.NotFound(99), result.Errors);
         }
 
+
+        [Fact]
+        public async Task MarkNoShowAsync_WithTheOrganizationsLongerGrace_ReturnsNoShowTooEarly()
+        {
+            // The clinic waits an hour (FR-ORG-05); 30 minutes after the start is too early
+            _settings.GetAsync(_ct).Returns(OrganizationSettingsResponse.Defaults with { NoShowGraceMinutes = 60 });
+            _clock.UtcNow.Returns(new DateTime(2026, 10, 18, 7, 30, 0, DateTimeKind.Utc));
+
+            var result = await _sut.MarkNoShowAsync(_doctorUserId, "Doctor", _appointmentId, _ct);
+
+            Assert.Contains(AppointmentErrors.NoShowTooEarly, result.Errors);
+            Assert.Equal(AppointmentStatus.Confirmed, _appointment.Status);
+        }
         [Fact]
         public async Task MarkNoShowAsync_WithinGracePeriod_ReturnsNoShowTooEarlyAndChangesNothing()
         {

@@ -63,7 +63,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Messaging
             var act = () => factory.SeedAsync(async db =>
             {
                 var appointment = await db.Appointments.Include(a => a.Slot).SingleAsync(a => a.Id == _appointmentId);
-                appointment.Cancel(CancelledBy.Admin, DateTime.UtcNow, null);
+                appointment.Cancel(CancelledBy.Admin, DateTime.UtcNow, null, TimeSpan.FromHours(2));
                 db.Notifications.Add(new Notification { UserId = Guid.NewGuid(), Title = "x", Message = "x", CreatedAt = DateTime.UtcNow }); // unknown user: FK violation
                 await db.SaveChangesAsync();
             });
@@ -148,7 +148,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Messaging
             {
                 db.RecordDomainEvents = false;
                 var appointment = await db.Appointments.Include(a => a.Slot).SingleAsync(a => a.Id == _appointmentId);
-                appointment.Cancel(CancelledBy.Admin, DateTime.UtcNow, null);
+                appointment.Cancel(CancelledBy.Admin, DateTime.UtcNow, null, TimeSpan.FromHours(2));
                 await db.SaveChangesAsync();
             });
 

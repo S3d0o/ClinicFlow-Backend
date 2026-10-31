@@ -6,11 +6,8 @@ namespace Domain.Entities.AppModule
     // only change through the methods below; services load the appointment, call one and save
     public class Appointment : BaseEntity<int>, IOrganizationOwned, IBranchOwned, IHasDomainEvents
     {
-        // The patient may be late: a no-show can only be marked this long after the start (v2 FR-APT-07)
-        public static readonly TimeSpan NoShowGracePeriod = TimeSpan.FromMinutes(15);
-
-        // Patients can't cancel or reschedule closer to the start than this
-        public static readonly TimeSpan PatientChangeWindow = TimeSpan.FromHours(2);
+        // The windows (how close to the start a patient may cancel or reschedule, how long after it a no-show may be
+        // marked) are the organization's settings (FR-ORG-05): the methods take them, the services read them
 
         public int OrganizationId { get; set; }
         public int BranchId { get; set; }
@@ -111,13 +108,14 @@ namespace Domain.Entities.AppModule
             return Result.Ok();
         }
 
-        // Pending, Confirmed or CheckedIn (left without being seen) → Cancelled. A patient can only cancel
-        // until 2 hours before the start; doctors and admins at any time. The caller frees the slot
-        public Result Cancel(CancelledBy by, DateTime utcNow, string? reason)
+        // Pending, Confirmed or CheckedIn (left without being seen) → Cancelled. A patient can only cancel until
+        // patientWindow before the start (the cancellation window setting); doctors and admins at any time. The caller
+        // frees the slot
+        public Result Cancel(CancelledBy by, DateTime utcNow, string? reason, TimeSpan patientWindow)
         {
             if (Status is not (AppointmentStatus.Pending or AppointmentStatus.Confirmed or AppointmentStatus.CheckedIn))
                 return StatusError(AppointmentStatus.Cancelled);
-            if (by == ClinicFlow.Domain.Enums.CancelledBy.Patient && !IsBeforePatientChangeWindow(utcNow))
+            if (by == ClinicFlow.Domain.Enums.CancelledBy.Patient && !IsBefore(patientWindow, utcNow))
                 return AppointmentErrors.CancellationWindowExpired;
 
             Status = AppointmentStatus.Cancelled;
@@ -128,12 +126,13 @@ namespace Domain.Entities.AppModule
             return Result.Ok();
         }
 
-        // Confirmed → NoShow, once the grace period after the start has passed. Staff mark it, never a job (FR-APT-07)
-        public Result MarkNoShow(DateTime utcNow)
+        // Confirmed → NoShow, once the grace period after the start has passed (the patient may be late; the no-show
+        // grace setting). Staff mark it, never a job (FR-APT-07)
+        public Result MarkNoShow(DateTime utcNow, TimeSpan gracePeriod)
         {
             if (Status != AppointmentStatus.Confirmed)
                 return StatusError(AppointmentStatus.NoShow);
-            if (utcNow < Slot.StartsAtUtc + NoShowGracePeriod)
+            if (utcNow < Slot.StartsAtUtc + gracePeriod)
                 return AppointmentErrors.NoShowTooEarly;
 
             Status = AppointmentStatus.NoShow;
@@ -158,8 +157,9 @@ namespace Domain.Entities.AppModule
         }
 
         // Confirmed → Rescheduled, linked to its replacement: a new confirmed appointment for the same patient,
-        // created in the same transaction. `by` decides the patient window, as for a cancellation
-        public Result RescheduleTo(Appointment replacement, CancelledBy by, DateTime utcNow)
+        // created in the same transaction. `by` decides whether patientWindow (the reschedule window setting) applies,
+        // as for a cancellation
+        public Result RescheduleTo(Appointment replacement, CancelledBy by, DateTime utcNow, TimeSpan patientWindow)
         {
             if (ReferenceEquals(replacement, this) || replacement.Status != AppointmentStatus.Confirmed
                 || replacement.PatientProfileId != PatientProfileId
@@ -168,7 +168,7 @@ namespace Domain.Entities.AppModule
 
             if (Status != AppointmentStatus.Confirmed)
                 return StatusError(AppointmentStatus.Rescheduled);
-            if (by == ClinicFlow.Domain.Enums.CancelledBy.Patient && !IsBeforePatientChangeWindow(utcNow))
+            if (by == ClinicFlow.Domain.Enums.CancelledBy.Patient && !IsBefore(patientWindow, utcNow))
                 return AppointmentErrors.CancellationWindowExpired;
 
             Status = AppointmentStatus.Rescheduled;
@@ -208,7 +208,7 @@ namespace Domain.Entities.AppModule
             return taken;
         }
 
-        private bool IsBeforePatientChangeWindow(DateTime utcNow) => utcNow <= Slot.StartsAtUtc - PatientChangeWindow;
+        private bool IsBefore(TimeSpan window, DateTime utcNow) => utcNow <= Slot.StartsAtUtc - window;
 
         // Why the current status can't move to `target`. The terminal states keep the error codes the API had
         // before the state machine (contract 3.x); every other illegal move is InvalidStatusTransition
