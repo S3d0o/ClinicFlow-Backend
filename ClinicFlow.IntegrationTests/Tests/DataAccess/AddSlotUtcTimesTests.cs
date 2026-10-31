@@ -1,4 +1,6 @@
 using ClinicFlow.IntegrationTests.Infrastructure;
+using Domain.Entities.AppModule;
+using Domain.Entities.IdentityModule;
 using Domain.Time;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -43,13 +45,24 @@ namespace ClinicFlow.IntegrationTests.Tests.DataAccess
         [Fact]
         public async Task Migrate_ExistingSlots_GetTheSameUtcTimesAsDotNetComputes()
         {
-            // Doctors and schedules have the same columns before and after the migration, so EF can seed them;
-            // slots don't, so they are inserted with SQL
+            // Users, specialties and schedules have the same columns then as in today's model, so EF can seed them;
+            // doctor profiles (StaffMemberId since P1 PR 4) and slots don't, so they are inserted with SQL
             var doctorId = 0;
             var scheduleId = 0;
             await factory.SeedAsync(async db =>
             {
-                (_, doctorId) = await SeedDataHelper.SeedDoctorAsync(db, "tz");
+                var specialty = db.Specialties.Add(new Specialty { Name = "General Practice", IsActive = true }).Entity;
+                var user = db.Users.Add(new ApplicationUser
+                {
+                    Id = Guid.NewGuid(), UserName = "doctortz@test.com", Email = "doctortz@test.com", FirstName = "Doctor", LastName = "tz",
+                    SecurityStamp = Guid.NewGuid().ToString(), IsActive = true,
+                }).Entity;
+                await db.SaveChangesAsync();
+                doctorId = (await db.Database.SqlQuery<int>($"""
+                    INSERT INTO Doctors (OrganizationId, UserId, SpecialtyId, YearsOfExperience, ConsultationFee, AverageRating, TotalReviews, IsApprovedByAdmin)
+                    OUTPUT INSERTED.Id AS Value
+                    VALUES (1, {user.Id}, {specialty.Id}, 5, 200, 0, 0, 1)
+                    """).ToListAsync()).Single();
                 (scheduleId, _) = await SeedDataHelper.SeedScheduleWithSlotsAsync(db, doctorId, DayOfWeek.Monday);
             });
 

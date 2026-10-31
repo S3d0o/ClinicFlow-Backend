@@ -1,4 +1,6 @@
 ﻿using Domain.Entities.IdentityModule;
+using Domain.Entities.Staff;
+using Domain.Enums;
 using Microsoft.AspNetCore.Identity;
 using Shared.DTOs.Auth;
 using Shared.Enums;
@@ -10,6 +12,8 @@ namespace Services.Implementations
         ILogger<AuthService> logger,
         IUnitOfWork uow,
         ITokenService tokenService,
+        IUserAccessService userAccess,
+        ITenantContext tenant,
         IClock clock) : IAuthService
     {
         public async Task<Result<RegisterResponse>> RegisterDoctorAsync(RegisterDoctorRequest request, CancellationToken ct)
@@ -28,17 +32,31 @@ namespace Services.Implementations
             }
 
             var user = NewUser(request.FirstName, request.LastName, request.Email, request.PhoneNumber, request.Gender, request.DateOfBirth);
-            return await RegisterAsync(user, request.Password, Roles.Doctor, token => uow.Doctors.AddAsync(new DoctorProfile
+            return await RegisterAsync(user, request.Password, Roles.Doctor, async token =>
             {
-                UserId = user.Id,
-                SpecialtyId = request.SpecialtyId,
-                Bio = request.Bio,
-                YearsOfExperience = request.YearsOfExperience,
-                ConsultationFee = request.ConsultationFee,
-                ClinicAddress = request.ClinicAddress,
-                ClinicCity = request.ClinicCity,
-                IsApprovedByAdmin = false, // can log in and set up schedules, but stays hidden from patients until an admin approves (REVIEW.md M1)
-            }, token), ct);
+                // A doctor is a staff member at the default branch (P1 PR 4); the token's Doctor role comes from it
+                var staff = new StaffMember
+                {
+                    UserId = user.Id,
+                    Status = StaffStatus.Active,
+                    Assignments = [new StaffRoleAssignment { Role = Roles.Doctor, BranchId = tenant.DefaultBranchId }],
+                };
+                uow.Staff.Add(staff);
+                await uow.SaveChangesAsync(token);
+
+                await uow.Doctors.AddAsync(new DoctorProfile
+                {
+                    UserId = user.Id,
+                    StaffMemberId = staff.Id,
+                    SpecialtyId = request.SpecialtyId,
+                    Bio = request.Bio,
+                    YearsOfExperience = request.YearsOfExperience,
+                    ConsultationFee = request.ConsultationFee,
+                    ClinicAddress = request.ClinicAddress,
+                    ClinicCity = request.ClinicCity,
+                    IsApprovedByAdmin = false, // can log in and set up schedules, but stays hidden from patients until an admin approves (REVIEW.md M1)
+                }, token);
+            }, ct);
         }
 
         public async Task<Result<RegisterResponse>> RegisterPatientAsync(RegisterPatientRequest request, CancellationToken ct)
@@ -191,9 +209,9 @@ namespace Services.Implementations
                 return AuthErrors.EmailNotConfirmed;
             }
 
-            var roles = await userManager.GetRolesAsync(user);
+            var access = await userAccess.GetAsync(user, ct);
 
-            var tokens = await tokenService.GenerateTokensAsync(user, roles, ipAddress, ct);
+            var tokens = await tokenService.GenerateTokensAsync(user, access, ipAddress, ct);
 
             return new LoginResponse
                 (
@@ -202,7 +220,7 @@ namespace Services.Implementations
                  tokens.AccessTokenExpiresAt,
                      user.Email!,
                      $"{user.FirstName} {user.LastName}",
-                    roles.FirstOrDefault() ?? string.Empty
+                    access.PrimaryRole
                 );
         }
 

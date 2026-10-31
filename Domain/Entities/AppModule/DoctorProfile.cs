@@ -8,6 +8,7 @@ namespace Domain.Entities.AppModule
 
         public Guid UserId { get; set; } = Guid.Empty;
         public int SpecialtyId { get; set; }
+        public int? StaffMemberId { get; set; } // the doctor as a staff member (P1 PR 4); null only before the backfill
 
         public string? Bio { get; set; }             // max 500 chars — enforced in EF config
         public int YearsOfExperience { get; set; }

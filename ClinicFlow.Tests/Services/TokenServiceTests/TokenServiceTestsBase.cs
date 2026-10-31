@@ -23,6 +23,8 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
         protected readonly IAccessTokenFactory _accessTokenFactory;
         protected readonly ILogger<TokenService> _logger;
         protected readonly IClock _clock;
+        protected readonly IUserAccessService _userAccess = Substitute.For<IUserAccessService>();
+        protected static readonly UserAccess PatientAccess = new(["Patient"], 1, null, false, []);
         protected static readonly DateTime UtcNow = new(2026, 10, 23, 12, 0, 0, DateTimeKind.Utc);
         protected readonly JwtSettings _jwt = new()
         {
@@ -42,13 +44,13 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
             _logger = Substitute.For<ILogger<TokenService>>();
 
             _accessTokenFactory
-                .Create(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IEnumerable<string>>())
+                .Create(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<UserAccess>())
                 .Returns(new AccessToken("access-token", AccessTokenExpiresAt));
 
             _clock = Substitute.For<IClock>();
             _clock.UtcNow.Returns(UtcNow);
 
-            _sut = new TokenService(Options.Create(_jwt), _userManager, _uow, _accessTokenFactory, _clock, _logger);
+            _sut = new TokenService(Options.Create(_jwt), _userManager, _uow, _accessTokenFactory, _userAccess, _clock, _logger);
         }
 
         // Refresh tokens are stored as the Base64 SHA-256 of the raw value

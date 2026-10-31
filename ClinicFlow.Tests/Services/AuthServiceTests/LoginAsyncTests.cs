@@ -1,5 +1,6 @@
 using Domain.Entities.IdentityModule;
 using NSubstitute;
+using Services.Abstraction.Contracts;
 using Shared.DTOs.Auth;
 using Shared.Errors;
 
@@ -30,8 +31,8 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             _userManager.FindByEmailAsync(_email).Returns(_user);
             _userManager.IsLockedOutAsync(_user).Returns(false);
             _userManager.CheckPasswordAsync(_user, _password).Returns(true);
-            _userManager.GetRolesAsync(_user).Returns(new List<string> { "Patient" });
-            _tokenService.GenerateTokensAsync(_user, Arg.Any<IList<string>>(), _ip, _ct).Returns(_tokens);
+            _userAccess.GetAsync(_user, _ct).Returns(Access("Patient"));
+            _tokenService.GenerateTokensAsync(_user, Arg.Any<UserAccess>(), _ip, _ct).Returns(_tokens);
         }
 
         [Fact]
@@ -42,7 +43,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             Assert.True(result.IsSuccess);
             Assert.Equal(new LoginResponse("access", "refresh", _tokens.AccessTokenExpiresAt, _email, "Mona Adel", "Patient"), result.Value);
             await _tokenService.Received(1).GenerateTokensAsync(
-                _user, Arg.Is<IList<string>>(r => r != null && r.SequenceEqual(new[] { "Patient" })), _ip, _ct);
+                _user, Arg.Is<UserAccess>(a => a!.Roles.SequenceEqual(new[] { "Patient" })), _ip, _ct);
             await _userManager.Received(1).ResetAccessFailedCountAsync(_user);
         }
 
@@ -56,7 +57,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             Assert.True(result.IsFailure);
             Assert.Contains(AuthErrors.InvalidCredentials, result.Errors);
             await _tokenService.DidNotReceive().GenerateTokensAsync(
-                Arg.Any<ApplicationUser>(), Arg.Any<IList<string>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+                Arg.Any<ApplicationUser>(), Arg.Any<UserAccess>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
@@ -110,7 +111,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             Assert.True(result.IsFailure);
             Assert.Contains(AuthErrors.AccountNotActive, result.Errors);
             await _tokenService.DidNotReceive().GenerateTokensAsync(
-                Arg.Any<ApplicationUser>(), Arg.Any<IList<string>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+                Arg.Any<ApplicationUser>(), Arg.Any<UserAccess>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
@@ -123,18 +124,31 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             Assert.True(result.IsFailure);
             Assert.Contains(AuthErrors.EmailNotConfirmed, result.Errors);
             await _tokenService.DidNotReceive().GenerateTokensAsync(
-                Arg.Any<ApplicationUser>(), Arg.Any<IList<string>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+                Arg.Any<ApplicationUser>(), Arg.Any<UserAccess>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
         }
 
         [Fact]
         public async Task LoginAsync_WhenUserHasNoRole_ReturnsEmptyRole()
         {
-            _userManager.GetRolesAsync(_user).Returns(new List<string>());
+            _userAccess.GetAsync(_user, _ct).Returns(Access());
 
             var result = await _sut.LoginAsync(_request, _ip, _ct);
 
             Assert.True(result.IsSuccess);
             Assert.Equal(string.Empty, result.Value.Role);
         }
+
+        [Fact]
+        public async Task LoginAsync_ForAStaffMemberWithSeveralRoles_ReturnsTheFirstInRoleOrder()
+        {
+            // REVIEW.md NL10: the inherited response names one role, the same whatever order the assignments come in
+            _userAccess.GetAsync(_user, _ct).Returns(Access("Doctor", "Admin"));
+
+            var result = await _sut.LoginAsync(_request, _ip, _ct);
+
+            Assert.Equal("Admin", result.Value.Role);
+        }
+
+        private static UserAccess Access(params string[] roles) => new(roles, 1, null, false, []);
     }
 }

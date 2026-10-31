@@ -5832,6 +5832,77 @@
         }
       }
     },
+    "/api/v2/me": {
+      "get": {
+        "tags": [
+          "Me"
+        ],
+        "summary": "Get the signed-in user",
+        "description": "Who the caller is: name, phone, email, their roles with where each applies, and every permission they hold with its scope (and branches), for building menus. Roles and permissions are the access token's, so a role change shows after the next refresh. Any signed-in user.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v2/organization": {
       "get": {
         "tags": [
@@ -7411,6 +7482,79 @@
           }
         }
       },
+      "MeResponse": {
+        "required": [
+          "id",
+          "fullName",
+          "phone",
+          "email",
+          "preferredLanguage",
+          "notificationChannel",
+          "roles",
+          "permissions",
+          "phoneVerified",
+          "emailConfirmed",
+          "hasDoctorApplication",
+          "mfaEnabled",
+          "mfaEnrolled",
+          "isMedicalDirector"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "email": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "preferredLanguage": {
+            "type": "string"
+          },
+          "notificationChannel": {
+            "type": "string"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleAssignmentResponse"
+            }
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionGrantResponse"
+            }
+          },
+          "phoneVerified": {
+            "type": "boolean"
+          },
+          "emailConfirmed": {
+            "type": "boolean"
+          },
+          "hasDoctorApplication": {
+            "type": "boolean"
+          },
+          "mfaEnabled": {
+            "type": "boolean"
+          },
+          "mfaEnrolled": {
+            "type": "boolean"
+          },
+          "isMedicalDirector": {
+            "type": "boolean"
+          }
+        }
+      },
       "ModuleOverrideResponse": {
         "required": [
           "module",
@@ -7903,6 +8047,39 @@
           }
         }
       },
+      "PermissionGrantResponse": {
+        "required": [
+          "permission",
+          "scope",
+          "branchIds"
+        ],
+        "type": "object",
+        "properties": {
+          "permission": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PermissionScope"
+          },
+          "branchIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        }
+      },
+      "PermissionScope": {
+        "type": "integer"
+      },
       "PlanLimitsResponse": {
         "required": [
           "branches",
@@ -8248,6 +8425,36 @@
           },
           "patientName": {
             "type": "string"
+          }
+        }
+      },
+      "RoleAssignmentResponse": {
+        "required": [
+          "role",
+          "scope",
+          "branchIds"
+        ],
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PermissionScope"
+          },
+          "branchIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
           }
         }
       },
@@ -8834,6 +9041,9 @@
     },
     {
       "name": "Holidays"
+    },
+    {
+      "name": "Me"
     },
     {
       "name": "Organization"

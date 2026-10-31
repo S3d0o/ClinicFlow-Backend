@@ -35,7 +35,7 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
             _uow.RefreshTokens.GetRefreshTokenByHashAsync(Hash(RawToken), _ct).Returns(_token);
             _userManager.FindByIdAsync(_user.Id.ToString()).Returns(_user);
             _userManager.GetSecurityStampAsync(_user).Returns("stamp-1");
-            _userManager.GetRolesAsync(_user).Returns(["Patient"]);
+            _userAccess.GetAsync(_user, _ct).Returns(PatientAccess);
             _uow.TrySaveChangesAsync(_ct).Returns(true);
         }
 

@@ -22,12 +22,12 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
         [Fact]
         public async Task GenerateTokensAsync_WhenCalled_IssuesTheAccessTokenFromTheFactory()
         {
-            var tokens = await _sut.GenerateTokensAsync(_user, ["Patient"], Ip, _ct);
+            var tokens = await _sut.GenerateTokensAsync(_user, PatientAccess, Ip, _ct);
 
             Assert.Equal("access-token", tokens.AccessToken);
             Assert.Equal(AccessTokenExpiresAt, tokens.AccessTokenExpiresAt);
             _accessTokenFactory.Received(1).Create(
-                _user.Id, "mona@test.com", "Mona Hassan", Arg.Is<IEnumerable<string>>(r => r!.SequenceEqual(new[] { "Patient" })));
+                _user.Id, "mona@test.com", "Mona Hassan", PatientAccess);
         }
 
         [Fact]
@@ -36,7 +36,7 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
             RefreshToken? stored = null;
             await _uow.RefreshTokens.AddAsync(Arg.Do<RefreshToken>(t => stored = t), Arg.Any<CancellationToken>());
 
-            var tokens = await _sut.GenerateTokensAsync(_user, ["Patient"], Ip, _ct);
+            var tokens = await _sut.GenerateTokensAsync(_user, PatientAccess, Ip, _ct);
 
             Assert.NotNull(stored);
             Assert.Equal(Hash(tokens.RefreshToken), stored!.TokenHash);
@@ -52,8 +52,8 @@ namespace ClinicFlow.Tests.Services.TokenServiceTests
         [Fact]
         public async Task GenerateTokensAsync_WhenCalledTwice_IssuesDifferentRefreshTokens()
         {
-            var first = await _sut.GenerateTokensAsync(_user, [], Ip, _ct);
-            var second = await _sut.GenerateTokensAsync(_user, [], Ip, _ct);
+            var first = await _sut.GenerateTokensAsync(_user, PatientAccess, Ip, _ct);
+            var second = await _sut.GenerateTokensAsync(_user, PatientAccess, Ip, _ct);
 
             Assert.NotEqual(first.RefreshToken, second.RefreshToken);
         }

@@ -31,5 +31,11 @@ namespace Presentation.Extensions
 
         public static string GetRole(this ClaimsPrincipal user)
             => user.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+
+        // For the inherited routes, which act as Admin, Doctor or Patient: the first of those the user holds, in that
+        // order, so a staff member with several roles gets the same answer whatever order the token lists them in
+        // (REVIEW.md NL10). Any other role is returned as is, and refused by the route
+        public static string GetInheritedRole(this ClaimsPrincipal user)
+            => new[] { Roles.Admin, Roles.Doctor, Roles.Patient }.FirstOrDefault(user.IsInRole) ?? user.GetRole();
     }
 }

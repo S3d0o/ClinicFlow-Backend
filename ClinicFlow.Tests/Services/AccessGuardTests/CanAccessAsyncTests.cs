@@ -28,14 +28,41 @@ namespace ClinicFlow.Tests.Services.AccessGuardTests
         }
 
         [Fact]
-        public async Task CanAccessAsync_BranchScope_AnyRecordUntilStaffHaveBranchAssignments()
+        public async Task CanAccessAsync_BranchScopeWithoutAnAssignment_ReachesAnyBranch()
         {
-            // P0: one branch and no staff assignments, so a Branch grant reaches every record (IAccessGuard)
+            // A token without role_scope claims keeps P0's reach (EffectiveAccess)
             SignInAs(Roles.Receptionist);
 
             Assert.True(await _sut.CanAccessAsync(Permissions.Appointments.CheckIn, new AccessTarget(OwnerUserId: Guid.NewGuid(), BranchId: 1), _ct));
         }
 
+
+        [Theory]
+        [InlineData(2, true)]
+        [InlineData(3, true)]
+        [InlineData(4, false)]
+        public async Task CanAccessAsync_BranchScope_OnlyTheAssignedBranches(int branchId, bool expected)
+        {
+            SignInAsStaff(assignments: At(Roles.Receptionist, 2, 3));
+
+            Assert.Equal(expected, await _sut.CanAccessAsync(Permissions.Appointments.CheckIn, new AccessTarget(BranchId: branchId), _ct));
+        }
+
+        [Fact]
+        public async Task CanAccessAsync_BranchScope_ARecordOfNoBranch_IsInReach()
+        {
+            SignInAsStaff(assignments: At(Roles.Manager, 2));
+
+            Assert.True(await _sut.CanAccessAsync(Permissions.Organization.BranchesManage, new AccessTarget(), _ct));
+        }
+
+        [Fact]
+        public async Task CanAccessAsync_OrganizationWideManager_ReachesEveryBranch()
+        {
+            SignInAsStaff(assignments: Everywhere(Roles.Manager));
+
+            Assert.True(await _sut.CanAccessAsync(Permissions.Organization.BranchesManage, new AccessTarget(BranchId: 9), _ct));
+        }
         [Fact]
         public async Task CanAccessAsync_WithoutThePermission_IsFalse()
         {

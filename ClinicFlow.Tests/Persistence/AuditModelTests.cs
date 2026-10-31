@@ -2,6 +2,7 @@ using Domain.Entities.Tenancy;
 using Domain.Entities.AppModule;
 using Domain.Entities.Auditing;
 using Domain.Entities.IdentityModule;
+using Domain.Entities.Staff;
 using Domain.Entities.Subscriptions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -47,6 +48,8 @@ namespace ClinicFlow.Tests.Persistence
                 [typeof(BranchWorkingHours)] = "BranchWorkingHours",                 // FR-ORG-03, P1 PR 2
                 [typeof(BranchHoliday)] = "Holiday",
                 [typeof(OrganizationSetting)] = "OrganizationSetting",               // FR-ORG-05, P1 PR 3
+                [typeof(StaffMember)] = "StaffMember",                               // ADR 0002, P1 PR 4
+                [typeof(StaffRoleAssignment)] = "StaffRoleAssignment",
             }, audited);
         }
 

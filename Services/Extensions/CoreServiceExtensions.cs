@@ -28,6 +28,8 @@ namespace Services.Extensions
             services.AddScoped<IOrganizationSettingsService>(sp => sp.GetRequiredService<OrganizationSettingsService>());
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<ITokenService, TokenService>();
+            services.AddScoped<IUserAccessService, UserAccessService>();
+            services.AddScoped<IMeService, MeService>();
             services.AddScoped<IDoctorService, DoctorService>();
             services.AddScoped<IPatientService, PatientService>();
             services.AddScoped<IAppointmentBookingService, AppointmentBookingService>();

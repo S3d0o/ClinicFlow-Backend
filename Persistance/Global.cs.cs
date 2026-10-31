@@ -2,6 +2,7 @@
 global using Microsoft.EntityFrameworkCore;
 global using Domain.Entities.AppModule;
 global using Domain.Entities.Tenancy;
+global using Domain.Entities.Staff;
 global using Microsoft.EntityFrameworkCore.Metadata.Builders;
 global using Domain.Interfaces.IRepositories;
 global using Persistence.AppData;

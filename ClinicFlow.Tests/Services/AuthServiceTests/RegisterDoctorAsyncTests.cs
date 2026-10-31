@@ -1,5 +1,7 @@
 using Domain.Entities.AppModule;
 using Domain.Entities.IdentityModule;
+using Domain.Entities.Staff;
+using Domain.Enums;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
@@ -73,10 +75,28 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             Assert.Equal("12 Tahrir St", profile.ClinicAddress);
             Assert.Equal("Cairo", profile.ClinicCity);
             Assert.False(profile.IsApprovedByAdmin);
-            await _uow.Received(1).SaveChangesAsync(_ct);
+            await _uow.Received(2).SaveChangesAsync(_ct); // the staff member (the profile needs its id), then the rest
             await _transaction.Received(1).CommitAsync(_ct);
         }
 
+
+        [Fact]
+        public async Task RegisterDoctorAsync_WhenValid_MakesTheDoctorAStaffMemberAtTheDefaultBranch()
+        {
+            // P1 PR 4: the token's Doctor role comes from this assignment
+            StaffMember? staff = null;
+            DoctorProfile? profile = null;
+            _uow.Staff.Add(Arg.Do<StaffMember>(s => { s.Id = 42; staff = s; }));
+            await _uow.Doctors.AddAsync(Arg.Do<DoctorProfile>(p => profile = p), Arg.Any<CancellationToken>());
+
+            await _sut.RegisterDoctorAsync(_request, _ct);
+
+            Assert.NotNull(staff);
+            Assert.Equal((_userId, StaffStatus.Active), (staff!.UserId, staff.Status));
+            var assignment = Assert.Single(staff.Assignments);
+            Assert.Equal(("Doctor", (int?)DefaultBranchId), (assignment.Role, assignment.BranchId));
+            Assert.Equal(42, profile!.StaffMemberId);
+        }
         [Fact]
         public async Task RegisterDoctorAsync_WhenValid_QueuesTheConfirmationEmailInTheTransaction()
         {
@@ -88,6 +108,7 @@ namespace ClinicFlow.Tests.Services.AuthServiceTests
             Assert.Equal(_email, result.Value.Email);
             Received.InOrder(() =>
             {
+                _uow.SaveChangesAsync(_ct); // the staff member
                 _uow.Outbox.Add(Arg.Is<EmailConfirmationRequested>(e => e!.UserId == _userId));
                 _uow.SaveChangesAsync(_ct);
                 _transaction.CommitAsync(_ct);

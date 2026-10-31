@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using NSubstitute;
 using Services.Abstraction.Contracts;
+using Shared.Authorization;
 using Shared.Settings;
 
 namespace ClinicFlow.Tests.Infrastructure.JwtAccessTokenFactoryTests
@@ -25,6 +26,8 @@ namespace ClinicFlow.Tests.Infrastructure.JwtAccessTokenFactoryTests
         };
         private readonly JwtAccessTokenFactory _sut;
 
+        private static readonly UserAccess Patient = new(["Patient"], OrganizationId: 1, StaffMemberId: null, IsMedicalDirector: false, Assignments: []);
+
         public CreateTests()
         {
             var clock = Substitute.For<IClock>();
@@ -36,7 +39,7 @@ namespace ClinicFlow.Tests.Infrastructure.JwtAccessTokenFactoryTests
         public void Create_WhenCalled_WritesTheClaimKeysListedInTheContract()
         {
             // docs/API_CONTRACT.md §2.1, "exact key in the payload"
-            var token = _sut.Create(UserId, "mona@test.com", "Mona Hassan", ["Patient"]);
+            var token = _sut.Create(UserId, "mona@test.com", "Mona Hassan", Patient);
 
             var payload = new JwtSecurityTokenHandler().ReadJwtToken(token.Value).Payload;
             Assert.Equal(UserId.ToString(), payload["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier"]);
@@ -51,7 +54,7 @@ namespace ClinicFlow.Tests.Infrastructure.JwtAccessTokenFactoryTests
         [Fact]
         public void Create_WhenCalled_ExpiresAfterTheConfiguredLifetime()
         {
-            var token = _sut.Create(UserId, "mona@test.com", "Mona Hassan", ["Patient"]);
+            var token = _sut.Create(UserId, "mona@test.com", "Mona Hassan", Patient);
 
             Assert.Equal(Now.AddMinutes(15), token.ExpiresAtUtc);
             Assert.Equal(Now.AddMinutes(15), new JwtSecurityTokenHandler().ReadJwtToken(token.Value).ValidTo);
@@ -60,7 +63,7 @@ namespace ClinicFlow.Tests.Infrastructure.JwtAccessTokenFactoryTests
         [Fact]
         public void Create_WhenValidatedLikeTheHost_ResolvesTheUserIdAndEveryRole()
         {
-            var token = _sut.Create(UserId, "mona@test.com", "Mona Hassan", ["Doctor", "Admin"]);
+            var token = _sut.Create(UserId, "mona@test.com", "Mona Hassan", new UserAccess(["Doctor", "Admin"], 1, null, false, []));
 
             // The host's TokenValidationParameters (InfraStructureServiceExtensions), minus the lifetime check
             var principal = new JwtSecurityTokenHandler().ValidateToken(token.Value, new TokenValidationParameters
@@ -75,10 +78,34 @@ namespace ClinicFlow.Tests.Infrastructure.JwtAccessTokenFactoryTests
             Assert.Equal(["Admin", "Doctor"], principal.FindAll(ClaimTypes.Role).Select(c => c.Value).Order());
         }
 
+
+        [Fact]
+        public void Create_ForAStaffMember_WritesTheOrganizationStaffMemberRoleScopesAndMedicalDirector()
+        {
+            var access = new UserAccess(["Manager", "Doctor"], OrganizationId: 1, StaffMemberId: 12, IsMedicalDirector: true,
+                Assignments: [new StaffAssignment("Manager", null), new StaffAssignment("Doctor", new HashSet<int> { 3, 1 })]);
+
+            var token = _sut.Create(UserId, "hala@test.com", "Hala Adel", access);
+
+            var claims = new JwtSecurityTokenHandler().ReadJwtToken(token.Value).Claims.ToList();
+            Assert.Equal("1", claims.Single(c => c.Type == ClinicClaims.Organization).Value);
+            Assert.Equal("12", claims.Single(c => c.Type == ClinicClaims.StaffMember).Value);
+            Assert.Equal(["Doctor=1,3", "Manager=*"], claims.Where(c => c.Type == ClinicClaims.RoleScope).Select(c => c.Value).Order());
+            Assert.Equal("true", claims.Single(c => c.Type == ClinicClaims.MedicalDirector).Value);
+        }
+
+        [Fact]
+        public void Create_ForAPatient_HasNoStaffClaims()
+        {
+            var claims = new JwtSecurityTokenHandler().ReadJwtToken(_sut.Create(UserId, "mona@test.com", "Mona Hassan", Patient).Value).Claims.ToList();
+
+            Assert.Equal("1", claims.Single(c => c.Type == ClinicClaims.Organization).Value);
+            Assert.DoesNotContain(claims, c => c.Type is ClinicClaims.StaffMember or ClinicClaims.RoleScope or ClinicClaims.MedicalDirector);
+        }
         [Fact]
         public void Create_WhenSignedWithAnotherKey_FailsValidation()
         {
-            var token = _sut.Create(UserId, "mona@test.com", "Mona Hassan", ["Patient"]);
+            var token = _sut.Create(UserId, "mona@test.com", "Mona Hassan", Patient);
 
             Assert.ThrowsAny<SecurityTokenException>(() => new JwtSecurityTokenHandler().ValidateToken(token.Value,
                 new TokenValidationParameters
