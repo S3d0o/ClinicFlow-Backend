@@ -7,6 +7,7 @@ using Domain.Events;
 using ClinicFlow.Domain.Enums;
 using Shared.Errors;
 using Domain.Errors;
+using Shared.DTOs.Organization;
 
 namespace ClinicFlow.Tests.Services.AppointmentCancellationServiceTests
 {
@@ -158,6 +159,19 @@ namespace ClinicFlow.Tests.Services.AppointmentCancellationServiceTests
             await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
         }
 
+
+        [Fact]
+        public async Task CancelByPatientAsync_WithTheOrganizationsLongerWindow_ReturnsCancellationWindowExpired()
+        {
+            // The clinic set a 24-hour window (FR-ORG-05); 5 hours before the start is too late
+            _settings.GetAsync(_ct).Returns(OrganizationSettingsResponse.Defaults with { CancellationWindowHours = 24 });
+            await SetupHappyPath(300);
+
+            var result = await _sut.CancelByPatientAsync(_patientUserId, _appointmentId, _request, _ct);
+
+            Assert.Contains(AppointmentErrors.CancellationWindowExpired, result.Errors);
+            await _uow.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
+        }
         [Fact]
         public async Task CancelByPatientAsync_ExactlyTwoHoursBeforeStart_Cancels()
         {

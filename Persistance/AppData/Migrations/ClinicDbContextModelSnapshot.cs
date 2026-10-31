@@ -1231,6 +1231,39 @@ namespace Persistence.AppData.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Domain.Entities.Tenancy.OrganizationSetting", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("OrganizationSettings", (string)null);
+
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "OrganizationSetting");
+                });
+
             modelBuilder.Entity("Domain.Entities.Tenancy.Room", b =>
                 {
                     b.Property<int>("Id")
@@ -1720,6 +1753,15 @@ namespace Persistence.AppData.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Domain.Entities.Tenancy.OrganizationSetting", b =>
+                {
                     b.HasOne("Domain.Entities.Tenancy.Organization", null)
                         .WithMany()
                         .HasForeignKey("OrganizationId")

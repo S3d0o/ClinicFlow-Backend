@@ -179,7 +179,7 @@ namespace ClinicFlow.IntegrationTests.Tests.Audit
             {
                 db.RecordAudit = true;
                 var appointment = await db.Appointments.Include(a => a.Slot).SingleAsync(a => a.Id == _appointmentId);
-                appointment.Cancel(CancelledBy.Admin, DateTime.UtcNow, null);
+                appointment.Cancel(CancelledBy.Admin, DateTime.UtcNow, null, TimeSpan.FromHours(2));
                 db.Entry(appointment).Property(a => a.SlotId).CurrentValue = int.MaxValue; // unknown slot: FK violation
                 await db.SaveChangesAsync();
             });

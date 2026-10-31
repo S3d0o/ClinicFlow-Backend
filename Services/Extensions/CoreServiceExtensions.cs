@@ -21,6 +21,11 @@ namespace Services.Extensions
             services.AddScoped<IBranchService, BranchService>();
             services.AddScoped<IBranchCalendarService, BranchCalendarService>();
             services.AddScoped<IOrganizationService, OrganizationService>();
+            // Settings (FR-ORG-05): one cache for the process; one service reads (cached) and changes them
+            services.AddSingleton<OrganizationSettingsCache>();
+            services.AddScoped<OrganizationSettingsService>();
+            services.AddScoped<IOrganizationSettings>(sp => sp.GetRequiredService<OrganizationSettingsService>());
+            services.AddScoped<IOrganizationSettingsService>(sp => sp.GetRequiredService<OrganizationSettingsService>());
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<ITokenService, TokenService>();
             services.AddScoped<IDoctorService, DoctorService>();

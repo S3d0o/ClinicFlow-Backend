@@ -7,7 +7,8 @@ namespace Services.Implementations
     public class AppointmentVisitService(
         IUnitOfWork uow,
         ILogger<AppointmentVisitService> logger,
-        IClock clock) : IAppointmentVisitService
+        IClock clock,
+        IOrganizationSettings settings) : IAppointmentVisitService
     {
         public async Task<Result> CompleteAppointmentAsync(Guid doctorUserId, int appointmentId, CancellationToken ct)
         {
@@ -84,7 +85,7 @@ namespace Services.Implementations
                 logger.LogWarning("User {UserId} ({Role}) attempted to mark appointment {AppointmentId} they do not own as a no-show", userId, role, appointmentId);
                 return AppointmentErrors.Forbidden;
             }
-            var marked = appointment.MarkNoShow(clock.UtcNow);
+            var marked = appointment.MarkNoShow(clock.UtcNow, (await settings.GetAsync(ct)).NoShowGrace);
             if (marked.IsFailure)
             {
                 logger.LogWarning("Appointment ID: {AppointmentId} ({Status}) cannot be marked as a no-show: {ErrorCode}", appointmentId, appointment.Status, marked.Errors[0].Code);
