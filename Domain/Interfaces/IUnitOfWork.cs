@@ -16,6 +16,8 @@ namespace Domain.Interfaces
         IAdminRepo Admins { get; }
         IBranchRepo Branches { get; }
         IRoomRepo Rooms { get; }
+        IWorkingHoursRepo WorkingHours { get; }
+        IHolidayRepo Holidays { get; }
         IOrganizationRepo Organizations { get; }
         IMessageDeliveryRepo MessageDeliveries { get; }
         ISubscriptionRepo Subscriptions { get; }

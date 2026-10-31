@@ -64,6 +64,17 @@ namespace Persistence.Repositories
                 .Where(s => s.DoctorScheduleId == scheduleId && !context.Appointments.Any(a => a.SlotId == s.Id))
                 .ExecuteDeleteAsync(ct);
 
+        public async Task<int> WithdrawFreeSlotsAsync(int? branchId, IReadOnlyCollection<DateOnly> dates, CancellationToken ct)
+        {
+            var free = context.AppointmentSlots
+                .Where(s => s.Status == SlotStatus.Available && dates.Contains(s.Date) && (branchId == null || s.BranchId == branchId));
+
+            // A cancelled appointment still points to its slot (the FK is NoAction), so that one is blocked, not deleted
+            var deleted = await free.Where(s => !context.Appointments.Any(a => a.SlotId == s.Id)).ExecuteDeleteAsync(ct);
+            var blocked = await free.ExecuteUpdateAsync(u => u.SetProperty(s => s.Status, SlotStatus.Blocked), ct);
+            return deleted + blocked;
+        }
+
         public async Task<bool> HasUpcomingBookingsAsync(int scheduleId, DateOnly today, CancellationToken ct)
             => await context.AppointmentSlots
                 .AnyAsync(s => s.DoctorScheduleId == scheduleId && s.Status == SlotStatus.Booked && s.Date >= today, ct);

@@ -44,6 +44,8 @@ namespace ClinicFlow.Tests.Persistence
                 [typeof(Organization)] = "Organization",                             // FR-ORG-01, P1 PR 1
                 [typeof(Branch)] = "Branch",
                 [typeof(Room)] = "Room",
+                [typeof(BranchWorkingHours)] = "BranchWorkingHours",                 // FR-ORG-03, P1 PR 2
+                [typeof(BranchHoliday)] = "Holiday",
             }, audited);
         }
 

@@ -1,4 +1,6 @@
 using Domain.Entities.AppModule;
+using Domain.Entities.Tenancy;
+using Domain.Time;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -31,6 +33,75 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
             SlotDurationMinutes = duration,
             IsActive = true
         };
+
+        private static BranchHoliday Holiday(DateOnly from, DateOnly to, bool yearly = false, int? branchId = null)
+            => new() { BranchId = branchId, From = from, To = to, RecursYearly = yearly };
+
+        // The window starts on Sunday 18 Oct 2026, so its Mondays are the 19th and the 26th
+        private static readonly DateOnly FirstMonday = new(2026, 10, 19);
+
+        [Fact]
+        public async Task GenerateUpcomingSlotsAsync_OnAHoliday_MakesNoSlots()
+        {
+            _uow.Doctors.GetActiveSchedulesAsync(_ct).Returns([Schedule(1, doctorId: 7, DayOfWeek.Monday, duration: 30)]);
+            _uow.Branches.GetCalendarsAsync(_ct).Returns(new Dictionary<int, BranchCalendar>
+            {
+                [0] = OpenAllWeek(0, Holiday(FirstMonday, FirstMonday, branchId: 0))
+            });
+
+            await _sut.GenerateUpcomingSlotsAsync(_ct);
+
+            Assert.Equal(2, _allSlots.Count);
+            Assert.All(_allSlots, s => Assert.Equal(FirstMonday.AddDays(7), s.Date));
+        }
+
+        [Fact]
+        public async Task GenerateUpcomingSlotsAsync_ARangeHolidayForEveryBranch_CoversEachDayOfIt()
+        {
+            _uow.Doctors.GetActiveSchedulesAsync(_ct).Returns(
+            [
+                Schedule(1, doctorId: 7, DayOfWeek.Monday, duration: 60),
+                Schedule(2, doctorId: 8, DayOfWeek.Tuesday, duration: 60)
+            ]);
+            _uow.Branches.GetCalendarsAsync(_ct).Returns(new Dictionary<int, BranchCalendar>
+            {
+                [0] = OpenAllWeek(0, Holiday(FirstMonday.AddDays(7), FirstMonday.AddDays(8)))
+            });
+
+            await _sut.GenerateUpcomingSlotsAsync(_ct);
+
+            Assert.Equal([FirstMonday, FirstMonday.AddDays(1)], _allSlots.Select(s => s.Date).Order());
+        }
+
+        [Fact]
+        public async Task GenerateUpcomingSlotsAsync_AYearlyHolidayFromAnEarlierYear_StillApplies()
+        {
+            _uow.Doctors.GetActiveSchedulesAsync(_ct).Returns([Schedule(1, doctorId: 7, DayOfWeek.Monday, duration: 60)]);
+            _uow.Branches.GetCalendarsAsync(_ct).Returns(new Dictionary<int, BranchCalendar>
+            {
+                [0] = OpenAllWeek(0, Holiday(new DateOnly(2019, 10, 26), new DateOnly(2019, 10, 26), yearly: true))
+            });
+
+            await _sut.GenerateUpcomingSlotsAsync(_ct);
+
+            Assert.Equal(FirstMonday, Assert.Single(_allSlots).Date);
+        }
+
+        [Fact]
+        public async Task GenerateUpcomingSlotsAsync_ASlotRunningPastClosingTime_IsNotMade()
+        {
+            // Schedule 09:00–10:00 in 30-minute slots; the branch closes at 09:45, so 09:30–10:00 doesn't fit
+            _uow.Doctors.GetActiveSchedulesAsync(_ct).Returns([Schedule(1, doctorId: 7, DayOfWeek.Monday, duration: 30)]);
+            _uow.Branches.GetCalendarsAsync(_ct).Returns(new Dictionary<int, BranchCalendar>
+            {
+                [0] = OpenDaily(0, (new TimeOnly(8, 0), new TimeOnly(9, 45)))
+            });
+
+            await _sut.GenerateUpcomingSlotsAsync(_ct);
+
+            Assert.Equal(2, _allSlots.Count);
+            Assert.All(_allSlots, s => Assert.Equal(new TimeOnly(9, 0), s.StartTime));
+        }
 
         [Fact]
         public async Task GenerateUpcomingSlotsAsync_WithActiveSchedules_FillsTheWindowForEachAndReturnsTheCount()

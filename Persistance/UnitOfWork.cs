@@ -24,6 +24,8 @@ namespace Persistence
         private IAdminRepo? _admins;
         private IBranchRepo? _branches;
         private IRoomRepo? _rooms;
+        private IWorkingHoursRepo? _workingHours;
+        private IHolidayRepo? _holidays;
         private IOrganizationRepo? _organizations;
         private IMessageDeliveryRepo? _messageDeliveries;
         private ISubscriptionRepo? _subscriptions;
@@ -54,6 +56,8 @@ namespace Persistence
         public IBranchRepo Branches => _branches ??= new BranchRepo(_context);
 
         public IRoomRepo Rooms => _rooms ??= new RoomRepo(_context);
+        public IWorkingHoursRepo WorkingHours => _workingHours ??= new WorkingHoursRepo(_context);
+        public IHolidayRepo Holidays => _holidays ??= new HolidayRepo(_context);
 
         public IOrganizationRepo Organizations => _organizations ??= new OrganizationRepo(_context);
 

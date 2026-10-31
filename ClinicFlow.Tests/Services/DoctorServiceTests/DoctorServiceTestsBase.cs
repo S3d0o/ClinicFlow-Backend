@@ -1,5 +1,6 @@
 using AutoMapper;
 using Domain.Entities.AppModule;
+using Domain.Entities.Tenancy;
 using Domain.Interfaces;
 using Domain.Time;
 using Microsoft.Extensions.DependencyInjection;
@@ -52,6 +53,12 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
             _uow.Branches.GetTimeZoneIdAsync(Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(BranchZone);
             _uow.Branches.GetTimeZoneIdsAsync(Arg.Any<CancellationToken>())
                 .Returns(new Dictionary<int, string> { [0] = BranchZone, [DefaultBranchId] = BranchZone });
+
+            // Every branch is open around the clock with no holidays unless a test says otherwise
+            _uow.Branches.GetCalendarAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+                .Returns(call => OpenAllWeek(call.ArgAt<int>(0)));
+            _uow.Branches.GetCalendarsAsync(Arg.Any<CancellationToken>())
+                .Returns(new Dictionary<int, BranchCalendar> { [0] = OpenAllWeek(0), [DefaultBranchId] = OpenAllWeek(DefaultBranchId) });
             _mapper = new ServiceCollection()
                 .AddLogging()
                 .AddAutoMapper(cfg => { }, typeof(ServiceAssemblyReference).Assembly)
@@ -70,5 +77,15 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
             _tenant.DefaultBranchId.Returns(DefaultBranchId);
             _sut = new DoctorService(_uow, _mapper, _logger, _clock, _tenant);
         }
+
+        protected static BranchCalendar OpenAllWeek(int branchId, params BranchHoliday[] holidays)
+            => new(branchId, BranchWorkingHours.AllWeek(branchId), holidays);
+
+        // A calendar for the branch with these periods on every weekday
+        protected static BranchCalendar OpenDaily(int branchId, params (TimeOnly From, TimeOnly To)[] periods)
+            => new(branchId,
+                Enum.GetValues<DayOfWeek>().SelectMany(day => periods.Select(p =>
+                    new BranchWorkingHours { BranchId = branchId, Weekday = day, From = p.From, To = p.To })),
+                []);
     }
 }

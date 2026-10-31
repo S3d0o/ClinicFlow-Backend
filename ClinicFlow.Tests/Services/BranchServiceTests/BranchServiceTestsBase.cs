@@ -42,6 +42,9 @@ namespace ClinicFlow.Tests.Services.BranchServiceTests
             _uow.RunsTransactionsWith<Result<BranchResponse>>(_transaction);
             _uow.RunsTransactionsWith<Result<RoomResponse>>(_transaction);
 
+            // No branch has hours yet unless a test says otherwise: a new branch opens around the clock
+            _uow.WorkingHours.GetUsualWeekAsync(Arg.Any<CancellationToken>()).Returns(new List<BranchWorkingHours>());
+
             // An organization-wide admin unless a test narrows it
             _accessGuard.ScopeOf(Arg.Any<string>()).Returns(PermissionScope.Organization);
             _accessGuard.CanAccessAsync(Arg.Any<string>(), Arg.Any<AccessTarget>(), Arg.Any<CancellationToken>()).Returns(true);

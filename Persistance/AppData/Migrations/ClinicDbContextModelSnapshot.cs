@@ -1077,6 +1077,89 @@ namespace Persistence.AppData.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Domain.Entities.Tenancy.BranchHoliday", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("BranchId")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("From")
+                        .HasColumnType("date");
+
+                    b.Property<string>("NameAr")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("RecursYearly")
+                        .HasColumnType("bit");
+
+                    b.Property<DateOnly>("To")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("BranchId", "From");
+
+                    b.ToTable("Holidays", (string)null);
+
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "Holiday");
+                });
+
+            modelBuilder.Entity("Domain.Entities.Tenancy.BranchWorkingHours", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("BranchId")
+                        .HasColumnType("int");
+
+                    b.Property<TimeOnly>("From")
+                        .HasColumnType("time");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<TimeOnly>("To")
+                        .HasColumnType("time");
+
+                    b.Property<int>("Weekday")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("BranchId", "Weekday", "From")
+                        .IsUnique();
+
+                    b.ToTable("BranchWorkingHours", (string)null);
+
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "BranchWorkingHours");
+                });
+
             modelBuilder.Entity("Domain.Entities.Tenancy.Organization", b =>
                 {
                     b.Property<int>("Id")
@@ -1608,6 +1691,35 @@ namespace Persistence.AppData.Migrations
 
             modelBuilder.Entity("Domain.Entities.Tenancy.Branch", b =>
                 {
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Domain.Entities.Tenancy.BranchHoliday", b =>
+                {
+                    b.HasOne("Domain.Entities.Tenancy.Branch", null)
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Domain.Entities.Tenancy.BranchWorkingHours", b =>
+                {
+                    b.HasOne("Domain.Entities.Tenancy.Branch", null)
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Domain.Entities.Tenancy.Organization", null)
                         .WithMany()
                         .HasForeignKey("OrganizationId")

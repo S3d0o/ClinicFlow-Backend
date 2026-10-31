@@ -24,10 +24,10 @@ namespace ClinicFlow.Tests.Persistence
              typeof(OutboxMessage), typeof(MessageDelivery), // an event belongs to the organization whose change raised it
              typeof(AuditEntry),
              typeof(OrganizationSubscription), typeof(OrganizationModuleOverride), // an organization's plan and add-ons (docs/v2/adr/0008)
-             typeof(Room)];
+             typeof(Room), typeof(BranchWorkingHours), typeof(BranchHoliday)]; // FR-ORG-03, P1 PR 2
 
         private static readonly Type[] ExpectedBranchOwned =
-            [typeof(DoctorSchedule), typeof(AppointmentSlot), typeof(Appointment), typeof(Room)];
+            [typeof(DoctorSchedule), typeof(AppointmentSlot), typeof(Appointment), typeof(Room), typeof(BranchWorkingHours)];
 
         public static TheoryData<string> EntityTypes => [.. Model.GetEntityTypes().Select(t => t.Name)];
 

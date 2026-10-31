@@ -60,6 +60,29 @@ namespace ClinicFlow.Tests.Services.DoctorServiceTests
         }
 
         [Fact]
+        public async Task UpdateScheduleAsync_OutsideTheBranchHours_ReturnsScheduleOutsideBranchHours()
+        {
+            _uow.Branches.GetCalendarAsync(Arg.Any<int>(), _ct).Returns(OpenDaily(0, (new TimeOnly(9, 0), new TimeOnly(17, 0))));
+
+            var result = await _sut.UpdateScheduleAsync(_scheduleId, _doctorUserId,
+                new UpdateScheduleRequest { EndTime = new TimeOnly(18, 0) }, _ct);
+
+            Assert.Equal(DoctorErrors.ScheduleOutsideBranchHours, Assert.Single(result.Errors));
+            await _uow.DidNotReceiveWithAnyArgs().ExecuteInTransactionAsync<int>(default!, default);
+        }
+
+        [Fact]
+        public async Task UpdateScheduleAsync_DeactivatingAScheduleOutsideTheBranchHours_IsAllowed()
+        {
+            // The hours moved after the schedule was made; the doctor can still switch it off
+            _uow.Branches.GetCalendarAsync(Arg.Any<int>(), _ct).Returns(OpenDaily(0, (new TimeOnly(12, 0), new TimeOnly(20, 0))));
+
+            var result = await _sut.UpdateScheduleAsync(_scheduleId, _doctorUserId, new UpdateScheduleRequest { IsActive = false }, _ct);
+
+            Assert.True(result.IsSuccess);
+        }
+
+        [Fact]
         public async Task UpdateScheduleAsync_WhenOnlyStartTimeSent_KeepsOtherFields()
         {
             var result = await _sut.UpdateScheduleAsync(_scheduleId, _doctorUserId,

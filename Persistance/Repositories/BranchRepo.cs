@@ -1,3 +1,5 @@
+using Domain.Time;
+
 namespace Persistence.Repositories
 {
     public class BranchRepo(ClinicDbContext context) : IBranchRepo
@@ -10,6 +12,21 @@ namespace Persistence.Repositories
 
         public async Task<IReadOnlyDictionary<int, string>> GetTimeZoneIdsAsync(CancellationToken ct)
             => await context.Branches.ToDictionaryAsync(b => b.Id, b => b.TimeZoneId, ct);
+
+        public async Task<BranchCalendar> GetCalendarAsync(int branchId, CancellationToken ct)
+        {
+            var hours = await context.BranchWorkingHours.AsNoTracking().Where(h => h.BranchId == branchId).ToListAsync(ct);
+            var holidays = await context.Holidays.AsNoTracking().Where(h => h.BranchId == null || h.BranchId == branchId).ToListAsync(ct);
+            return new BranchCalendar(branchId, hours, holidays);
+        }
+
+        public async Task<IReadOnlyDictionary<int, BranchCalendar>> GetCalendarsAsync(CancellationToken ct)
+        {
+            var branchIds = await context.Branches.Select(b => b.Id).ToListAsync(ct);
+            var hours = await context.BranchWorkingHours.AsNoTracking().ToListAsync(ct);
+            var holidays = await context.Holidays.AsNoTracking().ToListAsync(ct);
+            return branchIds.ToDictionary(id => id, id => new BranchCalendar(id, hours, holidays));
+        }
 
         public Task<Branch?> GetByIdAsync(int branchId, CancellationToken ct)
             => context.Branches.FirstOrDefaultAsync(b => b.Id == branchId, ct);

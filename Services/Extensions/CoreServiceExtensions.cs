@@ -19,6 +19,7 @@ namespace Services.Extensions
 
             services.AddScoped<ISpecialtyService, SpecialtyService>();
             services.AddScoped<IBranchService, BranchService>();
+            services.AddScoped<IBranchCalendarService, BranchCalendarService>();
             services.AddScoped<IOrganizationService, OrganizationService>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<ITokenService, TokenService>();
