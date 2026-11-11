@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Services.Implementations;
+using Services.Messaging;
 using Shared.Settings;
 
 namespace Services.Extensions
@@ -26,6 +27,11 @@ namespace Services.Extensions
             services.AddScoped<OrganizationSettingsService>();
             services.AddScoped<IOrganizationSettings>(sp => sp.GetRequiredService<OrganizationSettingsService>());
             services.AddScoped<IOrganizationSettingsService>(sp => sp.GetRequiredService<OrganizationSettingsService>());
+            // Messages from templates (FR-NTF-02): the outbox handlers send through the messenger; FrontendLinks reads
+            // FrontendSettings, configured by the host with the providers
+            services.AddScoped<IMessageTemplateService, MessageTemplateService>();
+            services.AddScoped<ITemplatedMessenger, TemplatedMessenger>();
+            services.AddSingleton<FrontendLinks>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<ITokenService, TokenService>();
             services.AddScoped<IUserAccessService, UserAccessService>();

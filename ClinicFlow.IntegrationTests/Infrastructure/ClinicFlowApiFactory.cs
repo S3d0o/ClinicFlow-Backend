@@ -122,6 +122,10 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
             await dbContext.Database.EnsureDeletedAsync();
             await dbContext.Database.MigrateAsync();
 
+            // The message templates, which startup creates from the catalog (migrations hold no texts)
+            dbContext.RecordAudit = false;
+            await DataSeeder.SeedMessageTemplatesAsync(dbContext, Services.GetRequiredService<IClock>().UtcNow);
+
             // Every test class starts with no recorded emails and sending switched back on
             Emails.Clear();
 

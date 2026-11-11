@@ -1,10 +1,9 @@
 using Domain.Entities.IdentityModule;
-using Domain.Entities.Messaging;
-using Domain.Events;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NSubstitute;
-using Services.EventHandlers;
+using Services.Messaging;
+using Shared.Settings;
 
 namespace ClinicFlow.Tests.Services.EventHandlerTests
 {
@@ -12,9 +11,14 @@ namespace ClinicFlow.Tests.Services.EventHandlerTests
     public abstract class AccountEmailHandlerTestsBase : EventHandlerTestsBase
     {
         protected const string RawToken = "token+with/=";
+        protected const string FrontendUrl = "https://app.clinicflow.test";
         protected readonly UserManager<ApplicationUser> _userManager = Substitute.For<UserManager<ApplicationUser>>(
             Substitute.For<IUserStore<ApplicationUser>>(), null!, null!, null!, null!, null!, null!, null!, null!);
-        protected readonly ApplicationUser _user = new() { Id = Guid.NewGuid(), Email = "new@test.com", IsActive = true };
+        protected readonly ApplicationUser _user = new()
+        {
+            Id = Guid.NewGuid(), FirstName = "Nada", LastName = "Samir", Email = "new@test.com", IsActive = true,
+        };
+        protected readonly FrontendLinks _links = new(Options.Create(new FrontendSettings { BaseUrl = FrontendUrl }));
 
         protected AccountEmailHandlerTestsBase()
         {

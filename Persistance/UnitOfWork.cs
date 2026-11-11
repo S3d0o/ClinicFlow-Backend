@@ -30,6 +30,7 @@ namespace Persistence
         private IStaffRepo? _staff;
         private IOrganizationRepo? _organizations;
         private IMessageDeliveryRepo? _messageDeliveries;
+        private IMessageTemplateRepo? _messageTemplates;
         private ISubscriptionRepo? _subscriptions;
         private IOutbox? _outbox;
 
@@ -66,6 +67,8 @@ namespace Persistence
         public IOrganizationRepo Organizations => _organizations ??= new OrganizationRepo(_context);
 
         public IMessageDeliveryRepo MessageDeliveries => _messageDeliveries ??= new MessageDeliveryRepo(_context);
+
+        public IMessageTemplateRepo MessageTemplates => _messageTemplates ??= new MessageTemplateRepo(_context);
 
         public ISubscriptionRepo Subscriptions => _subscriptions ??= new SubscriptionRepo(_context);
 

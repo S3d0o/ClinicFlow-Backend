@@ -4,6 +4,7 @@ using Domain.Entities.Tenancy;
 using Domain.Entities.IdentityModule;
 using Domain.Enums;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Persistence.AppData;
 using Shared.Enums;
 using ClinicFlow.Domain.Enums;
@@ -20,6 +21,17 @@ namespace ClinicFlow.IntegrationTests.Infrastructure
         public static DateTime SlotUtc(DateOnly date, TimeOnly time)
             => WallClock.ToUtc(TimeZoneInfo.FindSystemTimeZoneById("Africa/Cairo"), date, time)
                ?? throw new ArgumentException($"{date} {time} is skipped by daylight saving in Africa/Cairo");
+
+        // A user for a test that seeds a database migrated only up to an earlier migration. The Users table gains
+        // columns over time (PreferredLanguage and NotificationChannel in P1 PR 5), which EF's insert would name before
+        // they exist, so this names only the columns the table has had since the first migration
+        public static Task InsertUserWithSqlAsync(ClinicDbContext db, Guid id, string email, string firstName, string lastName)
+            => db.Database.ExecuteSqlAsync($"""
+                INSERT INTO Users (Id, FirstName, LastName, Gender, CreatedAt, IsActive, UserName, NormalizedUserName, Email, NormalizedEmail,
+                                   EmailConfirmed, SecurityStamp, PhoneNumberConfirmed, TwoFactorEnabled, LockoutEnabled, AccessFailedCount)
+                VALUES ({id}, {firstName}, {lastName}, 'Female', SYSUTCDATETIME(), 1, {email}, {email.ToUpperInvariant()}, {email}, {email.ToUpperInvariant()},
+                        0, {Guid.NewGuid().ToString()}, 0, 0, 0, 0)
+                """);
 
         public static async Task<(Guid patientUserId, Guid doctorUserId, int slotId, int appointmentId)>
             SeedBaseAppointmentAsync(ClinicDbContext db, AppointmentStatus status = AppointmentStatus.Confirmed, string suffix = "")

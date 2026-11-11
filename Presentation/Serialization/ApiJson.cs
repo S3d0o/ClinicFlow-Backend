@@ -1,3 +1,4 @@
+using Domain.Enums;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
@@ -12,6 +13,9 @@ namespace Presentation.Serialization
     {
         public static void Configure(JsonSerializerOptions options)
         {
+            // A language is its code, "ar" or "en" (contract §13.2), not the enum member's name. Before the general
+            // converter, because the first one that can convert a type wins
+            options.Converters.Add(new JsonStringEnumConverter<Language>(JsonNamingPolicy.CamelCase));
             // Enums are strings (contract §1); integers are still accepted on input
             options.Converters.Add(new JsonStringEnumConverter());
         }

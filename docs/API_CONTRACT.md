@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Contract version** | 4.0.0-p0 (pre-release, `v2` branch). V1's contract stays 3.1.2 on `master` ([docs/v2/adr/0007](v2/adr/0007-v2-separate-product-line.md)) |
-| **Last updated** | 2026-10-30 (P1 PR 0: camelCase validation keys on every route and the `/api/v2` conventions; then the first `/api/v2` routes, plans and modules, §5.10; clinic setup planned in §13.22–§13.31) |
+| **Last updated** | 2026-11-12 (P1 PR 5: message templates in Arabic and English, §5.15; emails are written in the recipient's language) |
 | **Applies to** | ClinicFlow backend (`ClinicFlow.Backend`) and the ClinicFlow frontend (React) |
 | **Canonical copy** | `ClinicFlow.Backend/docs/API_CONTRACT.md`. The frontend repo keeps an identical copy at `docs/API_CONTRACT.md` |
 | **Machine-readable companion** | [`openapi.json`](openapi.json) (OpenAPI 3.1, generated from the running API) |
@@ -251,6 +251,10 @@ Only codes the API can actually return are listed.
 | `Branch.LastActive` | 409 | Deactivating the only active branch (#56) |
 | `Room.NotFound` | 404 | Unknown room, or outside the caller's scope (#60) |
 | `Room.NameTaken` | 409 | Another room at the branch has either name (#59, #60) |
+| `Template.NotFound` | 404 | Unknown message template (#71–#73) |
+| `Template.NotEditable` | 409 | Editing or previewing a WhatsApp template: Meta approves its text (#71, #72) |
+| `Template.UnknownPlaceholder` | 400 | The text uses a `{{name}}` its message doesn't offer, or has `{{` or `}}` on its own. The ProblemDetails names it in `placeholder` (#71, #72) |
+| `Template.RequiredPlaceholderMissing` | 400 | The body drops a placeholder the message needs (a link, the date). Named in `placeholder` (#71, #72) |
 | `RateLimit.Exceeded` | 429 | Too many requests from one client to the rate-limited auth endpoints ([§2.7](#27-rate-limiting)). A `Retry-After` header gives the seconds to wait |
 
 Booking can also fail with a 500 whose `title` is `"An error occurred while booking the appointment."` (an unexpected database failure).
@@ -346,6 +350,11 @@ Auth column: **—** means anonymous; **Any** means any logged-in user.
 | 68 | PATCH | `/api/v2/organization/settings` | `org.settings.manage` | 200 `OrganizationSettings` |
 | | **Me (`/api/v2`, §5.14)** | | | |
 | 69 | GET | `/api/v2/me` | Signed in | 200 `Me` |
+| | **Message templates (`/api/v2`, §5.15)** | | | |
+| 70 | GET | `/api/v2/message-templates?key=&channel=&language=` | `notifications.templates` | 200 `MessageTemplate[]` |
+| 71 | PUT | `/api/v2/message-templates/{templateId}` | `notifications.templates` | 200 `MessageTemplate` |
+| 72 | POST | `/api/v2/message-templates/{templateId}/preview` | `notifications.templates` | 200 `TemplatePreview` |
+| 73 | POST | `/api/v2/message-templates/{templateId}/reset` | `notifications.templates` | 200 `MessageTemplate` |
 
 `/api/Specialty` is case-insensitive (`/api/specialty` also works).
 
@@ -874,8 +883,50 @@ Built by P1 PR 4 from §13.4; the type is §13.2's `Me`, with its `RoleAssignmen
 - **200:** `Me`. `roles` and `permissions` are the access token's (§2.1), so after a role change they show the new roles from the next refresh, as the API applies them.
   - `roles`: each role with `scope` `"Branch"` and its `branchIds`, or `"Organization"` (no `branchIds`) for an organization-wide role, a patient, or a role without an assignment.
   - `permissions`: every permission the roles grant (02 §6, with the organization-wide Manager's and the medical director's cells), with its widest `scope`; `branchIds` for a `"Branch"` grant, left out when it reaches every branch. A permission whose module isn't enabled is left out (§5.10).
-  - Until their PRs: `preferredLanguage` is `"ar"` and `notificationChannel` `"Email"` (P1 PR 5); `hasDoctorApplication`, `mfaEnabled` and `mfaEnrolled` are `false` (R2). `email` is left out when the account has none.
+  - `preferredLanguage` and `notificationChannel` are the account's (since P1 PR 5): `"ar"` and `"Both"` for every account until `PATCH /api/v2/me` exists (P1 PR 10). Emails are written in `preferredLanguage` (§5.15).
+  - Until R2: `hasDoctorApplication`, `mfaEnabled` and `mfaEnrolled` are `false`. `email` is left out when the account has none.
 - **Errors:** 401; 404 `Profile.NotFound` (the account was deleted after the token was issued)
+
+### 5.15 Message templates (`/api/v2`)
+
+Built by P1 PR 5 from §13.28 (FR-NTF-02, R10); the types are §13.23's `MessageTemplate` and `TemplatePreview`. §13.1 and §13.22 apply. The shapes stay provisional until the frontend's templates screen exists (§13.22).
+
+**Messages and channels.** A template is the text of one message (`key`) on one channel in one language. Today's messages:
+
+| `key` | Channels | Placeholders (required ones in bold) | Sent |
+|---|---|---|---|
+| `EmailConfirmation` | Email | `clinicName`, `name`, **`confirmUrl`** | After registration (#1, #2) |
+| `PasswordReset` | Email | `clinicName`, `name`, **`resetUrl`** | After #7 |
+| `AppointmentConfirmed` | Email, Sms, WhatsApp | `clinicName`, `patientName`, `doctorName`, **`date`**, **`time`**, `branchName` | After booking (#18) |
+| `AppointmentReminder` | Email, Sms, WhatsApp | as `AppointmentConfirmed` | About 24 hours before the visit |
+
+- Each message has one template per channel and language (`ar`, `en`): 16 in all. They are created with the system's default text when the API starts, and a message added by a later version appears the same way.
+- **Only email is sent today.** The `Sms` and `WhatsApp` templates can be read and (SMS) edited, and are used once the phone channels exist (P1 PR 9–10).
+- **Placeholders** are written `{{name}}`. A text may use only the ones its message offers; the body must keep the required ones. `clinicName` is the organization's brand name in the template's language (the other language's, then the legal name, when it has none). `date` and `time` are the branch's wall clock, written for the language: `Sunday, November 15, 2026` and `10:30 AM`, or `الأحد، 15 نوفمبر 2026` and `10:30 ص`. `doctorName` has no title: the text writes "Dr.".
+- **An email body is plain text.** A blank line starts a paragraph. `[label](url)` is a link, and a button when it is alone in its paragraph; only `http` and `https` addresses become links. The API adds the frame (the clinic's name, the subject as the heading, a footer) and sends the message as text and as HTML, right-to-left for Arabic. Values are HTML-encoded, so a name can't add markup. SMS and WhatsApp bodies are sent as written.
+- **Language.** An email is written from the template in the recipient's `preferredLanguage` (§5.14): Arabic unless they chose English.
+- **Who gets the appointment emails.** `AppointmentConfirmed` and `AppointmentReminder` go by email only to a confirmed address, and not to a user whose `notificationChannel` is `Phone`. The in-app notifications are unchanged.
+
+**70. `GET /api/v2/message-templates`** (`notifications.templates`)
+- **Query:** `key?`, `channel?: TemplateChannel`, `language?: Language`, each optional.
+- **200:** `MessageTemplate[]`, *full*, by `key`, then `channel` (`Email`, `Sms`, `WhatsApp`), then `language`. `subject` is left out except for `Email`. `editable` is `false` for `WhatsApp`. `isDefault` is `true` while the text is the system's.
+- **Errors:** 400 for a `channel` or `language` that isn't one (binding error, shape D)
+
+**71. `PUT /api/v2/message-templates/{templateId}`** (`notifications.templates`)
+- **Body:** `{ subject?: string, body: string }`. `subject` (at most 200) is the email's: left out, it stays as it is; it is ignored for `Sms`. `body` is required, at most 4000. Line ends are stored as `\n` and the text is trimmed.
+- **200:** `MessageTemplate`. Messages sent from then on use it. The change is audited (entity type `MessageTemplate`, the old and new text); saving the text the template already has changes nothing. Saving the system's own text again makes `isDefault` `true`.
+- **Errors:** 400 validation (`body` empty or too long, `subject` empty or too long: shape B), `Template.UnknownPlaceholder`, `Template.RequiredPlaceholderMissing` (shape A, with the name in `placeholder`); 404 `Template.NotFound`; 409 `Template.NotEditable` (a WhatsApp template)
+
+**72. `POST /api/v2/message-templates/{templateId}/preview`** (`notifications.templates`)
+- **Body:** as #71: the unsaved text. Nothing is saved.
+- **200:** `TemplatePreview`, with sample values in the template's language (a sample clinic, patient, doctor, date and links).
+  - `Email`: `subject`, `body` (the text part: a link reads `label: url`) and `html`, the whole message as it would be sent. Show `html` in a sandboxed frame.
+  - `Sms`: `body` and `smsSegments`, the number of SMS parts it is sent and billed as: Arabic and other non-Latin text takes 70 characters in one part and 67 in each part of a longer message; plain Latin text 160, or 153 a part.
+- **Errors:** as #71, so a preview fails exactly when saving would
+
+**73. `POST /api/v2/message-templates/{templateId}/reset`** (`notifications.templates`)
+- **200:** `MessageTemplate` with the system's default text and `isDefault: true`. Audited when it changes the text. A WhatsApp template can be reset too.
+- **Errors:** 404 `Template.NotFound`
 
 ## 6. Data types
 
@@ -953,7 +1004,7 @@ The backend builds links in emails from `Frontend:BaseUrl` (default `http://loca
 | `/#/confirm-email` | Registration email | `userId`, `token` | Read both parameters with `URLSearchParams` (this decodes them once) and `POST /api/auth/confirm-email` |
 | `/#/reset-password` | Forgot-password email | `userId`, `token` | Ask for the new password and `POST /api/auth/reset-password` with both parameters |
 
-If the frontend changes its routing (e.g. stops using hash routing), this table and `EmailService` must change together.
+If the frontend changes its routing (e.g. stops using hash routing), this table and `FrontendLinks` (`Services/Messaging`) must change together.
 
 ## 9. Pending contract changes
 
@@ -985,6 +1036,7 @@ These are known issues ([REVIEW.md](REVIEW.md)) and planned changes whose fix **
 | 4.0.0-p0 | 2026-10-31 | Additive (P1 PR 2): **working hours and holidays** (§5.12, #62–#66), built from §13.25 (clarifications in §13.12): a branch's week of opening periods, its holidays and those that close every branch, adding a holiday (with the count of booked visits on it) and removing one. New codes `Branch.InvalidHours` (400) and `Holiday.NotFound` (404) (§3.3). **Behaviour:** slots are made only inside the branch's opening hours and never on a holiday; adding a holiday withdraws the free slots already published on it. Every existing branch is open `00:00–23:59` every day until its hours are set, so nothing changes before then, and a new branch (#54) starts with the first branch's week. **Inherited routes:** creating or updating a schedule (#15, #16) that starts or ends while the branch is closed returns the new 400 (shape C) `Doctor.ScheduleOutsideBranchHours`. `openapi.json` regenerated |
 | 4.0.0-p0 | 2026-10-31 | Additive (P1 PR 3): **organization settings** (§5.13, #67–#68), built from §13.24 unchanged: every setting with its default, and partial changes, each changed key audited. **Behaviour:** the patient's cancellation window (#22) and the no-show grace (#24b) come from `cancellationWindowHours` and `noShowGraceMinutes`; with the defaults (2 hours, 15 minutes) nothing changes. The messages of `Appointment.CancellationWindowExpired` and `Appointment.NoShowTooEarly` no longer name a fixed time; the codes and status codes are unchanged. `openapi.json` regenerated |
 | 4.0.0-p0 | 2026-10-31 | Additive (P1 PR 4): **staff members and branch-scoped access** (ADR 0002). New `GET /api/v2/me` (§5.14, #69). **Tokens (§2.1):** new claims `org`, `staff`, `role_scope` and `med_dir`; a staff member's role claims come from their role assignments, and a user may hold several roles. Every existing Admin and Doctor user became a staff member (Admins organization-wide, Doctors at MAIN), and the inherited doctor registration (#2) creates one, so their role claims are unchanged. **Behaviour:** a Branch grant now covers only the branches its role is assigned to (`Access.OutOfScope` elsewhere, §5.11), an organization-wide Manager gets the organization-wide cells (`org.settings.manage`, `audit.view`, branch creation), and a medical director the clinical ones. With several roles, `LoginResponse.role` is the first in the order Admin, Manager, Receptionist, Nurse, Doctor, Accountant, Patient, and the inherited routes that act by role (#21, #22, #24b, #27) use the first of Admin, Doctor, Patient, instead of whichever role the token listed first (REVIEW.md NL10). `openapi.json` regenerated |
+| 4.0.0-p0 | 2026-11-12 | Additive (P1 PR 5): **message templates and preferred language** (§5.15, #70–#73; FR-NTF-02, FR-ACC-06), built from §13.28 with the clarifications logged in §13.12: the templates of every message in Arabic and English, editing with placeholder checks, a preview with sample values, and reset. New codes `Template.NotFound` (404), `Template.NotEditable` (409), `Template.UnknownPlaceholder` and `Template.RequiredPlaceholderMissing` (400, with the new error extension `placeholder`) (§3.3). **Behaviour: emails are written from the templates in the recipient's language, Arabic by default.** Every account's `preferredLanguage` is `ar` until it can be changed (P1 PR 10), so the confirmation, password-reset, booking and reminder emails now arrive in Arabic, right-to-left, with new wording and layout, carrying the organization's brand name instead of "ClinicFlow", and with a plain-text part beside the HTML. Their links (§8) are unchanged. The booking and reminder emails go only to a confirmed email address (every account that can sign in and book has one today). **`GET /api/v2/me` (#69):** `preferredLanguage` and `notificationChannel` are the account's stored values; `notificationChannel` is now `"Both"` (it was the fixed `"Email"`). `openapi.json` regenerated |
 
 ## 11. How to change this contract
 
@@ -1216,7 +1268,7 @@ These replace the matching rules of §1–§3 for `/api/v2` routes only. The inh
 | Lists | A bare JSON array, with the total of matching items in `X-Total-Count`, on **every** list marked *paged*. `pageNumber` (1-based) and `pageSize`: defaults 1 and 20, `pageSize` at most 100; out of range is 400. Lists marked *full* (small reference data) return every item and no header |
 | Errors with a code | **Always ProblemDetails with `title` = the code** (shape A), whatever the status, 400 included. Shape C (a code as a key of `errors`) is not used on `/api/v2` |
 | Validation errors | Shape B, with **camelCase** keys that are property paths (`phone`, `lines[0].unitPrice`) |
-| Error extensions | Some errors carry extra members at the top level of the ProblemDetails: `attemptsLeft` (number; a wrong one-time code) and `retryAt` (UTC instant; lockouts, cooldowns and limits). They are listed with each code in [§13.10](#1310-error-codes) |
+| Error extensions | Some errors carry extra members at the top level of the ProblemDetails: `attemptsLeft` (number; a wrong one-time code), `retryAt` (UTC instant; lockouts, cooldowns and limits) and `placeholder` (string; the template placeholder a `Template.*` 400 is about, §5.15). They are listed with each code in [§13.10](#1310-error-codes) |
 | 401 | **Only means the token is the problem**: no access token, or an invalid or expired one (shape E), and on `/auth/refresh-token` and `/auth/logout` a bad refresh token. A wrong password, code or challenge is **400**; a lockout, cooldown or limit is **429** with `retryAt`; an account that may not sign in is **403**. (The frontend's client refreshes and retries on every 401, so a 401 for a wrong password would send it into a refresh.) This differs from §2.2, where those are 401 |
 | Rate limits | The credential and code endpoints are rate-limited per client IP as in [§2.7](#27-rate-limiting); the one-time code endpoints also have the `Otp` limits (per number and per IP). Over a limit: 429 `RateLimit.Exceeded` with `retryAt` and `Retry-After` |
 | Tokens from links | Invitation, reminder, email-confirmation and password-reset tokens travel **in the request body**, never in an API path or query string, so they stay out of server and proxy logs. (The frontend's own hash routes, such as `/#/r/{token}`, never reach the server) |
@@ -1608,6 +1660,7 @@ Compared with the mock backend at `16a6dcb`. Screens keep working; most items ar
 | 2026-10-27 | Front desk and nurse station added (§13.13–§13.21), from the frontend's interfaces at `22b7f00`: patient search, duplicates and registration; the desk's day, check-in, no-show, booking on behalf and walk-ins; the queue board, waiting-room screen and `WatchBranch` on `/hubs/queue`; triage keyed by appointment (built in P2); checkout lines, desk payments, receipts and cash sessions. Replaces five 07 routes (§13.13). `Idempotency-Key` also on booking on behalf, walk-ins and desk payments |
 | 2026-10-30 | Clinic setup added (§13.22–§13.31) for R1 M1, from the frontend's interfaces at `6c42840`: the organization profile and settings, branches with working hours, holidays and rooms, staff with invitations, roles, deactivation and the doctor profile, the read-only roles matrix, services, the price list and specialties, message templates and the audit log. Templates, the price list and the audit log are provisional until their screens exist. `/me` and invitation acceptance stay in §13.3–§13.4. Deviations from 07 are listed in §13.22 |
 | 2026-10-31 | Built §13.25's working hours and holidays (P1 PR 2, §5.12) with three clarifications, none changing a shape: `Branch.InvalidHours` also covers a `weekday` outside 0–6 or sent twice; `POST /api/v2/holidays` also withdraws the free slots already published on the holiday, and refuses a yearly holiday of a year or longer (validation, key `to`); `affectedAppointments` counts `Pending` and `Confirmed` visits from each branch's today on |
+| 2026-11-12 | Built §13.28's message templates (P1 PR 5, §5.15); the section stays provisional until its screen exists. Changes: `TemplatePreview` gains `html` (the whole email, `Email` only), and `smsSegments` (`Sms` only) counts 70 characters for one part and 67 for each part of a longer Arabic message, 160 and 153 for plain Latin text; the two placeholder errors carry the name in a `placeholder` extension, and `Template.UnknownPlaceholder` also covers `{{` or `}}` on its own; `subject` left out of `PUT` keeps the email's subject, and is ignored for `Sms`; a preview of a WhatsApp template is 409 `Template.NotEditable`, as `PUT` is; an email body is plain text with paragraphs and `[label](url)` links. `Me.notificationChannel` is `Both` for existing accounts |
 
 ### 13.13 Front desk and nurse station: conventions
 
@@ -1940,14 +1993,19 @@ export interface MessageTemplate {
   key: string;                            // the message, e.g. "AppointmentConfirmed", "StaffInvitation"
   channel: TemplateChannel; language: Language;
   subject?: string;                       // Email only
-  body: string;                           // placeholders as {{name}}
+  body: string;                           // placeholders as {{name}}; an email body is plain text with [label](url) links (§5.15)
   placeholders: string[];                 // the ones this key offers
   requiredPlaceholders: string[];         // the ones the body must keep (a link, a code)
   editable: boolean;                      // false for WhatsApp: Meta approves those texts
   isDefault: boolean;                     // never edited, or reset
   updatedAt: Instant;
 }
-export interface TemplatePreview { subject?: string; body: string; smsSegments?: number }   // segments: 70 UCS-2 characters each
+export interface TemplatePreview {
+  subject?: string;                       // Email only
+  body: string;                           // the text with sample values
+  html?: string;                          // Email only: the whole message as sent; show it in a sandboxed frame
+  smsSegments?: number;                   // Sms only: parts it is billed as (Arabic: 70 characters, then 67 a part)
+}
 
 // ---- audit (FR-AUD-03); provisional ----
 export type AuditAction = "Create" | "Update" | "Delete" | "Read" | "Export";
@@ -2028,12 +2086,12 @@ The price a visit costs is resolved doctor at the branch, then doctor, then bran
 
 | Method and path | Permission | Body or query | Success | Errors | Phase |
 |---|---|---|---|---|---|
-| `GET /api/v2/message-templates` | `notifications.templates` | `key?`, `channel?`, `language?` | 200 `MessageTemplate[]`, *full*, by key, channel and language | — | P1 PR 5 |
-| `PUT /api/v2/message-templates/{templateId}` | `notifications.templates` | `{ subject?, body }` | 200 `MessageTemplate`; messages sent from then on use it | 400 validation, `Template.UnknownPlaceholder` (a `{{name}}` the key doesn't offer), `Template.RequiredPlaceholderMissing`; 404 `Template.NotFound`; 409 `Template.NotEditable` (WhatsApp) | P1 PR 5 |
-| `POST /api/v2/message-templates/{templateId}/preview` | `notifications.templates` | `{ subject?, body }`: the unsaved text | 200 `TemplatePreview` with sample values; saves nothing | as `PUT` | P1 PR 5 |
-| `POST /api/v2/message-templates/{templateId}/reset` | `notifications.templates` | — | 200 `MessageTemplate`, the default text again | 404 `Template.NotFound` | P1 PR 5 |
+| `GET /api/v2/message-templates` | `notifications.templates` | `key?`, `channel?`, `language?` | 200 `MessageTemplate[]`, *full*, by key, channel and language | 400 (an unknown `channel` or `language`) | **Built** (§5.15) |
+| `PUT /api/v2/message-templates/{templateId}` | `notifications.templates` | `{ subject?, body }`: `subject` left out keeps the email's | 200 `MessageTemplate`; messages sent from then on use it | 400 validation, `Template.UnknownPlaceholder` (a `{{name}}` the key doesn't offer), `Template.RequiredPlaceholderMissing`; 404 `Template.NotFound`; 409 `Template.NotEditable` (WhatsApp) | **Built** (§5.15) |
+| `POST /api/v2/message-templates/{templateId}/preview` | `notifications.templates` | `{ subject?, body }`: the unsaved text | 200 `TemplatePreview` with sample values; saves nothing | as `PUT` | **Built** (§5.15) |
+| `POST /api/v2/message-templates/{templateId}/reset` | `notifications.templates` | — | 200 `MessageTemplate`, the default text again | 404 `Template.NotFound` | **Built** (§5.15) |
 
-Each message is seeded in Arabic and English for each channel; Arabic emails are sent `dir="rtl"`. Integrations (the WhatsApp and SMS provider settings) aren't edited through the API in R1: they are deployment configuration (P1 PR 9).
+Each message has a template in Arabic and English for each channel it is sent by, created with the default text when the API starts; Arabic emails are sent `dir="rtl"`. The messages, their placeholders and the email body format are in §5.15. Integrations (the WhatsApp and SMS provider settings) aren't edited through the API in R1: they are deployment configuration (P1 PR 9).
 
 ### 13.29 Audit log (provisional)
 
@@ -2069,8 +2127,8 @@ In addition to [§13.10](#1310-error-codes) and [§13.20](#1320-front-desk-and-n
 | `PriceListItem.AlreadyEffective` | 409 | Editing a price whose `validFrom` has passed |
 | `Template.NotFound` | 404 | Unknown template |
 | `Template.NotEditable` | 409 | A WhatsApp template (Meta approves its text) |
-| `Template.UnknownPlaceholder` | 400 | A placeholder the message doesn't offer |
-| `Template.RequiredPlaceholderMissing` | 400 | The body drops a placeholder the message needs (a link or a code) |
+| `Template.UnknownPlaceholder` | 400 | A placeholder the message doesn't offer, or `{{` or `}}` on its own. Extension `placeholder`: its name |
+| `Template.RequiredPlaceholderMissing` | 400 | The body drops a placeholder the message needs (a link or a code). Extension `placeholder`: its name |
 | `Audit.ExportTooLarge` | 400 | An export of more than 50,000 rows |
 
 `Access.OutOfScope`, `Specialty.NotFound`, `Doctor.NotFound`, `Invitation.NotFound` and `Auth.EmailAlreadyExists` keep the meaning they have elsewhere.

@@ -13,10 +13,6 @@ namespace Services.Implementations
         IEntitlements entitlements,
         ILogger<MeService> logger) : IMeService
     {
-        // Until P1 PR 5 stores the user's choices (FR-ACC-06): Arabic, and messages by email as today
-        private const string DefaultLanguage = "ar";
-        private const string DefaultChannel = "Email";
-
         public async Task<Result<MeResponse>> GetAsync(CancellationToken ct)
         {
             var user = await userManager.FindByIdAsync(currentUser.UserId.ToString());
@@ -40,8 +36,8 @@ namespace Services.Implementations
                 $"{user.FirstName} {user.LastName}",
                 user.PhoneNumber ?? "",
                 user.Email,
-                DefaultLanguage,
-                DefaultChannel,
+                user.PreferredLanguage,
+                user.NotificationChannel,
                 RoleAssignments(),
                 permissions,
                 PhoneVerified: user.PhoneNumberConfirmed,

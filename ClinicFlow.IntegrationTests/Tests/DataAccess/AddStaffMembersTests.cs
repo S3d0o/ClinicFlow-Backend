@@ -40,19 +40,15 @@ namespace ClinicFlow.IntegrationTests.Tests.DataAccess
         [Fact]
         public async Task Migrate_AdminAndDoctorUsers_BecomeStaffMembers()
         {
-            // Users, roles and specialties have the same columns before and after; doctor profiles don't, so SQL
+            // Roles and specialties have the same columns before and after; users (the language and channel of P1 PR 5)
+            // and doctor profiles don't, so SQL
             await factory.SeedAsync(async db =>
             {
                 await SeedDataHelper.SeedRolesAsync(db);
                 var specialty = db.Specialties.Add(new Specialty { Name = "Cardiology", IsActive = true }).Entity;
-                foreach (var (id, name) in new[] { (_adminId, "admin"), (_doctorId, "doctor"), (_patientId, "patient"), (_adminDoctorId, "both") })
-                    db.Users.Add(new ApplicationUser
-                    {
-                        Id = id, UserName = $"{name}@test.com", NormalizedUserName = $"{name}@TEST.COM".ToUpperInvariant(),
-                        Email = $"{name}@test.com", FirstName = name, LastName = "Test", Gender = Gender.Female, IsActive = true,
-                        SecurityStamp = Guid.NewGuid().ToString(),
-                    });
                 await db.SaveChangesAsync();
+                foreach (var (id, name) in new[] { (_adminId, "admin"), (_doctorId, "doctor"), (_patientId, "patient"), (_adminDoctorId, "both") })
+                    await SeedDataHelper.InsertUserWithSqlAsync(db, id, $"{name}@test.com", name, "Test");
 
                 var roles = await db.Roles.ToDictionaryAsync(r => r.Name!, r => r.Id);
                 db.UserRoles.AddRange(

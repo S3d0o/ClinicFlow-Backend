@@ -22,6 +22,7 @@ namespace Domain.Interfaces
         IStaffRepo Staff { get; }
         IOrganizationRepo Organizations { get; }
         IMessageDeliveryRepo MessageDeliveries { get; }
+        IMessageTemplateRepo MessageTemplates { get; }
         ISubscriptionRepo Subscriptions { get; }
 
         // Events no entity raises; entity events are added to the outbox when the entity is saved (docs/v2/06 §5)

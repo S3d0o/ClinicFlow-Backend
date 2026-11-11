@@ -122,9 +122,12 @@ namespace Persistence.AppData
             }
         }
 
-        // Covers DateTime? properties too
+        // Covers DateTime? properties too. A language is stored as its code, "ar" or "en"
         protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
-            => configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
+        {
+            configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
+            configurationBuilder.Properties<Domain.Enums.Language>().HaveConversion<LanguageCodeConverter>().HaveMaxLength(2);
+        }
 
         public DbSet<Organization> Organizations => Set<Organization>();
         public DbSet<Branch> Branches => Set<Branch>();
@@ -145,6 +148,7 @@ namespace Persistence.AppData
         public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
         public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
         public DbSet<MessageDelivery> MessageDeliveries => Set<MessageDelivery>();
+        public DbSet<MessageTemplate> MessageTemplates => Set<MessageTemplate>();
         public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
         public DbSet<Plan> Plans => Set<Plan>();
         public DbSet<PlanModule> PlanModules => Set<PlanModule>();

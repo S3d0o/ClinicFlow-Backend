@@ -1,6 +1,7 @@
 using Domain.Entities.Tenancy;
 using Domain.Entities.AppModule;
 using Domain.Entities.Auditing;
+using Domain.Entities.Messaging;
 using Domain.Entities.IdentityModule;
 using Domain.Entities.Staff;
 using Domain.Entities.Subscriptions;
@@ -50,6 +51,7 @@ namespace ClinicFlow.Tests.Persistence
                 [typeof(OrganizationSetting)] = "OrganizationSetting",               // FR-ORG-05, P1 PR 3
                 [typeof(StaffMember)] = "StaffMember",                               // ADR 0002, P1 PR 4
                 [typeof(StaffRoleAssignment)] = "StaffRoleAssignment",
+                [typeof(MessageTemplate)] = "MessageTemplate",                       // FR-NTF-02, P1 PR 5
             }, audited);
         }
 
@@ -111,6 +113,15 @@ namespace ClinicFlow.Tests.Persistence
 
             Assert.Equal([nameof(ApplicationUser.IsActive)], recorded);
         }
+
+        [Theory]
+        [InlineData(nameof(MessageTemplate.Subject), AuditMode.Recorded)]
+        [InlineData(nameof(MessageTemplate.Body), AuditMode.Recorded)]
+        [InlineData(nameof(MessageTemplate.IsDefault), AuditMode.Recorded)]
+        [InlineData(nameof(MessageTemplate.UpdatedAt), AuditMode.Ignored)]            // the entry has its own time
+        [InlineData(nameof(MessageTemplate.ProviderTemplateName), AuditMode.Ignored)] // the catalog's, never edited
+        public void MessageTemplate_RecordsTheText(string property, AuditMode expected)
+            => Assert.Equal(expected, ModeOf<MessageTemplate>(property));
 
         [Fact]
         public void UserRole_RecordsBothKeys()

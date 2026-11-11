@@ -1,18 +1,19 @@
+using Domain.Enums;
 using Shared.Authorization;
 using System.Text.Json.Serialization;
 
 namespace Shared.DTOs.Me
 {
     // GET /api/v2/me (API_CONTRACT.md §13.2 Me). Roles and permissions are the access token's, so they match what the
-    // API allows until the next refresh. PreferredLanguage and NotificationChannel are fixed until P1 PR 5 stores
-    // them; HasDoctorApplication and the MFA fields until R2
+    // API allows until the next refresh. PreferredLanguage ("ar" or "en") and NotificationChannel are the user's
+    // (FR-ACC-06, FR-NTF-04); HasDoctorApplication and the MFA fields are fixed until R2
     public sealed record MeResponse(
         Guid Id,
         string FullName,
         string Phone,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Email,
-        string PreferredLanguage,
-        string NotificationChannel,
+        Language PreferredLanguage,
+        NotificationChannel NotificationChannel,
         IReadOnlyList<RoleAssignmentResponse> Roles,
         IReadOnlyList<PermissionGrantResponse> Permissions,
         bool PhoneVerified,
