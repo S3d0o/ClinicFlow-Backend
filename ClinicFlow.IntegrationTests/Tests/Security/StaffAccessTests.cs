@@ -107,6 +107,8 @@ namespace ClinicFlow.IntegrationTests.Tests.Security
             var me = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
             me["id"]!.GetValue<string>().Should().Be(_doctorUserId.ToString());
             me["fullName"]!.GetValue<string>().Should().Be("Doctor staff");
+            me["preferredLanguage"]!.GetValue<string>().Should().Be("ar"); // the code, not the enum member's name
+            me["notificationChannel"]!.GetValue<string>().Should().Be("Both");
             var doctor = me["roles"]!.AsArray().Single(r => r!["role"]!.GetValue<string>() == Roles.Doctor)!;
             doctor["scope"]!.GetValue<string>().Should().Be("Branch");
             doctor["branchIds"]!.AsArray().Select(b => b!.GetValue<string>()).Should().Equal("1");

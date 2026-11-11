@@ -6,6 +6,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Shared.Enums;
+using Shared.Messaging;
 
 namespace Persistence.AppData;
 
@@ -111,6 +112,7 @@ public static partial class DataSeeder
         await SyncMainBranchTimeZoneAsync(context, clinicTimeZoneId);
         await SeedRolesAsync(roleManager);
         await SeedSpecialtiesAsync(context);
+        await SeedMessageTemplatesAsync(context, utcNow);
 
         if (!string.IsNullOrWhiteSpace(adminEmail) && !string.IsNullOrWhiteSpace(adminPassword))
             await SeedBootstrapAdminAsync(userManager, adminEmail, adminPassword, utcNow);
@@ -280,6 +282,38 @@ public static partial class DataSeeder
         };
 
         await context.Specialties.AddRangeAsync(specialties);
+        await context.SaveChangesAsync();
+    }
+
+    // ── 2b. Message templates ─────────────────────────────────────────────────
+    // One row per default text of the catalog (FR-NTF-02), on every start: a message added by a later version gets
+    // its rows, and a row still on its default text follows a default that changed. Edited rows are left alone.
+    // Also called by the integration tests after they reset the database. The caller turns the audit off: these
+    // rows are the system's texts, not an edit anyone made
+    public static async Task SeedMessageTemplatesAsync(ClinicDbContext context, DateTime utcNow)
+    {
+        var existing = await context.MessageTemplates.ToListAsync();
+
+        foreach (var definition in MessageTemplateCatalog.All)
+        {
+            foreach (var shipped in definition.Defaults)
+            {
+                var row = existing.FirstOrDefault(t => t.Key == definition.Key && t.Channel == shipped.Channel && t.Language == shipped.Language);
+                if (row is null)
+                {
+                    row = new MessageTemplate { Key = definition.Key, Channel = shipped.Channel, Language = shipped.Language };
+                    row.SetText(shipped.Subject, shipped.Body, isDefault: true, utcNow);
+                    context.MessageTemplates.Add(row);
+                }
+                else if (row.IsDefault && (row.Subject != shipped.Subject || row.Body != shipped.Body))
+                {
+                    row.SetText(shipped.Subject, shipped.Body, isDefault: true, utcNow);
+                }
+
+                row.ProviderTemplateName = shipped.ProviderTemplateName;
+            }
+        }
+
         await context.SaveChangesAsync();
     }
 

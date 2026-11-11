@@ -1,23 +1,30 @@
 using Domain.Entities.IdentityModule;
-using Domain.Entities.Messaging;
 using Domain.Events;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Services.EventHandlers;
+using Shared.Messaging;
 
 namespace ClinicFlow.Tests.Services.EventHandlerTests
 {
     public class PasswordResetRequestedHandlerTests : AccountEmailHandlerTestsBase
     {
-        private PasswordResetRequestedHandler Sut => new(_userManager, _uow, _emailService, _clock, Substitute.For<ILogger<PasswordResetRequestedHandler>>());
+        private PasswordResetRequestedHandler Sut
+            => new(_userManager, _uow, _messenger, _links, _clock, Substitute.For<ILogger<PasswordResetRequestedHandler>>());
 
         [Fact]
-        public async Task HandleAsync_SendsTheResetEmailWithAnEscapedToken()
+        public async Task HandleAsync_SendsTheResetEmailWithAnEscapedTokenInItsLink()
         {
             await Sut.HandleAsync(new PasswordResetRequested(_user.Id), MessageId, _ct);
 
-            await _emailService.Received(1).SendPasswordResetAsync("new@test.com", _user.Id, Uri.EscapeDataString(RawToken), _ct);
+            var email = Assert.Single(_emails);
+            Assert.Same(_user, email.To);
+            Assert.Equal(TemplateKeys.PasswordReset, email.TemplateKey);
+            Assert.Equal(new Dictionary<string, string>
+            {
+                [TemplatePlaceholders.Name] = "Nada Samir",
+                [TemplatePlaceholders.ResetUrl] = $"{FrontendUrl}/#/reset-password?userId={_user.Id}&token={Uri.EscapeDataString(RawToken)}",
+            }, email.Values);
         }
 
         [Fact]
@@ -28,7 +35,7 @@ namespace ClinicFlow.Tests.Services.EventHandlerTests
             await Sut.HandleAsync(new PasswordResetRequested(_user.Id), MessageId, _ct);
 
             await _userManager.DidNotReceive().GeneratePasswordResetTokenAsync(Arg.Any<ApplicationUser>());
-            await _emailService.DidNotReceiveWithAnyArgs().SendPasswordResetAsync(default!, default, default!, default);
+            await NoEmailWasSent();
         }
 
         [Fact]
@@ -38,7 +45,7 @@ namespace ClinicFlow.Tests.Services.EventHandlerTests
 
             await Sut.HandleAsync(new PasswordResetRequested(_user.Id), MessageId, _ct);
 
-            await _emailService.DidNotReceiveWithAnyArgs().SendPasswordResetAsync(default!, default, default!, default);
+            await NoEmailWasSent();
         }
     }
 }

@@ -7,6 +7,7 @@ namespace Persistence.AppData.Configurations
         public void Configure(EntityTypeBuilder<ApplicationUser> builder)
         {
             builder.Property(a=>a.Gender).HasConversion<string>();
+            builder.Property(a => a.NotificationChannel).HasConversion<string>().HasMaxLength(10);
 
             // Only suspension is audited (P0): the rest of the row is Identity's bookkeeping (stamps, lockout
             // counters, the password hash) or a person's own details

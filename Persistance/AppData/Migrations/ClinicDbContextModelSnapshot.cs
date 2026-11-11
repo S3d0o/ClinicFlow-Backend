@@ -516,6 +516,11 @@ namespace Persistence.AppData.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("NotificationChannel")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
                     b.Property<string>("PasswordHash")
                         .HasColumnType("nvarchar(max)");
 
@@ -524,6 +529,11 @@ namespace Persistence.AppData.Migrations
 
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("bit");
+
+                    b.Property<string>("PreferredLanguage")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
 
                     b.Property<string>("ProfilePictureUrl")
                         .HasColumnType("nvarchar(max)");
@@ -688,6 +698,65 @@ namespace Persistence.AppData.Migrations
                         .IsUnique();
 
                     b.ToTable("MessageDeliveries", (string)null);
+                });
+
+            modelBuilder.Entity("Domain.Entities.Messaging.MessageTemplate", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<int>("OrganizationId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProviderTemplateName")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasAnnotation("ClinicFlow:Audit:Mode", "Ignored");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2")
+                        .HasAnnotation("ClinicFlow:Audit:Mode", "Ignored");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "Key", "Channel", "Language")
+                        .IsUnique();
+
+                    b.ToTable("MessageTemplates", (string)null);
+
+                    b
+                        .HasAnnotation("ClinicFlow:Audit:DefaultMode", "Recorded")
+                        .HasAnnotation("ClinicFlow:Audit:Name", "MessageTemplate");
                 });
 
             modelBuilder.Entity("Domain.Entities.Messaging.OutboxMessage", b =>
@@ -1758,6 +1827,15 @@ namespace Persistence.AppData.Migrations
                         .IsRequired();
 
                     b.Navigation("OutboxMessage");
+                });
+
+            modelBuilder.Entity("Domain.Entities.Messaging.MessageTemplate", b =>
+                {
+                    b.HasOne("Domain.Entities.Tenancy.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Domain.Entities.Messaging.OutboxMessage", b =>

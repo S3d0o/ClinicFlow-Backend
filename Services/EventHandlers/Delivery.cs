@@ -1,6 +1,8 @@
 using Domain.Entities.IdentityModule;
+using Domain.Entities.Messaging;
 using Domain.Interfaces;
 using Services.Abstraction.Contracts;
+using Services.Messaging;
 using Shared.DTOs.Notification;
 
 namespace Services.EventHandlers
@@ -33,5 +35,28 @@ namespace Services.EventHandlers
                 RelatedEntityId = n.RelatedEntityId,
                 CreatedAt = clock.UtcNow,
             }), ct);
+
+        // The patient's email about a visit, from the template in their language. Skipped, with no delivery recorded,
+        // for a patient who doesn't take email (ApplicationUser.AcceptsEmail)
+        public static async Task EmailPatientOnceAsync(
+            IUnitOfWork uow, ITemplatedMessenger messenger, IClock clock, ILogger logger,
+            long outboxMessageId, Appointment appointment, string templateKey, CancellationToken ct)
+        {
+            var patient = appointment.Patient.User;
+            if (!patient.AcceptsEmail())
+            {
+                logger.LogInformation(
+                    "{TemplateKey} email for appointment {AppointmentId} skipped: the patient has no confirmed email, or takes phone messages only",
+                    templateKey, appointment.Id);
+                return;
+            }
+
+            await OnceAsync(uow, clock, outboxMessageId, DeliveryChannels.Email, async () =>
+            {
+                var branch = await uow.Branches.GetByIdAsync(appointment.BranchId, ct);
+                await messenger.SendEmailAsync(
+                    patient, templateKey, MessageValues.Appointment(appointment, branch, patient.PreferredLanguage), ct);
+            }, ct);
+        }
     }
 }

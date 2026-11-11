@@ -60,8 +60,9 @@ namespace ClinicFlow.IntegrationTests.Tests.BackgroundJobs
             await _job.ProcessRemindersAsync(CancellationToken.None);
             await _factory.DrainOutboxAsync(); // the job queues the reminders; the outbox sends them
 
-            _factory.Emails.Sent.Should().ContainSingle()
-                .Which.Should().Be(new SentEmail(SentEmailKind.AppointmentReminder, "patientdue@test.com"));
+            var reminder = _factory.Emails.Sent.Should().ContainSingle().Subject;
+            (reminder.Kind, reminder.To).Should().Be((SentEmailKind.AppointmentReminder, "patientdue@test.com"));
+            reminder.Message!.Subject.Should().StartWith("تذكير بموعدك يوم"); // from the Arabic template: the patient's language
             await _factory.SeedAsync(async db =>
             {
                 (await db.Appointments.AsNoTracking().SingleAsync(a => a.Id == dueId)).ReminderSentAt.Should().NotBeNull();

@@ -45,23 +45,21 @@ namespace ClinicFlow.IntegrationTests.Tests.DataAccess
         [Fact]
         public async Task Migrate_ExistingSlots_GetTheSameUtcTimesAsDotNetComputes()
         {
-            // Users, specialties and schedules have the same columns then as in today's model, so EF can seed them;
-            // doctor profiles (StaffMemberId since P1 PR 4) and slots don't, so they are inserted with SQL
+            // Specialties and schedules have the same columns then as in today's model, so EF can seed them; users (the
+            // language and channel of P1 PR 5), doctor profiles (StaffMemberId since P1 PR 4) and slots don't, so they
+            // are inserted with SQL
             var doctorId = 0;
             var scheduleId = 0;
             await factory.SeedAsync(async db =>
             {
                 var specialty = db.Specialties.Add(new Specialty { Name = "General Practice", IsActive = true }).Entity;
-                var user = db.Users.Add(new ApplicationUser
-                {
-                    Id = Guid.NewGuid(), UserName = "doctortz@test.com", Email = "doctortz@test.com", FirstName = "Doctor", LastName = "tz",
-                    SecurityStamp = Guid.NewGuid().ToString(), IsActive = true,
-                }).Entity;
                 await db.SaveChangesAsync();
+                var userId = Guid.NewGuid();
+                await SeedDataHelper.InsertUserWithSqlAsync(db, userId, "doctortz@test.com", "Doctor", "tz");
                 doctorId = (await db.Database.SqlQuery<int>($"""
                     INSERT INTO Doctors (OrganizationId, UserId, SpecialtyId, YearsOfExperience, ConsultationFee, AverageRating, TotalReviews, IsApprovedByAdmin)
                     OUTPUT INSERTED.Id AS Value
-                    VALUES (1, {user.Id}, {specialty.Id}, 5, 200, 0, 0, 1)
+                    VALUES (1, {userId}, {specialty.Id}, 5, 200, 0, 0, 1)
                     """).ToListAsync()).Single();
                 (scheduleId, _) = await SeedDataHelper.SeedScheduleWithSlotsAsync(db, doctorId, DayOfWeek.Monday);
             });

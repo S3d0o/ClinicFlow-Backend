@@ -1,4 +1,5 @@
 using Domain.Entities.IdentityModule;
+using Domain.Enums;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -91,6 +92,19 @@ namespace ClinicFlow.Tests.Services.MeServiceTests
 
             Assert.Equal((Roles.Patient, PermissionScope.Organization), (me.Roles[0].Role, me.Roles[0].Scope));
             Assert.All(me.Permissions, p => Assert.Equal(PermissionScope.Own, p.Scope));
+        }
+
+        [Fact]
+        public async Task GetAsync_ReturnsTheUsersLanguageAndChannel()
+        {
+            // Stored since P1 PR 5 (FR-ACC-06, FR-NTF-04): Arabic and both channels unless the user chose otherwise
+            SignedInAs(false);
+            var byDefault = (await _sut.GetAsync(CancellationToken.None)).Value;
+            (_user.PreferredLanguage, _user.NotificationChannel) = (Language.En, NotificationChannel.Phone);
+            var chosen = (await _sut.GetAsync(CancellationToken.None)).Value;
+
+            Assert.Equal((Language.Ar, NotificationChannel.Both), (byDefault.PreferredLanguage, byDefault.NotificationChannel));
+            Assert.Equal((Language.En, NotificationChannel.Phone), (chosen.PreferredLanguage, chosen.NotificationChannel));
         }
 
         [Fact]
